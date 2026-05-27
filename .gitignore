@@ -1,0 +1,51 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+.pnpm-store
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+server/.env
+server/.venv/
+server/data/
+server/**/__pycache__/
+server/.pytest_cache/
+server/.ruff_cache/
+web/node_modules/
+web/dist/
+web/.env
+
+# Python build artifacts
+*.egg-info/
+*.egg
+__pycache__/
+*.py[cod]
+
+# Python test / type / coverage caches
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Vite local env overrides
+web/.env.local
+web/.env.*.local
