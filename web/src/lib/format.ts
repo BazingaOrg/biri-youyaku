@@ -18,7 +18,7 @@ export function formatStatus(status: JobStatus) {
 }
 
 export function formatDuration(seconds?: number) {
-  if (!seconds) {
+  if (seconds == null || Number.isNaN(seconds)) {
     return '--:--'
   }
   const mins = Math.floor(seconds / 60)

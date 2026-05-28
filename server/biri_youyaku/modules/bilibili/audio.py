@@ -1,10 +1,12 @@
 import asyncio
-import sys
 import tempfile
 from pathlib import Path
+from collections.abc import Awaitable, Callable
 
 from biri_youyaku.config import settings
 from biri_youyaku.modules.bilibili.meta import VideoMeta
+
+DownloadProgressCallback = Callable[[dict], Awaitable[None]]
 
 
 def _cookie_values() -> dict[str, str]:
@@ -41,44 +43,77 @@ def _format_download_error(stderr: str, has_cookies: bool) -> str:
     return message
 
 
-async def download(meta: VideoMeta, output_path: Path) -> Path:
+def _progress_payload(data: dict) -> dict:
+    total = data.get("total_bytes") or data.get("total_bytes_estimate")
+    downloaded = data.get("downloaded_bytes") or 0
+    percent = None
+    if total:
+        percent = min(100.0, max(0.0, downloaded / total * 100))
+    return {
+        "status": data.get("status"),
+        "downloaded_bytes": downloaded,
+        "total_bytes": total,
+        "percent": percent,
+        "speed": data.get("speed"),
+        "eta": data.get("eta"),
+    }
+
+
+async def download(
+    meta: VideoMeta,
+    output_path: Path,
+    *,
+    on_progress: DownloadProgressCallback | None = None,
+) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     target = output_path.with_suffix(".%(ext)s")
     cookie_path = _write_cookie_file()
+    loop = asyncio.get_running_loop()
+
+    def progress_hook(data: dict) -> None:
+        if on_progress is None:
+            return
+        payload = _progress_payload(data)
+        loop.call_soon_threadsafe(asyncio.create_task, on_progress(payload))
+
+    def run_download() -> None:
+        try:
+            from yt_dlp import YoutubeDL
+        except ImportError as exc:
+            raise RuntimeError("yt-dlp 未安装") from exc
+
+        options = {
+            "format": "bestaudio/best",
+            "outtmpl": str(target),
+            "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "wav"}],
+            "http_headers": {
+                "Referer": "https://www.bilibili.com",
+                "User-Agent": "Mozilla/5.0 Biri-Youyaku/0.1",
+            },
+            "noplaylist": True,
+            "quiet": True,
+            "no_warnings": True,
+            "progress_hooks": [progress_hook],
+        }
+        if cookie_path is not None:
+            options["cookiefile"] = str(cookie_path)
+
+        try:
+            with YoutubeDL(options) as ydl:
+                ydl.download([meta.url])
+        except Exception as exc:
+            raise RuntimeError(_format_download_error(str(exc), cookie_path is not None)) from exc
+
     try:
-        command = [
-            sys.executable,
-            "-m",
-            "yt_dlp",
-            "-f",
-            "bestaudio/best",
-            "-o",
-            str(target),
-            "--extract-audio",
-            "--audio-format",
-            "wav",
-            "--referer",
-            "https://www.bilibili.com",
-            "--user-agent",
-            "Mozilla/5.0 Biri-Youyaku/0.1",
-            "--no-playlist",
-            *(["--cookies", str(cookie_path)] if cookie_path is not None else []),
-            meta.url,
-        ]
-        process = await asyncio.create_subprocess_exec(
-            *command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr = await process.communicate()
-        if process.returncode != 0:
-            raise RuntimeError(_format_download_error(stderr.decode("utf-8", errors="ignore"), cookie_path is not None))
+        await asyncio.to_thread(run_download)
         wav_path = output_path.with_suffix(".wav")
         if not wav_path.exists():
             matches = list(output_path.parent.glob(f"{output_path.stem}.*"))
             if not matches:
                 raise RuntimeError("yt-dlp completed but no audio file was found")
             return matches[0]
+        if on_progress is not None:
+            await on_progress({"status": "finished", "percent": 100.0})
         return wav_path
     finally:
         if cookie_path is not None:

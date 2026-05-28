@@ -39,9 +39,13 @@ async def test_runner_pauses_at_transcript_ready_then_resumes(monkeypatch, tmp_p
         repo.set_subtitle_source(job.id, "platform")
         return [TranscriptItem(start=0, end=2, text="hello")]
 
-    async def fake_summarize(job, video_meta, items, *, llm_api_key=None):
+    async def fake_summarize(job, video_meta, items, *, llm_api_key=None, on_chunk=None, on_usage=None):
         assert llm_api_key == "task-key"
         assert items[0].text == "hello"
+        if on_chunk is not None:
+            await on_chunk("summary")
+        if on_usage is not None:
+            await on_usage({"input_tokens": 1, "output_tokens": 2, "total_tokens": 3})
         summary_path = tmp_path / f"{job.id}.md"
         summary_path.write_text("summary", encoding="utf-8")
         repo.set_summary_path(job.id, summary_path)
@@ -95,7 +99,9 @@ async def test_audio_only_job_clears_cached_llm_key(monkeypatch, tmp_path):
             duration=10,
         )
 
-    async def fake_download_audio(job, video_meta):
+    async def fake_download_audio(job, video_meta, *, on_progress=None):
+        if on_progress is not None:
+            await on_progress({"status": "finished", "percent": 100})
         audio_path = tmp_path / f"{job.id}.wav"
         audio_path.write_text("audio", encoding="utf-8")
         repo.set_audio_path(job.id, audio_path)

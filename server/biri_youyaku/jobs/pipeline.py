@@ -1,10 +1,12 @@
 from pathlib import Path
+from collections.abc import Awaitable, Callable
 
 from biri_youyaku.config import settings
 from biri_youyaku.jobs import repo
 from biri_youyaku.jobs.model import Job, JobOptions
 from biri_youyaku.modules.asr.base import TranscribeRequest
 from biri_youyaku.modules.asr.sensevoice import SenseVoiceTranscriber
+from biri_youyaku.modules.asr.whisper import FasterWhisperTranscriber
 from biri_youyaku.modules.bilibili import audio, meta, subtitle
 from biri_youyaku.modules.bilibili.meta import VideoMeta
 from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
@@ -24,14 +26,19 @@ async def fetch_platform_transcript(job: Job, video_meta: VideoMeta) -> list[Tra
     return items
 
 
-async def download_audio(job: Job, video_meta: VideoMeta) -> Path:
-    audio_path = await audio.download(video_meta, audio_storage.path_for(job.id))
+async def download_audio(
+    job: Job,
+    video_meta: VideoMeta,
+    *,
+    on_progress: Callable[[dict], Awaitable[None]] | None = None,
+) -> Path:
+    audio_path = await audio.download(video_meta, audio_storage.path_for(job.id), on_progress=on_progress)
     repo.set_audio_path(job.id, audio_path)
     return audio_path
 
 
 async def transcribe_audio(job: Job, audio_path: Path) -> list[TranscriptItem]:
-    transcriber = SenseVoiceTranscriber()
+    transcriber = FasterWhisperTranscriber() if settings.asr_model == "faster-whisper" else SenseVoiceTranscriber()
     items = await transcriber.transcribe(
         TranscribeRequest(audio_path=audio_path, language=job.options.language or settings.asr_language_default)
     )
@@ -45,6 +52,8 @@ async def summarize(
     items: list[TranscriptItem],
     *,
     llm_api_key: str | None = None,
+    on_chunk: Callable[[str], Awaitable[None]] | None = None,
+    on_usage: Callable[[dict], Awaitable[None]] | None = None,
 ) -> str:
     summary_md = await llm_client.summarize(
         items,
@@ -52,6 +61,8 @@ async def summarize(
         job.options,
         api_key=llm_api_key,
         subtitle_source=job.subtitle_source,
+        on_chunk=on_chunk,
+        on_usage=on_usage,
     )
     summary_path = summary_storage.save(job.id, summary_md)
     repo.set_summary_path(job.id, summary_path)

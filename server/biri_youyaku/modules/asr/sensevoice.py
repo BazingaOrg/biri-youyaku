@@ -1,12 +1,25 @@
 from pathlib import Path
 import re
+from functools import lru_cache
 
+from biri_youyaku.config import settings
 from biri_youyaku.modules.asr.base import TranscribeRequest
 from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
 
 
 SENSEVOICE_TAG_RE = re.compile(r"<\|[^|>]+?\|>")
 SENSEVOICE_MARKERS = str.maketrans("", "", "🎼😀😔😡😰🤢😮👏🤣😭🤧😷")
+
+
+@lru_cache(maxsize=1)
+def _load_model():
+    try:
+        from funasr import AutoModel
+    except ImportError as exc:
+        raise RuntimeError("SenseVoice 依赖未安装，请安装 server[asr]") from exc
+
+    model_name = settings.sensevoice_model_dir or "iic/SenseVoiceSmall"
+    return AutoModel(model=model_name)
 
 
 def clean_transcription_text(text: str) -> str:
@@ -24,12 +37,7 @@ def clean_transcription_text(text: str) -> str:
 
 class SenseVoiceTranscriber:
     async def transcribe(self, request: TranscribeRequest) -> list[TranscriptItem]:
-        try:
-            from funasr import AutoModel
-        except ImportError as exc:
-            raise RuntimeError("SenseVoice 依赖未安装，请安装 server[asr]") from exc
-
-        model = AutoModel(model="iic/SenseVoiceSmall")
+        model = _load_model()
         result = model.generate(input=str(request.audio_path), language=request.language)
         text = "\n".join(
             clean_transcription_text(item.get("text", ""))

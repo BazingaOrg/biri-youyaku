@@ -96,10 +96,9 @@ Frontend `.env`:
 
 ```env
 VITE_API_BASE_URL=http://localhost:17821
-VITE_API_TOKEN=same value as backend API_TOKEN
 ```
 
-`VITE_API_TOKEN` must match the backend `API_TOKEN`; leave it empty when backend `API_TOKEN` is empty. This value is bundled into browser JavaScript and should not be treated as a real secret. For public deployments, use Vercel Protection, Cloudflare Access, or another access-control layer.
+If the backend sets `API_TOKEN`, enter that token in the frontend authorization dialog on first visit. The token is stored only in this browser's `localStorage`; it is not bundled into browser JavaScript. For public deployments, still use Vercel Protection, Cloudflare Access, or another access-control layer.
 
 ## Build
 
@@ -130,8 +129,9 @@ Vercel environment variables:
 
 ```env
 VITE_API_BASE_URL=https://your-api-domain.example.com
-VITE_API_TOKEN=same value as backend API_TOKEN
 ```
+
+Do not configure the API token as a Vercel environment variable. After deployment, open the page and enter the backend `API_TOKEN` in the browser authorization dialog.
 
 Cloudflare Tunnel example:
 

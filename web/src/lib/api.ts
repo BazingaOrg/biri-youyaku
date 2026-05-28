@@ -45,6 +45,7 @@ export interface Job {
   status: JobStatus
   error_stage?: string
   error_message?: string
+  error_code?: string
   subtitle_source?: string
   chapters: Array<{
     start: number
@@ -60,19 +61,48 @@ export interface Job {
   created_at: number
   updated_at: number
   completed_at?: number
+  stream_finished_at?: number
+  token_usage?: Record<string, unknown>
+  stage_timings: Array<{
+    stage: string
+    started_at: number
+    ended_at: number
+    duration_ms: number
+  }>
+  download_progress?: {
+    status?: string
+    downloaded_bytes?: number
+    total_bytes?: number
+    percent?: number
+    speed?: number
+    eta?: number
+  }
   options: JobOptions
   option_overrides: JobOptionOverrides
   audio_available: boolean
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:17821'
-const API_TOKEN = import.meta.env.VITE_API_TOKEN ?? ''
+const tokenStorageKey = 'biri-youyaku-api-token'
+
+export function getApiToken() {
+  return window.localStorage.getItem(tokenStorageKey) || ''
+}
+
+export function setApiToken(token: string) {
+  if (token.trim()) {
+    window.localStorage.setItem(tokenStorageKey, token.trim())
+  } else {
+    window.localStorage.removeItem(tokenStorageKey)
+  }
+}
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   headers.set('Content-Type', 'application/json')
-  if (API_TOKEN) {
-    headers.set('Authorization', `Bearer ${API_TOKEN}`)
+  const token = getApiToken()
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`)
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -89,8 +119,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 async function requestBlob(path: string): Promise<{blob: Blob; filename?: string}> {
   const headers = new Headers()
-  if (API_TOKEN) {
-    headers.set('Authorization', `Bearer ${API_TOKEN}`)
+  const token = getApiToken()
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`)
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -121,6 +152,29 @@ export function getConfigDefaults() {
   return request<{ok: true; defaults: ConfigDefaults}>('/v1/config/defaults')
 }
 
+export function getRuntimeConfig() {
+  return request<{ok: true; llm_configured: boolean; email_configured: boolean; bilibili_cookie_configured: boolean}>('/v1/config/runtime')
+}
+
+export function previewJob(url: string) {
+  return request<{
+    ok: true
+    meta: {
+      url: string
+      bvid: string
+      cid?: number
+      title: string
+      author: string
+      duration: number
+      has_subtitle: boolean
+    }
+    dedup_job_id?: string
+  }>('/v1/jobs/preview', {
+    method: 'POST',
+    body: JSON.stringify({url}),
+  })
+}
+
 export function createJob(url: string, options: JobOptionOverrides) {
   return request<{ok: true; job_id: string}>('/v1/jobs', {
     method: 'POST',
@@ -146,8 +200,30 @@ export function resumeJob(jobId: string, options: JobOptionOverrides = {}) {
   })
 }
 
-export function listJobs() {
-  return request<{ok: true; jobs: Job[]}>('/v1/jobs?limit=50')
+export function retryJob(jobId: string, options: JobOptionOverrides = {}) {
+  return request<{ok: true}>(`/v1/jobs/${jobId}/retry`, {
+    method: 'POST',
+    body: JSON.stringify({options}),
+  })
+}
+
+export function replaceTranscript(jobId: string, transcript: Job['transcript']) {
+  return request<{ok: true}>(`/v1/jobs/${jobId}/transcript`, {
+    method: 'POST',
+    body: JSON.stringify({transcript, source: 'upload'}),
+  })
+}
+
+export function listJobs(params: {limit?: number; offset?: number; cursor?: number | null} = {}) {
+  const search = new URLSearchParams()
+  search.set('limit', String(params.limit ?? 50))
+  if (params.offset) {
+    search.set('offset', String(params.offset))
+  }
+  if (params.cursor != null) {
+    search.set('cursor', String(params.cursor))
+  }
+  return request<{ok: true; jobs: Job[]; next_cursor?: number | null}>(`/v1/jobs?${search.toString()}`)
 }
 
 export function resendEmail(jobId: string) {
@@ -170,4 +246,4 @@ export function downloadJobAudio(jobId: string) {
   return requestBlob(`/v1/jobs/${jobId}/audio`)
 }
 
-export {API_BASE_URL, API_TOKEN}
+export {API_BASE_URL}

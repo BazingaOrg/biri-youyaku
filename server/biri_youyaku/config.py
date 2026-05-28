@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = 300
     llm_max_retries: int = 2
     llm_temperature: float | None = None
+    llm_chunk_token_threshold: int = 30000
 
     summary_language: str = "中文简体"
 
@@ -43,6 +44,8 @@ class Settings(BaseSettings):
 
     audio_retention_days: int = 7
     job_retention_days: int = 180
+    max_concurrent_jobs: int = 2
+    max_concurrent_summaries: int = 2
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

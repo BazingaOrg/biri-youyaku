@@ -93,9 +93,14 @@ class Job:
     duration: float | None = None
     error_stage: str | None = None
     error_message: str | None = None
+    error_code: str | None = None
     audio_path: str | None = None
     subtitle_source: str | None = None
     chapters: list[dict[str, Any]] | None = None
     transcript: list[dict[str, Any]] | None = None
     summary_path: str | None = None
     completed_at: int | None = None
+    stream_finished_at: int | None = None
+    token_usage: dict[str, Any] | None = None
+    content_hash: str | None = None
+    stage_timings: list[dict[str, Any]] | None = None

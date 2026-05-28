@@ -24,3 +24,24 @@ def test_format_download_error_mentions_cookie_hint():
 
     assert "No video formats found" in message
     assert "配置 BILI_SESSDATA" in message
+
+
+def test_progress_payload_calculates_percent_from_estimated_total():
+    payload = audio._progress_payload(
+        {
+            "status": "downloading",
+            "downloaded_bytes": 50,
+            "total_bytes_estimate": 200,
+            "speed": 10,
+            "eta": 15,
+        }
+    )
+
+    assert payload == {
+        "status": "downloading",
+        "downloaded_bytes": 50,
+        "total_bytes": 200,
+        "percent": 25.0,
+        "speed": 10,
+        "eta": 15,
+    }

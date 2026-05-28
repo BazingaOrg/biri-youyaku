@@ -70,7 +70,7 @@ export function OptionsForm({defaults, defaultsLoading, options, open, onToggle,
   }
 
   return (
-    <section className="mt-4 rounded-3xl bg-panel p-3 shadow-bili">
+    <section className="rounded-3xl bg-panel p-3 shadow-card">
       <button
         type="button"
         className="flex min-h-10 w-full items-center justify-between rounded-2xl px-1 text-left transition-transform active:scale-95"
@@ -90,9 +90,9 @@ export function OptionsForm({defaults, defaultsLoading, options, open, onToggle,
                 type="checkbox"
                 checked={Boolean(value('email_enabled'))}
                 onChange={(event) => patch({email_enabled: event.target.checked})}
-                className="h-4 w-4 accent-pink"
+                className="h-4 w-4 accent-brand"
               />
-              <Mail size={16} className="text-pink" />
+              <Mail size={16} className="text-brand" />
               <span className="text-sm font-medium">自动发邮件</span>
             </label>
           </FieldShell>

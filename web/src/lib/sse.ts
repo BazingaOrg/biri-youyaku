@@ -1,6 +1,6 @@
-import {API_BASE_URL, API_TOKEN} from './api'
+import {API_BASE_URL, getApiToken} from './api'
 
-export type JobStreamEvent = 'status' | 'meta' | 'summary_chunk' | 'error'
+export type JobStreamEvent = 'status' | 'meta' | 'summary_chunk' | 'download_progress' | 'error'
 
 export interface JobStreamMessage {
   event: JobStreamEvent
@@ -15,12 +15,17 @@ export function openJobStream(
   jobId: string,
   onMessage: (message: JobStreamMessage) => void,
   onError: (error: Error) => void,
+  onClose?: () => void,
 ): JobStreamSubscription {
   const controller = new AbortController()
 
   void readStream(jobId, controller.signal, onMessage).catch((error) => {
     if (!controller.signal.aborted) {
       onError(error instanceof Error ? error : new Error('SSE stream failed'))
+    }
+  }).finally(() => {
+    if (!controller.signal.aborted) {
+      onClose?.()
     }
   })
 
@@ -35,8 +40,9 @@ async function readStream(
   onMessage: (message: JobStreamMessage) => void,
 ) {
   const headers = new Headers()
-  if (API_TOKEN) {
-    headers.set('Authorization', `Bearer ${API_TOKEN}`)
+  const token = getApiToken()
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`)
   }
 
   const response = await fetch(`${API_BASE_URL}/v1/jobs/${jobId}/stream`, {
@@ -78,6 +84,8 @@ async function readStream(
 
       if (line === '') {
         flush()
+      } else if (line.startsWith(':')) {
+        // SSE heartbeat/comment line.
       } else if (line.startsWith('event:')) {
         eventName = line.slice(6).trim() as JobStreamEvent
       } else if (line.startsWith('data:')) {

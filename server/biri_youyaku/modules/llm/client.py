@@ -1,4 +1,5 @@
 import json
+from collections.abc import Awaitable, Callable
 
 from openai import AsyncOpenAI
 
@@ -7,7 +8,17 @@ from biri_youyaku.jobs.model import JobOptions
 from biri_youyaku.modules.bilibili.meta import VideoMeta
 from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
 from biri_youyaku.modules.asr.formatter import transcript_to_text
-from biri_youyaku.modules.llm.prompts import SUMMARY_PROMPT, SUMMARY_REPAIR_PROMPT
+from biri_youyaku.modules.llm.prompts import (
+    SUMMARY_MARKDOWN_PROMPT,
+    SUMMARY_MERGE_MARKDOWN_PROMPT,
+    SUMMARY_MERGE_PROMPT,
+    SUMMARY_PROMPT,
+    SUMMARY_REPAIR_PROMPT,
+)
+from biri_youyaku.modules.llm.segmenter import should_chunk, split_transcript
+
+SummaryChunkCallback = Callable[[str], Awaitable[None]]
+TokenUsageCallback = Callable[[dict], Awaitable[None]]
 
 
 def resolve_temperature(model: str) -> float:
@@ -60,12 +71,35 @@ def _is_temperature_rejected_error(exc: Exception) -> bool:
     return "temperature" in message and "only 1" in message
 
 
+def _usage_to_dict(usage) -> dict | None:
+    if usage is None:
+        return None
+    input_tokens = getattr(usage, "prompt_tokens", None)
+    output_tokens = getattr(usage, "completion_tokens", None)
+    total_tokens = getattr(usage, "total_tokens", None)
+    if input_tokens is None and hasattr(usage, "input_tokens"):
+        input_tokens = usage.input_tokens
+    if output_tokens is None and hasattr(usage, "output_tokens"):
+        output_tokens = usage.output_tokens
+    if total_tokens is None and input_tokens is not None and output_tokens is not None:
+        total_tokens = input_tokens + output_tokens
+    if input_tokens is None and output_tokens is None and total_tokens is None:
+        return None
+    return {
+        "input_tokens": int(input_tokens or 0),
+        "output_tokens": int(output_tokens or 0),
+        "total_tokens": int(total_tokens or 0),
+        "cost_estimate": None,
+    }
+
+
 async def _complete(
     client: AsyncOpenAI,
     *,
     model: str,
     messages: list[dict[str, str]],
     temperature: float,
+    on_usage: TokenUsageCallback | None = None,
 ) -> str:
     try:
         response = await client.chat.completions.create(
@@ -82,10 +116,63 @@ async def _complete(
             )
         else:
             raise
+    usage = _usage_to_dict(getattr(response, "usage", None))
+    if usage is not None and on_usage is not None:
+        await on_usage(usage)
     return response.choices[0].message.content or ""
 
 
-async def _repair_summary_json(client: AsyncOpenAI, *, model: str, content: str) -> str:
+async def _complete_stream(
+    client: AsyncOpenAI,
+    *,
+    model: str,
+    messages: list[dict[str, str]],
+    temperature: float,
+    on_chunk: SummaryChunkCallback,
+    on_usage: TokenUsageCallback | None = None,
+) -> str:
+    try:
+        stream = await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+    except Exception as exc:
+        if temperature != 1 and _is_temperature_rejected_error(exc):
+            stream = await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=1,
+                stream=True,
+                stream_options={"include_usage": True},
+            )
+        else:
+            raise
+
+    content = ""
+    async for chunk in stream:
+        usage = _usage_to_dict(getattr(chunk, "usage", None))
+        if usage is not None and on_usage is not None:
+            await on_usage(usage)
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta.content or ""
+        if not delta:
+            continue
+        content += delta
+        await on_chunk(content)
+    return content
+
+
+async def _repair_summary_json(
+    client: AsyncOpenAI,
+    *,
+    model: str,
+    content: str,
+    on_usage: TokenUsageCallback | None = None,
+) -> str:
     repaired = await _complete(
         client,
         model=model,
@@ -94,8 +181,75 @@ async def _repair_summary_json(client: AsyncOpenAI, *, model: str, content: str)
             {"role": "user", "content": content},
         ],
         temperature=0,
+        on_usage=on_usage,
     )
     return _extract_summary_json(repaired)
+
+
+async def _complete_json_summary(
+    client: AsyncOpenAI,
+    *,
+    model: str,
+    prompt: str,
+    on_usage: TokenUsageCallback | None = None,
+) -> str:
+    content = await _complete(
+        client,
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=resolve_temperature(model),
+        on_usage=on_usage,
+    )
+    try:
+        return _extract_summary_json(content)
+    except (ValueError, json.JSONDecodeError):
+        return await _repair_summary_json(client, model=model, content=content, on_usage=on_usage)
+
+
+async def _summarize_chunked(
+    client: AsyncOpenAI,
+    *,
+    items: list[TranscriptItem],
+    meta: VideoMeta,
+    model: str,
+    language: str,
+    subtitle_source: str | None,
+    on_chunk: SummaryChunkCallback | None = None,
+    on_usage: TokenUsageCallback | None = None,
+) -> str:
+    segment_summaries = []
+    for index, segment in enumerate(split_transcript(items, settings.llm_chunk_token_threshold), start=1):
+        prompt = render_prompt(
+            SUMMARY_PROMPT,
+            language=language,
+            title=f"{meta.title}（分段 {index}）",
+            author=meta.author,
+            url=meta.url,
+            transcript=transcript_to_text(segment),
+            subtitle_source=subtitle_source_label(subtitle_source),
+        )
+        segment_summary = await _complete_json_summary(client, model=model, prompt=prompt, on_usage=on_usage)
+        segment_summaries.append(f"### 分段 {index}\n{segment_summary}")
+
+    merge_prompt = render_prompt(
+        SUMMARY_MERGE_MARKDOWN_PROMPT if on_chunk is not None else SUMMARY_MERGE_PROMPT,
+        language=language,
+        title=meta.title,
+        author=meta.author,
+        url=meta.url,
+        transcript="\n\n".join(segment_summaries),
+        subtitle_source=subtitle_source_label(subtitle_source),
+    )
+    if on_chunk is not None:
+        return await _complete_stream(
+            client,
+            model=model,
+            messages=[{"role": "user", "content": merge_prompt}],
+            temperature=resolve_temperature(model),
+            on_chunk=on_chunk,
+            on_usage=on_usage,
+        )
+    return await _complete_json_summary(client, model=model, prompt=merge_prompt, on_usage=on_usage)
 
 
 async def summarize(
@@ -105,6 +259,8 @@ async def summarize(
     *,
     api_key: str | None = None,
     subtitle_source: str | None = None,
+    on_chunk: SummaryChunkCallback | None = None,
+    on_usage: TokenUsageCallback | None = None,
 ) -> str:
     resolved_api_key = api_key or settings.llm_api_key
     if not resolved_api_key:
@@ -130,15 +286,37 @@ async def summarize(
             transcript=transcript,
             subtitle_source=subtitle_source_label(subtitle_source),
         )
+        if on_chunk is not None:
+            return await _complete_stream(
+                client,
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=resolve_temperature(model),
+                on_chunk=on_chunk,
+                on_usage=on_usage,
+            )
         return await _complete(
             client,
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=resolve_temperature(model),
+            on_usage=on_usage,
+        )
+
+    if should_chunk(items, settings.llm_chunk_token_threshold):
+        return await _summarize_chunked(
+            client,
+            items=items,
+            meta=meta,
+            model=model,
+            language=language,
+            subtitle_source=subtitle_source,
+            on_chunk=on_chunk,
+            on_usage=on_usage,
         )
 
     prompt = render_prompt(
-        SUMMARY_PROMPT,
+        SUMMARY_MARKDOWN_PROMPT if on_chunk is not None else SUMMARY_PROMPT,
         language=language,
         title=meta.title,
         author=meta.author,
@@ -146,13 +324,14 @@ async def summarize(
         transcript=transcript,
         subtitle_source=subtitle_source_label(subtitle_source),
     )
-    content = await _complete(
-        client,
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=resolve_temperature(model),
-    )
-    try:
-        return _extract_summary_json(content)
-    except (ValueError, json.JSONDecodeError):
-        return await _repair_summary_json(client, model=model, content=content)
+    if on_chunk is not None:
+        return await _complete_stream(
+            client,
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=resolve_temperature(model),
+            on_chunk=on_chunk,
+            on_usage=on_usage,
+        )
+
+    return await _complete_json_summary(client, model=model, prompt=prompt, on_usage=on_usage)

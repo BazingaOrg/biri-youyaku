@@ -1,3 +1,4 @@
+import asyncio
 import re
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlparse
@@ -5,6 +6,24 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 
 from biri_youyaku.config import settings
+
+_BILI_TIMEOUT = 15.0
+_BILI_RETRIES = 3
+
+
+async def _get_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
+    """GET with exponential backoff retry (3 attempts, 15 s timeout per request)."""
+    last_exc: Exception | None = None
+    for attempt in range(_BILI_RETRIES):
+        try:
+            response = await client.get(url, **kwargs)
+            response.raise_for_status()
+            return response
+        except (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException) as exc:
+            last_exc = exc
+            if attempt < _BILI_RETRIES - 1:
+                await asyncio.sleep(2 ** attempt)  # 0 s, 1 s, 2 s before each retry
+    raise last_exc  # type: ignore[misc]
 
 
 @dataclass(frozen=True)
@@ -132,12 +151,12 @@ async def fetch(url: str) -> VideoMeta:
     if cookie:
         headers["Cookie"] = cookie
 
-    async with httpx.AsyncClient(timeout=30, headers=headers) as client:
-        view_response = await client.get(
+    async with httpx.AsyncClient(timeout=_BILI_TIMEOUT, headers=headers) as client:
+        view_response = await _get_with_retry(
+            client,
             "https://api.bilibili.com/x/web-interface/view",
             params={"bvid": bvid},
         )
-        view_response.raise_for_status()
         payload = view_response.json()
         if payload.get("code") != 0:
             raise RuntimeError(payload.get("message") or "B 站元信息接口返回失败")
@@ -168,17 +187,21 @@ async def fetch(url: str) -> VideoMeta:
             chapters = chapters_from_pages(pages)
 
         if cid is not None:
-            player_response = await client.get(
-                "https://api.bilibili.com/x/player/wbi/v2",
-                params={"bvid": bvid, "cid": cid},
-            )
-            if player_response.status_code == 200:
+            try:
+                player_response = await _get_with_retry(
+                    client,
+                    "https://api.bilibili.com/x/player/wbi/v2",
+                    params={"bvid": bvid, "cid": cid},
+                )
                 player_data = player_response.json().get("data") or {}
                 subtitles = ((player_data.get("subtitle") or {}).get("subtitles") or [])
                 if subtitles:
                     subtitle_url = subtitles[0].get("subtitle_url")
                     if subtitle_url and subtitle_url.startswith("//"):
                         subtitle_url = f"https:{subtitle_url}"
+            except Exception:
+                # Subtitle fetch failure should not block meta fetch; subtitle_url stays None
+                pass
 
     base_title = data.get("title") or bvid
     if selected_page is not None and len(pages) > 1 and page_number is not None:

@@ -1,4 +1,5 @@
 import json
+import hashlib
 import time
 import uuid
 from pathlib import Path
@@ -30,6 +31,7 @@ def _row_to_job(row: Any) -> Job:
         status=JobStatus(row["status"]),
         error_stage=row["error_stage"],
         error_message=row["error_message"],
+        error_code=row["error_code"] if "error_code" in row.keys() else None,
         audio_path=row["audio_path"],
         subtitle_source=row["subtitle_source"],
         chapters=chapters,
@@ -40,7 +42,15 @@ def _row_to_job(row: Any) -> Job:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         completed_at=row["completed_at"],
+        stream_finished_at=row["stream_finished_at"] if "stream_finished_at" in row.keys() else None,
+        token_usage=json.loads(row["token_usage_json"]) if "token_usage_json" in row.keys() and row["token_usage_json"] else None,
+        content_hash=row["content_hash"] if "content_hash" in row.keys() else None,
+        stage_timings=json.loads(row["stage_timings_json"]) if "stage_timings_json" in row.keys() and row["stage_timings_json"] else None,
     )
+
+
+def content_hash_for(bvid: str, cid: int | None) -> str:
+    return hashlib.sha256(f"{bvid}:{cid or ''}".encode("utf-8")).hexdigest()
 
 
 def create_job(url: str, options: JobOptions, option_overrides: dict[str, Any] | None = None) -> Job:
@@ -82,12 +92,18 @@ def get_job(job_id: str) -> Job | None:
     return _row_to_job(row) if row else None
 
 
-def list_jobs(limit: int = 50, offset: int = 0) -> list[Job]:
+def list_jobs(limit: int = 50, offset: int = 0, cursor: int | None = None) -> list[Job]:
     with connect() as connection:
-        rows = connection.execute(
-            "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (limit, offset),
-        ).fetchall()
+        if cursor is not None:
+            rows = connection.execute(
+                "SELECT * FROM jobs WHERE created_at < ? ORDER BY created_at DESC LIMIT ?",
+                (cursor, limit),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
     return [_row_to_job(row) for row in rows]
 
 
@@ -123,16 +139,47 @@ def list_jobs_by_status(statuses: set[JobStatus]) -> list[Job]:
     return [_row_to_job(row) for row in rows]
 
 
+def list_jobs_by_status_before(statuses: set[JobStatus], before_ms: int) -> list[Job]:
+    if not statuses:
+        return []
+    placeholders = ",".join("?" for _ in statuses)
+    values = [status.value for status in statuses]
+    with connect() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT * FROM jobs
+            WHERE status IN ({placeholders}) AND updated_at < ?
+            ORDER BY updated_at ASC
+            """,
+            [*values, before_ms],
+        ).fetchall()
+    return [_row_to_job(row) for row in rows]
+
+
 def update_status(job_id: str, status: JobStatus) -> None:
     completed_at = now_ms() if status == JobStatus.COMPLETED else None
+    stream_finished_at = now_ms() if status in {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED} else None
     with connect() as connection:
         connection.execute(
             """
             UPDATE jobs
-            SET status = ?, updated_at = ?, completed_at = COALESCE(?, completed_at)
+            SET status = ?, updated_at = ?, completed_at = COALESCE(?, completed_at),
+                stream_finished_at = COALESCE(?, stream_finished_at)
             WHERE id = ?
             """,
-            (status.value, now_ms(), completed_at, job_id),
+            (status.value, now_ms(), completed_at, stream_finished_at, job_id),
+        )
+
+
+def clear_error(job_id: str) -> None:
+    with connect() as connection:
+        connection.execute(
+            """
+            UPDATE jobs
+            SET error_stage = NULL, error_message = NULL, error_code = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (now_ms(), job_id),
         )
 
 
@@ -141,10 +188,10 @@ def update_meta(job_id: str, *, bvid: str, cid: int | None, title: str, author: 
         connection.execute(
             """
             UPDATE jobs
-            SET bvid = ?, cid = ?, title = ?, author = ?, duration = ?, updated_at = ?
+            SET bvid = ?, cid = ?, title = ?, author = ?, duration = ?, content_hash = ?, updated_at = ?
             WHERE id = ?
             """,
-            (bvid, cid, title, author, duration, now_ms(), job_id),
+            (bvid, cid, title, author, duration, content_hash_for(bvid, cid), now_ms(), job_id),
         )
 
 
@@ -172,6 +219,14 @@ def set_audio_path(job_id: str, audio_path: Path) -> None:
         )
 
 
+def clear_audio_path(job_id: str) -> None:
+    with connect() as connection:
+        connection.execute(
+            "UPDATE jobs SET audio_path = NULL, updated_at = ? WHERE id = ?",
+            (now_ms(), job_id),
+        )
+
+
 def set_subtitle_source(job_id: str, subtitle_source: str) -> None:
     with connect() as connection:
         connection.execute(
@@ -193,6 +248,19 @@ def set_transcript(job_id: str, items: list[TranscriptItem]) -> None:
         connection.execute(
             "UPDATE jobs SET transcript_json = ?, updated_at = ? WHERE id = ?",
             (json.dumps(payload, ensure_ascii=False), now_ms(), job_id),
+        )
+
+
+def clear_transcript(job_id: str) -> None:
+    """Clear transcript, subtitle source, and summary so the job can re-run ASR."""
+    with connect() as connection:
+        connection.execute(
+            """
+            UPDATE jobs
+            SET transcript_json = NULL, subtitle_source = NULL, summary_path = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (now_ms(), job_id),
         )
 
 
@@ -225,16 +293,90 @@ def set_summary_path(job_id: str, summary_path: Path) -> None:
         )
 
 
-def set_error(job_id: str, stage: str, message: str) -> None:
+def add_stage_timing(job_id: str, stage: str, started_at: int, ended_at: int) -> None:
+    duration_ms = max(0, ended_at - started_at)
+    with connect() as connection:
+        row = connection.execute("SELECT stage_timings_json FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        timings = json.loads(row["stage_timings_json"]) if row and row["stage_timings_json"] else []
+        timings.append(
+            {
+                "stage": stage,
+                "started_at": started_at,
+                "ended_at": ended_at,
+                "duration_ms": duration_ms,
+            }
+        )
+        connection.execute(
+            "UPDATE jobs SET stage_timings_json = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(timings, ensure_ascii=False), now_ms(), job_id),
+        )
+
+
+def add_token_usage(job_id: str, usage: dict[str, Any]) -> None:
+    with connect() as connection:
+        row = connection.execute("SELECT token_usage_json FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        current = json.loads(row["token_usage_json"]) if row and row["token_usage_json"] else {}
+        next_usage = dict(current)
+        for key in ("input_tokens", "output_tokens", "total_tokens"):
+            next_usage[key] = int(next_usage.get(key) or 0) + int(usage.get(key) or 0)
+        next_usage["cost_estimate"] = usage.get("cost_estimate")
+        connection.execute(
+            "UPDATE jobs SET token_usage_json = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(next_usage, ensure_ascii=False), now_ms(), job_id),
+        )
+
+
+def usage_since(since_ms: int) -> dict[str, Any]:
+    with connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT token_usage_json FROM jobs
+            WHERE completed_at IS NOT NULL AND completed_at >= ? AND token_usage_json IS NOT NULL
+            """,
+            (since_ms,),
+        ).fetchall()
+    jobs_count = 0
+    totals = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    for row in rows:
+        usage = json.loads(row["token_usage_json"])
+        jobs_count += 1
+        for key in totals:
+            totals[key] += int(usage.get(key) or 0)
+    return {"jobs_count": jobs_count, **totals, "cost_estimate": None}
+
+
+def clear_summary_path(job_id: str) -> None:
+    with connect() as connection:
+        connection.execute(
+            "UPDATE jobs SET summary_path = NULL, completed_at = NULL, updated_at = ? WHERE id = ?",
+            (now_ms(), job_id),
+        )
+
+
+def set_error(job_id: str, stage: str, message: str, code: str | None = None) -> None:
     with connect() as connection:
         connection.execute(
             """
             UPDATE jobs
-            SET error_stage = ?, error_message = ?, updated_at = ?
+            SET error_stage = ?, error_message = ?, error_code = ?, updated_at = ?
             WHERE id = ?
             """,
-            (stage, message, now_ms(), job_id),
+            (stage, message, code, now_ms(), job_id),
         )
+
+
+def find_latest_by_video(bvid: str, cid: int | None) -> Job | None:
+    with connect() as connection:
+        row = connection.execute(
+            """
+            SELECT * FROM jobs
+            WHERE content_hash = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (content_hash_for(bvid, cid),),
+        ).fetchone()
+    return _row_to_job(row) if row else None
 
 
 def read_summary(job: Job) -> str | None:

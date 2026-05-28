@@ -35,8 +35,9 @@ export function ToastProvider({children}: {children: ReactNode}) {
   const push = (type: ToastType, title: string, message?: string, options?: ToastOptions) => {
     const id = Date.now() + Math.random()
     setToasts((current) => [...current, {id, type, title, message}])
-    if (options?.autoClose) {
-      window.setTimeout(() => remove(id), 2800)
+    const shouldAutoClose = options?.autoClose ?? type !== 'error'
+    if (shouldAutoClose) {
+      window.setTimeout(() => remove(id), 4000)
     }
   }
   const value = useMemo<ToastContextValue>(() => ({
@@ -53,21 +54,21 @@ export function ToastProvider({children}: {children: ReactNode}) {
           const Icon = icons[toast.type]
           const copyText = [toast.title, toast.message].filter(Boolean).join('\n')
           return (
-            <div key={toast.id} className={`rounded-2xl border bg-white/95 p-4 shadow-bili backdrop-blur animate-pop ${
-              toast.type === 'error' ? 'border-danger/20' : toast.type === 'success' ? 'border-accent/20' : 'border-line'
+            <div key={toast.id} className={`animate-pop rounded-2xl border bg-panel/95 p-4 shadow-card backdrop-blur ${
+              toast.type === 'error' ? 'border-danger/20' : toast.type === 'success' ? 'border-success/20' : 'border-line'
             }`}>
               <div className="flex gap-3">
-                <Icon size={20} className={toast.type === 'error' ? 'text-danger' : 'text-pink'} />
+                <Icon size={20} className={toast.type === 'error' ? 'text-danger' : toast.type === 'success' ? 'text-success' : 'text-brand'} />
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-ink">{toast.title}</p>
                   {toast.message && <p className="mt-1 break-words text-sm leading-5 text-muted">{toast.message}</p>}
                 </div>
-                <button type="button" aria-label="关闭提示" onClick={() => remove(toast.id)} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted transition hover:bg-lift active:scale-95">
+                <button type="button" aria-label="关闭提示" onClick={() => remove(toast.id)} className="grid h-8 w-8 shrink-0 place-items-center rounded-xl text-muted transition hover:bg-lift active:scale-95">
                   <X size={16} />
                 </button>
               </div>
               {toast.type === 'error' && (
-                <button type="button" onClick={() => navigator.clipboard.writeText(copyText)} className="mt-3 inline-flex min-h-8 items-center gap-2 rounded-full bg-lift px-3 text-sm text-muted transition hover:bg-line/70 active:scale-95">
+                <button type="button" onClick={() => navigator.clipboard.writeText(copyText)} className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-xl bg-lift px-3 text-sm text-muted transition hover:bg-line/70 active:scale-95">
                   <Copy size={14} />
                   复制错误
                 </button>

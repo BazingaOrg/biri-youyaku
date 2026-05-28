@@ -1,9 +1,10 @@
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from biri_youyaku.auth import require_token
 from biri_youyaku.config import settings
+from biri_youyaku.jobs import repo
 from biri_youyaku.jobs.model import JobOptions
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_token)])
@@ -38,6 +39,30 @@ async def get_config_defaults() -> dict:
             "audio_download_enabled": True,
         },
     }
+
+
+@router.get("/config/runtime")
+async def get_runtime_config() -> dict:
+    return {
+        "ok": True,
+        "llm_configured": bool(settings.llm_api_key),
+        "email_configured": bool(settings.email_enabled and settings.email_webhook_url),
+        "bilibili_cookie_configured": bool(settings.bili_sessdata),
+    }
+
+
+@router.get("/usage")
+async def get_usage(range: str = Query(default="7d")) -> dict:
+    if not range.endswith("d"):
+        raise HTTPException(status_code=400, detail="range must be like 7d")
+    try:
+        days = int(range[:-1])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="range must be like 7d") from exc
+    if days <= 0 or days > 365:
+        raise HTTPException(status_code=400, detail="range days must be between 1 and 365")
+    since_ms = repo.now_ms() - days * 24 * 60 * 60 * 1000
+    return {"ok": True, "range": range, "usage": repo.usage_since(since_ms)}
 
 
 @router.post("/llm/models")
