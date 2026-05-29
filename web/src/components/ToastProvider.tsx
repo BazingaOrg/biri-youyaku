@@ -35,9 +35,10 @@ export function ToastProvider({children}: {children: ReactNode}) {
   const push = (type: ToastType, title: string, message?: string, options?: ToastOptions) => {
     const id = Date.now() + Math.random()
     setToasts((current) => [...current, {id, type, title, message}])
-    const shouldAutoClose = options?.autoClose ?? type !== 'error'
-    if (shouldAutoClose) {
-      window.setTimeout(() => remove(id), 4000)
+    // 提示默认常驻，等用户主动关闭；如显式传 autoClose: true 才走定时关闭。
+    if (options?.autoClose === true) {
+      const duration = type === 'success' ? 6000 : 4000
+      window.setTimeout(() => remove(id), duration)
     }
   }
   const value = useMemo<ToastContextValue>(() => ({
@@ -49,7 +50,7 @@ export function ToastProvider({children}: {children: ReactNode}) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="fixed right-4 top-4 z-50 grid w-[calc(100vw-2rem)] max-w-sm gap-3">
+      <div className="pointer-events-none fixed right-4 top-4 z-50 grid max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-sm gap-3 overflow-y-auto [&>*]:pointer-events-auto">
         {toasts.map((toast) => {
           const Icon = icons[toast.type]
           const copyText = [toast.title, toast.message].filter(Boolean).join('\n')
