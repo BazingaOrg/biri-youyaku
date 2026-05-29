@@ -2,8 +2,10 @@ import asyncio
 import logging
 import math
 import re
+import shutil
 import subprocess
 import tempfile
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -22,19 +24,36 @@ logger = logging.getLogger(__name__)
 SENSEVOICE_TAG_RE = re.compile(r"<\|[^|>]+?\|>")
 SENSEVOICE_MARKERS = str.maketrans("", "", "🎼😀😔😡😰🤢😮👏🤣😭🤧😷")
 
-# 60 秒一段：足够短能定时报进度，又不会让 funasr 的开销过大。
+# 60 秒一段：足够短能定时报进度，又不会让 funasr 单段开销过大。
 CHUNK_SECONDS = 60.0
+
+
+def _has_ffmpeg() -> bool:
+    return bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
 
 
 @lru_cache(maxsize=1)
 def _load_model():
-    """加载 SenseVoice。因为我们自己做了分段，模型不再装 VAD（chunk 已经够短）。"""
+    """加载 SenseVoice。
+
+    - 有 ffmpeg：我们自己切 chunk，模型可以不带 VAD（每段 60s，VAD 多此一举）。
+    - 没 ffmpeg：模型必须带上 fsmn-vad，否则 funasr 会在 1h 整段上跑死。
+    """
     try:
         from funasr import AutoModel
     except ImportError as exc:
         raise RuntimeError("SenseVoice 依赖未安装，请安装 server[asr]") from exc
 
     model_name = settings.sensevoice_model_dir or "iic/SenseVoiceSmall"
+    use_vad = not _has_ffmpeg()
+    if use_vad:
+        logger.warning("未检测到 ffmpeg/ffprobe，SenseVoice 将启用内置 VAD 兜底（无逐段进度）")
+        return AutoModel(
+            model=model_name,
+            vad_model="fsmn-vad",
+            vad_kwargs={"max_single_segment_time": 30000},
+            disable_update=True,
+        )
     return AutoModel(model=model_name, disable_update=True)
 
 
@@ -52,11 +71,7 @@ def clean_transcription_text(text: str) -> str:
 
 
 def _segments_from_result(result: Any, time_offset: float) -> list[TranscriptItem]:
-    """把 funasr 返回拍平成 TranscriptItem 列表。
-
-    funasr 返回形如 ``[{"text": "...", "sentence_info"?: [{"start"/"end" ms, "text"}]}]``。
-    `time_offset` 是这段 chunk 在整段音频里的起始秒数，用来还原全局时间戳。
-    """
+    """把 funasr 返回拍平成 TranscriptItem 列表。"""
     items: list[TranscriptItem] = []
     if not isinstance(result, list):
         return items
@@ -88,7 +103,9 @@ def _segments_from_result(result: Any, time_offset: float) -> list[TranscriptIte
 
 
 def _probe_duration(audio_path: Path) -> float:
-    """用 ffprobe 读时长（秒）。失败回退到 0 表示无法分段。"""
+    """用 ffprobe 读时长（秒）。失败返回 0。"""
+    if not shutil.which("ffprobe"):
+        return 0.0
     try:
         result = subprocess.run(
             [
@@ -100,13 +117,13 @@ def _probe_duration(audio_path: Path) -> float:
             capture_output=True, text=True, check=True, timeout=30,
         )
         return float(result.stdout.strip() or 0)
-    except (subprocess.SubprocessError, ValueError, FileNotFoundError):
-        logger.warning("ffprobe 拿不到时长，将按整段推理：%s", audio_path)
+    except (subprocess.SubprocessError, ValueError) as exc:
+        logger.warning("ffprobe 读不到时长 %s：%s", audio_path, exc)
         return 0.0
 
 
 def _slice_audio(audio_path: Path, start: float, duration: float, out_path: Path) -> None:
-    """ffmpeg 切一段单声道 16k WAV，喂给 funasr。"""
+    """ffmpeg 切一段单声道 16k WAV。"""
     subprocess.run(
         [
             "ffmpeg", "-y", "-loglevel", "error",
@@ -121,17 +138,12 @@ def _slice_audio(audio_path: Path, start: float, duration: float, out_path: Path
 
 def _generate_sync(audio_path: Path, language: str) -> Any:
     model = _load_model()
-    return model.generate(
-        input=str(audio_path),
-        language=language,
-        use_itn=True,
-    )
+    return model.generate(input=str(audio_path), language=language, use_itn=True)
 
 
 async def _emit(on_progress: ProgressCallback | None, items: list[TranscriptItem], pct: float) -> None:
     if on_progress is None:
         return
-    # preview: 最近一段的尾巴，方便前端展示「正在识别…<某句话>」
     last_text = items[-1].text if items else ""
     preview = last_text[-200:] if len(last_text) > 200 else last_text
     try:
@@ -149,19 +161,30 @@ class SenseVoiceTranscriber:
     ) -> list[TranscriptItem]:
         audio_path = request.audio_path
         language = request.language
-        duration = await asyncio.to_thread(_probe_duration, audio_path)
 
-        # 拿不到时长 / 短音频：退回单次推理。仍然走 to_thread 释放 event loop。
-        if duration <= CHUNK_SECONDS:
+        ffmpeg_ok = _has_ffmpeg()
+        duration = await asyncio.to_thread(_probe_duration, audio_path) if ffmpeg_ok else 0.0
+
+        # 情况 A：拿不到时长或音频较短 → 单次推理（短视频 / 没有 ffmpeg 的回退）
+        if duration <= CHUNK_SECONDS or not ffmpeg_ok:
+            logger.info(
+                "SenseVoice 单次推理（duration=%.1fs, ffmpeg=%s, vad-fallback=%s）",
+                duration, ffmpeg_ok, not ffmpeg_ok,
+            )
+            t0 = time.monotonic()
             result = await asyncio.to_thread(_generate_sync, audio_path, language)
             items = _segments_from_result(result, 0.0)
+            logger.info("SenseVoice 单次推理完成：%d 段，耗时 %.1fs", len(items), time.monotonic() - t0)
             await _emit(on_progress, items, 1.0)
             return items
 
+        # 情况 B：长视频 + ffmpeg 可用 → 应用层切段，逐段推理 + 进度回传
         chunk_count = max(1, math.ceil(duration / CHUNK_SECONDS))
+        logger.info(
+            "SenseVoice 分段推理：duration=%.1fs → %d 段（%.0fs/段）",
+            duration, chunk_count, CHUNK_SECONDS,
+        )
         all_items: list[TranscriptItem] = []
-        logger.info("SenseVoice 分段：总时长 %.1fs → %d 段（%.0fs/段）", duration, chunk_count, CHUNK_SECONDS)
-
         with tempfile.TemporaryDirectory(prefix="biri_asr_") as tmpdir:
             tmpdir_path = Path(tmpdir)
             for idx in range(chunk_count):
@@ -170,17 +193,24 @@ class SenseVoiceTranscriber:
                 if chunk_dur <= 0.2:
                     continue
                 chunk_path = tmpdir_path / f"chunk_{idx:04d}.wav"
+                t0 = time.monotonic()
                 try:
                     await asyncio.to_thread(_slice_audio, audio_path, start, chunk_dur, chunk_path)
                     result = await asyncio.to_thread(_generate_sync, chunk_path, language)
                 except Exception:
-                    logger.exception("第 %d 段转写失败，跳过", idx + 1)
+                    logger.exception("第 %d/%d 段转写失败，跳过", idx + 1, chunk_count)
                     continue
-                all_items.extend(_segments_from_result(result, time_offset=start))
+                new_items = _segments_from_result(result, time_offset=start)
+                all_items.extend(new_items)
                 pct = (idx + 1) / chunk_count
+                logger.info(
+                    "段 %d/%d 完成：本段 %d 句，累计 %d 句，耗时 %.1fs（进度 %.0f%%）",
+                    idx + 1, chunk_count, len(new_items), len(all_items),
+                    time.monotonic() - t0, pct * 100,
+                )
                 await _emit(on_progress, all_items, pct)
-                # 主动让步：避免 CPU 长时间占满影响其他协程
                 await asyncio.sleep(0)
+        logger.info("SenseVoice 分段推理完成：共 %d 句", len(all_items))
         return all_items
 
 
