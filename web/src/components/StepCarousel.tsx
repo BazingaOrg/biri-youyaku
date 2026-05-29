@@ -57,7 +57,7 @@ export function StepCarousel({steps, currentIndex}: StepCarouselProps) {
               <div key={step.key} className="w-full shrink-0 pr-1">
                 <div className={`grid gap-3 rounded-2xl border p-4 sm:p-5 ${
                   isFailed
-                    ? 'border-danger/40 bg-red-50/60'
+                    ? 'border-danger/40 bg-danger/10'
                     : step.state === 'active'
                       ? 'border-brand/30 bg-brandSoft/40'
                       : 'border-line bg-lift'

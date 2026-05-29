@@ -198,7 +198,8 @@ async def run_until_transcript(job_id: str) -> None:
             current_stage = JobStatus.TRANSCRIBING.value
             await transition(job_id, JobStatus.TRANSCRIBING)
             async with _io_semaphore:
-                items = await _with_timeout(JobStatus.TRANSCRIBING, 1800, transcribe_audio(fresh_job, audio_path))
+                # 1h+ 视频也要给余量，SenseVoice CPU 推理 1h 音频可能要 20-40min
+                items = await _with_timeout(JobStatus.TRANSCRIBING, 3600, transcribe_audio(fresh_job, audio_path))
         _raise_if_canceled(job_id)
         repo.set_transcript(job_id, items)
         await transition(job_id, JobStatus.TRANSCRIPT_READY)

@@ -1,5 +1,7 @@
 module.exports = {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
+  // 主题完全跟随系统：让 dark: 变体响应 prefers-color-scheme，无需在 html 加 class。
+  darkMode: 'media',
   theme: {
     extend: {
       colors: {

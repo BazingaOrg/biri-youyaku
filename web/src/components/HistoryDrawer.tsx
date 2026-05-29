@@ -117,9 +117,9 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
                             job.status === 'COMPLETED'
                               ? 'bg-brandSoft text-brand'
                               : job.status === 'FAILED'
-                                ? 'bg-red-50 text-danger'
+                                ? 'bg-danger/15 text-danger'
                                 : isRunning
-                                  ? 'bg-amber-50 text-warning'
+                                  ? 'bg-warning/15 text-warning'
                                   : 'bg-panel text-muted'
                           }`}
                         >

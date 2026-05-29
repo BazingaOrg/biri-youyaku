@@ -260,7 +260,7 @@ function renderSubtitle(job: Job) {
 function renderSummary(job: Job) {
   if (job.summary) {
     return (
-      <div className="prose prose-sm max-h-48 max-w-none overflow-y-auto break-words text-ink prose-a:text-brand">
+      <div className="prose prose-sm max-h-48 max-w-none overflow-y-auto break-words text-ink dark:prose-invert prose-a:text-brand">
         <ReactMarkdown>{job.summary}</ReactMarkdown>
       </div>
     )
@@ -316,7 +316,7 @@ function RunningView({
       <MetaBar job={job} />
       <StepCarousel steps={steps} currentIndex={currentIdx} />
       {failure && (
-        <div className="rounded-2xl border border-danger/30 bg-red-50/60 p-4 text-sm text-danger">
+        <div className="rounded-2xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
           <p className="font-semibold">{failure.title}</p>
           <p className="mt-1 break-words leading-6">{failure.message}</p>
         </div>
@@ -365,7 +365,7 @@ function DoneView({
           <span className="truncate text-xs text-muted">{job.options.llm_model}</span>
         </div>
         {job.summary ? (
-          <div className="prose prose-sm max-w-none break-words text-ink prose-headings:tracking-[-0.012em] prose-a:text-brand">
+          <div className="prose prose-sm max-w-none break-words text-ink dark:prose-invert prose-headings:tracking-[-0.012em] prose-a:text-brand">
             <ReactMarkdown>{job.summary}</ReactMarkdown>
           </div>
         ) : (
