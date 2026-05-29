@@ -96,9 +96,11 @@ http://localhost:5173
 
 ```env
 VITE_API_BASE_URL=http://localhost:17821
+# 后端 API_TOKEN 留空时这里也留空；如果后端有 API_TOKEN，这里填同一个值
+VITE_API_TOKEN=
 ```
 
-如果后端设置了 `API_TOKEN`，首次打开前端时在授权框输入同一个 token。token 只保存在当前浏览器的 `localStorage`，不会打包进浏览器代码里。公网使用时，仍建议配合 Vercel Protection、Cloudflare Access 或其他访问保护。
+前端不会再弹窗让你输入 token。token 完全走环境变量，构建时注入。本地开发时建议两端都留空，免去鉴权；公网部署再配合反向代理（Vercel Protection、Cloudflare Access 等）做访问控制。
 
 ## 构建
 
@@ -129,9 +131,11 @@ Vercel 环境变量：
 
 ```env
 VITE_API_BASE_URL=https://your-api-domain.example.com
+# 与后端 API_TOKEN 一致；若用反向代理鉴权可以留空
+VITE_API_TOKEN=和后端一致的随机字符串
 ```
 
-不要在 Vercel 环境变量里配置 API token。部署后首次打开页面，在浏览器授权框里输入后端 `API_TOKEN`。
+注意：`VITE_API_TOKEN` 会被打进前端 JS bundle，任何能访问页面的人都能在 devtools 里看到。把它当成「弱口令」处理，公网部署最好叠一层 Vercel Protection / Cloudflare Access。
 
 Cloudflare Tunnel 示例：
 

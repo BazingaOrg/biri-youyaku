@@ -83,18 +83,13 @@ export interface Job {
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:17821'
-const tokenStorageKey = 'biri-youyaku-api-token'
+// Token is purely a deployment concern: backed by VITE_API_TOKEN at build
+// time. Leave it empty during local dev (with backend API_TOKEN also empty)
+// to skip auth entirely. There is no end-user prompt for this value.
+const API_TOKEN = (import.meta.env.VITE_API_TOKEN ?? '').trim()
 
 export function getApiToken() {
-  return window.localStorage.getItem(tokenStorageKey) || ''
-}
-
-export function setApiToken(token: string) {
-  if (token.trim()) {
-    window.localStorage.setItem(tokenStorageKey, token.trim())
-  } else {
-    window.localStorage.removeItem(tokenStorageKey)
-  }
+  return API_TOKEN
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

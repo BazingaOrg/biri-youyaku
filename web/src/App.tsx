@@ -6,7 +6,6 @@ import {HomePage} from './pages/HomePage'
 import {JobPage} from './pages/JobPage'
 import {ToastProvider} from './components/ToastProvider'
 import {ThemeProvider} from './components/ThemeProvider'
-import {ApiTokenDialog} from './components/ApiTokenDialog'
 import {useShortcuts} from './hooks/useShortcuts'
 
 export default function App() {
@@ -45,7 +44,6 @@ export default function App() {
             </div>
           </div>
         )}
-        <ApiTokenDialog />
       </ToastProvider>
     </ThemeProvider>
   )

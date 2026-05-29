@@ -1,10 +1,12 @@
 from collections.abc import AsyncIterator
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from biri_youyaku.auth import _expected_token
 from biri_youyaku.config import settings
 from biri_youyaku.db import init_db
 from biri_youyaku.jobs.cleanup import cleanup_loop, cleanup_once
@@ -21,6 +23,13 @@ from biri_youyaku.routes import (
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
+    log = logging.getLogger("biri_youyaku.startup")
+    token = _expected_token()
+    log.info(
+        "API_TOKEN auth %s (token length=%d)",
+        "enabled" if token else "disabled",
+        len(token),
+    )
     init_db()
     await cleanup_once()
     recover_unfinished_jobs()
