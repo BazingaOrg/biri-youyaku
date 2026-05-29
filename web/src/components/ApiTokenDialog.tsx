@@ -1,12 +1,41 @@
-import {useState} from 'react'
+import {useEffect, useState} from 'react'
 import {KeyRound, X} from 'lucide-react'
-import {getApiToken, setApiToken} from '../lib/api'
+import {getApiToken, getRuntimeConfig, setApiToken} from '../lib/api'
 
 const dismissedKey = 'biri-youyaku-token-dialog-dismissed'
 
 export function ApiTokenDialog() {
-  const [open, setOpen] = useState(() => !getApiToken() && window.localStorage.getItem(dismissedKey) !== '1')
+  const [open, setOpen] = useState(false)
   const [token, setToken] = useState('')
+
+  useEffect(() => {
+    // Only consider opening if there's no token saved and the user hasn't
+    // dismissed it before. Otherwise we don't even need to ping the backend.
+    if (getApiToken() || window.localStorage.getItem(dismissedKey) === '1') {
+      return
+    }
+    let cancelled = false
+    getRuntimeConfig()
+      .then((response) => {
+        if (cancelled) return
+        if (response.api_token_required) {
+          setOpen(true)
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return
+        // /v1/config/runtime is unauthenticated now, so a 401/403 here almost
+        // certainly means an older backend that still requires a token. Be safe
+        // and offer the dialog so the user can paste one in.
+        const message = err instanceof Error ? err.message : ''
+        if (/401|403|unauthor/i.test(message)) {
+          setOpen(true)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   if (!open) {
     return null
@@ -27,7 +56,7 @@ export function ApiTokenDialog() {
           <KeyRound size={22} />
         </span>
         <h2 className="mt-4 text-lg font-semibold">输入 API Token</h2>
-        <p className="mt-2 text-sm leading-6 text-muted">Token 只保存在当前浏览器的 localStorage，不会打进前端 bundle。</p>
+        <p className="mt-2 text-sm leading-6 text-muted">后端启用了 API_TOKEN 校验，请粘贴 Bearer Token。Token 只保存在当前浏览器的 localStorage，不会打进前端 bundle。</p>
         <input value={token} onChange={(event) => setToken(event.target.value)} placeholder="Bearer token" className="mt-4 min-h-11 w-full rounded-2xl border border-line bg-lift px-3 text-sm outline-none focus:border-brand" />
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={close} className="min-h-11 rounded-2xl px-4 text-sm font-medium text-muted transition hover:bg-lift active:scale-95">暂不填写</button>

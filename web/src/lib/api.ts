@@ -153,7 +153,13 @@ export function getConfigDefaults() {
 }
 
 export function getRuntimeConfig() {
-  return request<{ok: true; llm_configured: boolean; email_configured: boolean; bilibili_cookie_configured: boolean}>('/v1/config/runtime')
+  return request<{
+    ok: true
+    api_token_required: boolean
+    llm_configured: boolean
+    email_configured: boolean
+    bilibili_cookie_configured: boolean
+  }>('/v1/config/runtime')
 }
 
 export function previewJob(url: string) {

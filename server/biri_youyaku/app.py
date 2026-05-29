@@ -10,7 +10,12 @@ from biri_youyaku.db import init_db
 from biri_youyaku.jobs.cleanup import cleanup_loop, cleanup_once
 from biri_youyaku.jobs.runner import recover_unfinished_jobs
 from biri_youyaku.logging import configure_logging
-from biri_youyaku.routes import config_router, healthz_router, jobs_router
+from biri_youyaku.routes import (
+    config_public_router,
+    config_router,
+    healthz_router,
+    jobs_router,
+)
 
 
 @asynccontextmanager
@@ -39,6 +44,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.include_router(config_public_router)
     app.include_router(config_router)
     app.include_router(healthz_router)
     app.include_router(jobs_router)

@@ -8,6 +8,9 @@ from biri_youyaku.jobs import repo
 from biri_youyaku.jobs.model import JobOptions
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_token)])
+# Routes that are intentionally not protected by API_TOKEN — they only expose
+# booleans about whether something is configured, no secret values.
+public_router = APIRouter(prefix="/v1")
 
 
 class ModelDiscoveryPayload(BaseModel):
@@ -41,10 +44,11 @@ async def get_config_defaults() -> dict:
     }
 
 
-@router.get("/config/runtime")
+@public_router.get("/config/runtime")
 async def get_runtime_config() -> dict:
     return {
         "ok": True,
+        "api_token_required": bool(settings.api_token),
         "llm_configured": bool(settings.llm_api_key),
         "email_configured": bool(settings.email_enabled and settings.email_webhook_url),
         "bilibili_cookie_configured": bool(settings.bili_sessdata),
