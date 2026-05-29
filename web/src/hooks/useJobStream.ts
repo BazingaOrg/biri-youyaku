@@ -58,6 +58,10 @@ export function useJobStream(jobId: string | null, onPatch: (patch: Partial<Job>
         onPatch({download_progress: JSON.parse(message.data) as Job['download_progress']})
         return
       }
+      if (message.event === 'transcribe_progress') {
+        onPatch({transcribe_progress: JSON.parse(message.data) as Job['transcribe_progress']})
+        return
+      }
       if (message.event === 'error') {
         const payload = JSON.parse(message.data) as {stage?: string; message?: string}
         terminalRef.current = true

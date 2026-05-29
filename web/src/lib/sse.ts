@@ -1,6 +1,12 @@
 import {API_BASE_URL, getApiToken} from './api'
 
-export type JobStreamEvent = 'status' | 'meta' | 'summary_chunk' | 'download_progress' | 'error'
+export type JobStreamEvent =
+  | 'status'
+  | 'meta'
+  | 'summary_chunk'
+  | 'download_progress'
+  | 'transcribe_progress'
+  | 'error'
 
 export interface JobStreamMessage {
   event: JobStreamEvent

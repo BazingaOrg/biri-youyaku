@@ -77,6 +77,12 @@ kbd {
   font-weight: 600;
 }
 
+/* 历史抽屉打开时，把 toast 层整体隐藏，避免堆多了盖住列表内容。
+   抽屉本身在 z-40，提示在 z-50；这里直接 display:none 比降 z-index 干净。 */
+body[data-history-drawer='open'] [data-toast-stack] {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

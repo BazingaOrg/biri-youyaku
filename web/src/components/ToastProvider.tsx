@@ -50,7 +50,11 @@ export function ToastProvider({children}: {children: ReactNode}) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed right-4 top-4 z-50 grid max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-sm gap-3 overflow-y-auto [&>*]:pointer-events-auto">
+      {/* 左下角；抽屉打开时整层隐藏（styles.css 里的 body[data-history-drawer="open"] 规则） */}
+      <div
+        data-toast-stack
+        className="pointer-events-none fixed bottom-4 left-4 z-50 grid max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-sm gap-3 overflow-y-auto [&>*]:pointer-events-auto"
+      >
         {toasts.map((toast) => {
           const Icon = icons[toast.type]
           const copyText = [toast.title, toast.message].filter(Boolean).join('\n')

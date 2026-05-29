@@ -237,10 +237,20 @@ function renderSubtitle(job: Job) {
     )
   }
   if (job.status === 'TRANSCRIBING') {
+    const pct = Math.round((job.transcribe_progress?.percent ?? 0))
+    const itemsCount = job.transcribe_progress?.items_count ?? job.transcript.length
+    const preview = job.transcribe_progress?.preview
     return (
-      <div className="grid gap-1">
-        <p>语音转写中…</p>
-        {job.transcript.length > 0 && <p className="text-xs">已识别 {job.transcript.length} 段</p>}
+      <div className="grid gap-2">
+        <p>语音转写中 {pct}%</p>
+        <div className="h-2 overflow-hidden rounded-full bg-panel">
+          <div
+            className="h-full rounded-full bg-brand transition-[width] duration-200"
+            style={{width: `${pct}%`}}
+          />
+        </div>
+        {itemsCount > 0 && <p className="text-xs">已识别 {itemsCount} 段</p>}
+        {preview && <p className="break-words text-xs text-ink/80">…{preview}</p>}
       </div>
     )
   }

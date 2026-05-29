@@ -47,6 +47,17 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
+  // 标记 body：toast 层会读这个属性，抽屉开着的时候自己隐藏，避免遮挡列表内容
+  useEffect(() => {
+    if (open) {
+      document.body.dataset.historyDrawer = 'open'
+      return () => {
+        delete document.body.dataset.historyDrawer
+      }
+    }
+    return undefined
+  }, [open])
+
   const handleOpen = (jobId: string) => {
     onClose()
     onOpenJob(jobId)

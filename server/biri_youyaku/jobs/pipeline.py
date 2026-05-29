@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 from biri_youyaku.config import settings
 from biri_youyaku.jobs import repo
 from biri_youyaku.jobs.model import Job, JobOptions
-from biri_youyaku.modules.asr.base import TranscribeRequest
+from biri_youyaku.modules.asr.base import ProgressCallback, TranscribeRequest
 from biri_youyaku.modules.asr.sensevoice import SenseVoiceTranscriber
 from biri_youyaku.modules.asr.whisper import FasterWhisperTranscriber
 from biri_youyaku.modules.bilibili import audio, meta, subtitle
@@ -37,10 +37,16 @@ async def download_audio(
     return audio_path
 
 
-async def transcribe_audio(job: Job, audio_path: Path) -> list[TranscriptItem]:
+async def transcribe_audio(
+    job: Job,
+    audio_path: Path,
+    *,
+    on_progress: ProgressCallback | None = None,
+) -> list[TranscriptItem]:
     transcriber = FasterWhisperTranscriber() if settings.asr_model == "faster-whisper" else SenseVoiceTranscriber()
     items = await transcriber.transcribe(
-        TranscribeRequest(audio_path=audio_path, language=job.options.language or settings.asr_language_default)
+        TranscribeRequest(audio_path=audio_path, language=job.options.language or settings.asr_language_default),
+        on_progress=on_progress,
     )
     repo.set_subtitle_source(job.id, "asr")
     return items

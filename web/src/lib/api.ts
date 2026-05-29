@@ -77,6 +77,11 @@ export interface Job {
     speed?: number
     eta?: number
   }
+  transcribe_progress?: {
+    percent?: number
+    items_count?: number
+    preview?: string
+  }
   options: JobOptions
   option_overrides: JobOptionOverrides
   audio_available: boolean
