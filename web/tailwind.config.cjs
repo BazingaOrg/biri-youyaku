@@ -19,7 +19,23 @@ module.exports = {
         danger: 'var(--color-danger)',
       },
       fontFamily: {
-        sans: ['Avenir Next', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        sans: [
+          '"Inter"',
+          '"PingFang SC"',
+          '"Hiragino Sans"',
+          '"Noto Sans CJK SC"',
+          'ui-sans-serif',
+          'system-ui',
+          'sans-serif',
+        ],
+        serif: [
+          '"Noto Serif JP"',
+          '"Source Han Serif SC"',
+          '"Songti SC"',
+          'ui-serif',
+          'Georgia',
+          'serif',
+        ],
       },
       boxShadow: {
         surface: 'var(--shadow-card)',

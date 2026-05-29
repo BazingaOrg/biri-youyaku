@@ -1,5 +1,6 @@
 import {Clipboard, X} from 'lucide-react'
 import type React from 'react'
+import {extractBiliUrl} from '../lib/url'
 
 interface UrlInputProps {
   value: string
@@ -14,14 +15,26 @@ export function UrlInput({value, loading, error, actions, onChange, onSubmit}: U
   const paste = async () => {
     try {
       const text = await navigator.clipboard.readText()
-      onChange(text)
+      onChange(extractBiliUrl(text))
     } catch {
       // Clipboard permission errors are browser UI decisions; keep the input usable.
     }
   }
 
+  const handlePaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
+    const text = event.clipboardData.getData('text')
+    if (!text) {
+      return
+    }
+    const extracted = extractBiliUrl(text)
+    if (extracted !== text) {
+      event.preventDefault()
+      onChange(extracted)
+    }
+  }
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter' || (event.key === 'Enter' && (event.metaKey || event.ctrlKey))) {
+    if (event.key === 'Enter') {
       onSubmit()
     }
   }
@@ -33,9 +46,11 @@ export function UrlInput({value, loading, error, actions, onChange, onSubmit}: U
           id="bili-url"
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          onPaste={handlePaste}
           onKeyDown={handleKeyDown}
           placeholder="https://www.bilibili.com/video/BV..."
-          className="min-h-14 w-full rounded-2xl border border-line bg-panel px-5 pr-28 text-base outline-none transition-[border-color,box-shadow] placeholder:text-muted/55 focus:border-brand focus:shadow-[0_0_0_3px_var(--color-brand-soft)]"
+          disabled={loading}
+          className="min-h-14 w-full rounded-2xl border border-line bg-panel px-5 pr-28 text-base outline-none transition-[border-color,box-shadow] placeholder:text-muted/55 focus:border-brand focus:shadow-[0_0_0_3px_var(--color-brand-soft)] disabled:opacity-60"
         />
         <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
           {value && (

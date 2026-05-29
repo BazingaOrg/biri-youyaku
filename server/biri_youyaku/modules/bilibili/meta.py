@@ -56,6 +56,38 @@ def extract_bvid(url: str) -> str:
     return match.group(1)
 
 
+_SHORT_HOSTS = ("b23.tv", "b.23.tv")
+
+
+def _is_short_link(url: str) -> bool:
+    try:
+        host = urlparse(url).netloc.lower()
+    except ValueError:
+        return False
+    return any(host == h or host.endswith("." + h) for h in _SHORT_HOSTS)
+
+
+async def resolve_short_url(url: str) -> str:
+    """Follow b23.tv / b.23.tv redirects until we land on a bilibili.com URL.
+
+    Falls back to the original URL on network failure so the caller still has a
+    chance to surface a parsing error to the user.
+    """
+    if not _is_short_link(url):
+        return url
+    try:
+        async with httpx.AsyncClient(
+            timeout=_BILI_TIMEOUT,
+            follow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0 Biri-Youyaku/0.1"},
+        ) as client:
+            response = await client.get(url)
+            final_url = str(response.url)
+            return final_url or url
+    except (httpx.HTTPError, httpx.TransportError):
+        return url
+
+
 def extract_page_number(url: str) -> int | None:
     parsed = urlparse(url)
     value = parse_qs(parsed.query).get("p", [None])[0]
@@ -141,8 +173,11 @@ def _cookie_header() -> str:
 
 
 async def fetch(url: str) -> VideoMeta:
-    bvid = extract_bvid(url)
-    page_number = extract_page_number(url)
+    # Short-link forms (b23.tv / b.23.tv) need to be expanded to a canonical
+    # bilibili.com URL before we can pull a BV id out of the path.
+    canonical_url = await resolve_short_url(url) if _is_short_link(url) else url
+    bvid = extract_bvid(canonical_url)
+    page_number = extract_page_number(canonical_url)
     headers = {
         "User-Agent": "Mozilla/5.0 Biri-Youyaku/0.1",
         "Referer": "https://www.bilibili.com",

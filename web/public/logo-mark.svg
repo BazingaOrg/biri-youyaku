@@ -1,9 +1,0 @@
-<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="biri-youyaku">
-  <rect width="256" height="256" rx="56" fill="#5B6DF0"/>
-  <path d="M150 44 L82 132 L120 132 L106 212 L174 124 L136 124 Z"
-        fill="#FFFFFF"
-        stroke="#FFFFFF"
-        stroke-width="6"
-        stroke-linejoin="round"
-        stroke-linecap="round"/>
-</svg>

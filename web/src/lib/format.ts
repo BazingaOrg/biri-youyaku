@@ -6,7 +6,7 @@ const statusLabels: Record<JobStatus, string> = {
   DOWNLOADING_AUDIO: '下载音频',
   TRANSCRIBING: '转录中',
   TRANSCRIPT_READY: '等待确认',
-  SUMMARIZING: '总结中',
+  SUMMARIZING: '要約中',
   EMAILING: '发送邮件',
   COMPLETED: '已完成',
   FAILED: '失败',
