@@ -266,7 +266,7 @@ function renderSubtitle(job: Job) {
 function renderSummary(job: Job) {
   if (job.summary) {
     return (
-      <div className="prose prose-sm max-h-48 max-w-none overflow-y-auto break-words text-ink dark:prose-invert prose-a:text-brand">
+      <div className="prose prose-sm max-h-48 max-w-none overflow-y-auto break-words text-ink dark:prose-invert prose-a:text-brand [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto [&_code]:break-all">
         <ReactMarkdown>{job.summary}</ReactMarkdown>
       </div>
     )
@@ -445,7 +445,7 @@ function DoneView({
           <span className="truncate text-xs text-muted">{job.options.llm_model}</span>
         </div>
         {job.summary ? (
-          <div className="prose prose-sm max-w-none break-words text-ink dark:prose-invert prose-headings:tracking-[-0.012em] prose-a:text-brand">
+          <div className="prose prose-sm max-w-none break-words text-ink dark:prose-invert prose-headings:tracking-[-0.012em] prose-a:text-brand [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto [&_code]:break-all">
             <ReactMarkdown>{job.summary}</ReactMarkdown>
           </div>
         ) : (

@@ -47,23 +47,43 @@ export function ToastProvider({children}: {children: ReactNode}) {
     info: (title, message, options) => push('info', title, message, options),
   }), [])
 
+  // 可见上限 3 条；超出的折叠（取最新 3 条，旧的合并成「+N 条更早」角标）
+  const VISIBLE_LIMIT = 3
+  const visible = toasts.slice(-VISIBLE_LIMIT)
+  const hiddenCount = toasts.length - visible.length
+  const clearOlder = () => setToasts((current) => current.slice(-VISIBLE_LIMIT))
+
   return (
     <ToastContext.Provider value={value}>
       {children}
-      {/* 右上角；抽屉改成底部弹层后两者不再重叠 */}
+      {/*
+        移动端 bottom-center，桌面端右上角：
+        - 手机：贴底，拇指能直接关；不挡顶部主内容
+        - 桌面：维持原 top-right
+        毛玻璃 + 半透明 bg-panel/80 + backdrop-blur，叠在内容上也能透视
+      */}
       <div
         data-toast-stack
-        className="pointer-events-none fixed right-4 top-4 z-50 flex max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-sm flex-col gap-3 overflow-y-auto [&>*]:pointer-events-auto"
+        className="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex max-h-[calc(100vh-2rem)] flex-col gap-2 overflow-y-auto sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-4 sm:w-[calc(100vw-2rem)] sm:max-w-sm sm:gap-3 [&>*]:pointer-events-auto"
       >
-        {toasts.map((toast) => {
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            onClick={clearOlder}
+            className="self-center rounded-full border border-line bg-panel/80 px-3 py-1 text-xs text-muted shadow-card backdrop-blur transition hover:bg-panel"
+          >
+            清掉更早的 {hiddenCount} 条
+          </button>
+        )}
+        {visible.map((toast) => {
           const Icon = icons[toast.type]
           const copyText = [toast.title, toast.message].filter(Boolean).join('\n')
           return (
-            <div key={toast.id} className={`animate-pop overflow-hidden rounded-2xl border bg-panel p-4 shadow-card ${
-              toast.type === 'error' ? 'border-danger/30' : toast.type === 'success' ? 'border-success/30' : 'border-line'
+            <div key={toast.id} className={`animate-pop overflow-hidden rounded-2xl border bg-panel/85 p-4 shadow-card backdrop-blur-md ${
+              toast.type === 'error' ? 'border-danger/40' : toast.type === 'success' ? 'border-success/40' : 'border-line'
             }`}>
               <div className="flex gap-3">
-                <Icon size={20} className={toast.type === 'error' ? 'text-danger' : toast.type === 'success' ? 'text-success' : 'text-brand'} />
+                <Icon size={20} className={`shrink-0 ${toast.type === 'error' ? 'text-danger' : toast.type === 'success' ? 'text-success' : 'text-brand'}`} />
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-ink">{toast.title}</p>
                   {toast.message && <p className="mt-1 break-words text-sm leading-5 text-muted">{toast.message}</p>}

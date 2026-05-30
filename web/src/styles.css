@@ -47,6 +47,12 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  /* 兜底：任何漏网的宽元素都不会让整页横向滚动 */
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   min-width: 320px;
