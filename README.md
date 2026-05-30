@@ -2,123 +2,137 @@
 
 [中文](README.md) | [English](README.en.md)
 
-粘贴 B 站视频链接，先获取字幕；没有字幕时自动转写音频。确认内容后，一键生成摘要，也可以把摘要发送到邮箱。
+粘贴 B 站视频链接，先取字幕；没字幕则下载音频转写。一键生成摘要，也可以发到邮箱。
 
-## 名字
+## 60 秒快速开始
 
-`要約`（ようやく / yōyaku）在日语里是“摘要、总结”，而同音的 `ようやく` 又有“终于、好不容易”的意思，所以这个名字有个小双关：点一下就把视频总结出来，终于不用从头看到尾也能看懂了。`biri` 来自 Bilibili 的日语口语叫法 `ビリビリ`，合在一起就是 `biri-youyaku`。
+需要 Python 3.11+、Node.js 18+、[uv](https://docs.astral.sh/uv/)、`npm`。
 
-## 灵感来源
+```bash
+# 1. 拷一份配置 + 填你的 LLM_API_KEY（OpenAI / 通义 / Moonshot 等 OpenAI 兼容接口都行）
+cp server/.env.example server/.env
+$EDITOR server/.env
 
-- [linzzzzzz/openclip](https://github.com/linzzzzzz/openclip)
-- [IndieKKY/bilibili-subtitle](https://github.com/IndieKKY/bilibili-subtitle)
+# 2. 一键起前后端 dev server（脚本会自动 cp web/.env、装依赖）
+bash scripts/dev.sh
+```
+
+打开 <http://127.0.0.1:5173>，粘贴一个 B 站视频链接即可。
+
+> 想用 Docker？`cp server/.env.example server/.env` 之后 `docker compose up --build`。
+
+---
 
 ## 项目结构
 
-- `web/`：前端页面。
-- `server/`：后端服务，负责获取字幕、下载音频、转写音频、生成摘要、发送邮件和保存任务记录。
+- `web/`：前端（Vite + React）。
+- `server/`：后端（FastAPI + SQLite）。
+- `examples/email-worker/`：可选的 Cloudflare Worker 模板，把总结发到邮箱。
+- `docs/`：设计文档与优化计划。
+- `scripts/dev.sh`、`docker-compose.yml`：本地一键启动。
 
-## 环境要求
+---
 
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/)
-- Node.js 18+
-- npm
+## 准备一份 LLM API Key
 
-## 后端安装与启动
+任何 OpenAI 兼容接口都行。常见选择：
+
+| 供应商 | `LLM_BASE_URL` 示例 | 备注 |
+| --- | --- | --- |
+| OpenAI | `https://api.openai.com/v1` | 标准接口 |
+| Moonshot / Kimi | `https://api.moonshot.cn/v1` | 后端会强制 `temperature=1` |
+| 通义千问 DashScope | `https://dashscope.aliyuncs.com/compatible-mode/v1` | |
+| DeepSeek | `https://api.deepseek.com` | |
+| 本地 ollama / vLLM | `http://localhost:11434/v1` | 模型名按本地实际 |
+
+`LLM_MODEL` 填供应商支持的模型名（`gpt-4o-mini` / `moonshot-v1-32k` / `qwen-plus` 等）。
+
+---
+
+## 本地开发（手动）
+
+不想用 `scripts/dev.sh`？分别起：
 
 ```bash
+# 后端
 cd server
-cp .env.example .env
+cp .env.example .env       # 填 LLM_API_KEY
 uv sync
 uv run uvicorn biri_youyaku.app:app --reload --host 0.0.0.0 --port 17821
+
+# 前端（新终端）
+cd web
+cp .env.example .env
+npm install
+npm run dev                # http://localhost:5173
 ```
 
-如果需要本地 ASR 转文字：
+---
+
+## 可选功能
+
+### B 站登录态（取私享视频 / 高画质字幕）
+
+浏览器登录 B 站后，从 cookie 复制 `SESSDATA`，写到 `server/.env`：
+
+```env
+BILI_SESSDATA=你的-sessdata
+# 大多数情况只配 SESSDATA 就够；某些接口需要再补
+# BILI_BUVID3=
+# BILI_BILI_JCT=
+```
+
+### 本地 ASR 转写（无字幕的视频）
 
 ```bash
 cd server
 uv sync --extra asr
 ```
 
-后端 `.env` 常用配置：
+需要 `ffmpeg` / `ffprobe` 已安装；Mac 用 `brew install ffmpeg`。默认 ASR 引擎是
+[SenseVoice](https://github.com/FunAudioLLM/SenseVoice)；切 faster-whisper 设
+`ASR_MODEL=faster-whisper`。
 
-```env
-API_TOKEN=
-LLM_API_KEY=你的大模型 API Key
-LLM_BASE_URL=你的 OpenAI 兼容接口地址
-LLM_MODEL=你要使用的模型名
-APP_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-```
+### 邮件发送
 
-如果要让公网前端访问后端，把正式前端域名也加到 `APP_CORS_ORIGINS`。如果后端 `API_TOKEN` 留空，接口不会校验 Bearer token；部署到公网时建议一定配置。
-
-建议部署时配置 `API_TOKEN`。可以这样生成：
+> 邮件**默认关闭**，需要自己起一个 webhook。仓库里给了一个 Cloudflare Worker 模板：
 
 ```bash
-openssl rand -hex 32
+cd examples/email-worker
+# 跟着 examples/email-worker/README.md 走，5 分钟部完
 ```
 
-然后把生成结果填入后端 `.env`：
-
-```env
-API_TOKEN=生成出来的随机字符串
-```
-
-邮件功能是可选的：
+部完后到 `server/.env`：
 
 ```env
 EMAIL_ENABLED=true
-EMAIL_WEBHOOK_URL=https://your-mail-worker.example.com
-EMAIL_WEBHOOK_TOKEN=你的邮件 webhook token
+EMAIL_WEBHOOK_URL=https://biri-youyaku-mail.<account>.workers.dev
+EMAIL_WEBHOOK_TOKEN=与 Worker 的 BIRI_YOUYAKU_TOKEN 一致
 EMAIL_DEFAULT_RECIPIENT=you@example.com
-EMAIL_SUBJECT_TEMPLATE=[Video Summary] {{title}}
 ```
 
-部分视频可能需要登录态才能获取字幕或下载音频，可以按需配置 `BILI_SESSDATA`、`BILI_BUVID3` 和 `BILI_BILI_JCT`。
+启动时若开了 `EMAIL_ENABLED` 但任一必填值为空，后端会打 WARN；创建任务时也会拒
+绝，避免发到错误地址。
 
-## 前端安装与启动
+---
 
-```bash
-cd web
-cp .env.example .env
-npm install
-npm run dev
-```
+## 部署到公网
 
-本地访问：
+一种常见架构：
 
-```text
-http://localhost:5173
-```
+- 前端部署到 Vercel；
+- 后端跑在自己的机器（VPS / 树莓派 / 工作站）；
+- 用 Cloudflare Tunnel 暴露后端为 HTTPS 域名；
+- 邮件走 Cloudflare Worker + Resend（见上面）。
 
-前端 `.env`：
+后端 `server/.env`：
 
 ```env
-VITE_API_BASE_URL=http://localhost:17821
-# 后端 API_TOKEN 留空时这里也留空；如果后端有 API_TOKEN，这里填同一个值
-VITE_API_TOKEN=
+API_TOKEN=用 `openssl rand -hex 32` 生成
+APP_CORS_ORIGINS=https://your-frontend-domain.example.com
 ```
 
-前端不会再弹窗让你输入 token。token 完全走环境变量，构建时注入。本地开发时建议两端都留空，免去鉴权；公网部署再配合反向代理（Vercel Protection、Cloudflare Access 等）做访问控制。
-
-## 构建
-
-```bash
-cd web
-npm run build
-```
-
-## 部署
-
-一种常见部署方式：
-
-- 前端部署到 Vercel。
-- 后端运行在自己的机器或服务器上。
-- 用 Cloudflare Tunnel 把后端暴露成一个 HTTPS API 域名。
-- 邮件发送可以用 Cloudflare Worker + Resend。
-
-Vercel 前端配置：
+Vercel 前端：
 
 ```text
 Framework: Vite
@@ -131,42 +145,91 @@ Vercel 环境变量：
 
 ```env
 VITE_API_BASE_URL=https://your-api-domain.example.com
-# 与后端 API_TOKEN 一致；若用反向代理鉴权可以留空
-VITE_API_TOKEN=和后端一致的随机字符串
+VITE_API_TOKEN=与后端 API_TOKEN 一致；若走 Vercel Protection / Cloudflare Access 可留空
 ```
 
-注意：`VITE_API_TOKEN` 会被打进前端 JS bundle，任何能访问页面的人都能在 devtools 里看到。把它当成「弱口令」处理，公网部署最好叠一层 Vercel Protection / Cloudflare Access。
+> ⚠️ `VITE_API_TOKEN` 会**打进前端 JS bundle**，任何访问页面的人都能在 devtools 看到。
+> 当成「弱口令」用，公网部署最好叠一层 Vercel Protection / Cloudflare Access。
 
-Cloudflare Tunnel 示例：
+Cloudflare Tunnel：
 
 ```text
 your-api-domain.example.com -> http://localhost:17821
 ```
 
-邮件 Worker 的 `BIRI_YOUYAKU_TOKEN` 需要和后端 `EMAIL_WEBHOOK_TOKEN` 一致。后端会用 `Authorization: Bearer <EMAIL_WEBHOOK_TOKEN>` 调用 Worker。
-
-后端部署时请同步设置：
-
-```env
-APP_CORS_ORIGINS=https://your-frontend-domain.example.com
-API_TOKEN=生成出来的随机字符串
-```
+---
 
 ## API
 
 - `GET /healthz`
 - `GET /v1/config/defaults`
+- `GET /v1/config/runtime`（公开，返回各项是否已配置）
+- `GET /v1/usage?range=7d`
 - `POST /v1/llm/models`
 - `POST /v1/jobs`
-- `GET /v1/jobs?limit=50&offset=0`
+- `POST /v1/jobs/preview`
+- `GET /v1/jobs?limit=50&offset=0&cursor=...`
 - `GET /v1/jobs/{id}`
-- `GET /v1/jobs/{id}/stream`
+- `GET /v1/jobs/{id}/stream`（SSE）
 - `POST /v1/jobs/{id}/cancel`
 - `POST /v1/jobs/{id}/resume`
+- `POST /v1/jobs/{id}/retry`
+- `POST /v1/jobs/{id}/transcript`（上传 / 覆盖字幕）
 - `GET /v1/jobs/{id}/audio`
 - `DELETE /v1/jobs`
 - `DELETE /v1/jobs/{id}`
-- `POST /v1/jobs/{id}/email`
+- `POST /v1/jobs/{id}/email`（重发邮件）
+
+---
+
+## 配置参考
+
+`server/.env` 的所有可调项（默认值见 `server/biri_youyaku/config.py`）：
+
+| 类别 | 变量 | 默认 | 说明 |
+| --- | --- | --- | --- |
+| 应用 | `APP_LOG_LEVEL` | `INFO` | uvicorn / 应用日志级别 |
+| 应用 | `APP_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 多个用逗号分隔 |
+| 鉴权 | `API_TOKEN` | 空 | 空 = 不校验 Bearer Token |
+| B 站 | `BILI_SESSDATA / BILI_BUVID3 / BILI_BILI_JCT` | 空 | 仅在需要登录态时填 |
+| ASR | `ASR_MODEL` | `sensevoice` | 或 `faster-whisper` |
+| ASR | `ASR_DEVICE` | `auto` | `cpu` / `cuda` / `auto` |
+| ASR | `ASR_LANGUAGE_DEFAULT` | `auto` | |
+| ASR | `SENSEVOICE_MODEL_DIR` | 空 | 自动下载 / 指定本地路径 |
+| LLM | `LLM_API_KEY` | 空 | **必填** |
+| LLM | `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI 兼容接口 |
+| LLM | `LLM_MODEL` | `gpt-4o-mini` | |
+| LLM | `LLM_TIMEOUT_SECONDS` | `300` | 单请求超时 |
+| LLM | `LLM_MAX_RETRIES` | `2` | SDK 层重试 |
+| LLM | `LLM_TEMPERATURE` | 空 | 留空走代码默认 |
+| LLM | `LLM_CHUNK_TOKEN_THRESHOLD` | `30000` | 长字幕分段阈值 |
+| LLM | `LLM_FORCE_TEMP_ONE_PREFIXES` | `kimi,moonshot` | 命中前缀强制 `temperature=1` |
+| LLM | `LLM_SEGMENT_CONCURRENCY` | `3` | 段级总结并发数 |
+| 摘要 | `SUMMARY_LANGUAGE` | `中文简体` | 输出语言 |
+| 邮件 | `EMAIL_ENABLED` | `false` | |
+| 邮件 | `EMAIL_WEBHOOK_URL / EMAIL_WEBHOOK_TOKEN / EMAIL_DEFAULT_RECIPIENT` | 空 | |
+| 邮件 | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | 支持 `{{title}}` / `{{author}}` |
+| 存储 | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DB_PATH` | `data/...` | |
+| 清理 | `AUDIO_RETENTION_DAYS` | `7` | |
+| 清理 | `JOB_RETENTION_DAYS` | `180` | |
+| 清理 | `ORPHAN_FILE_RETENTION_DAYS` | `3` | DB 不引用的孤儿文件多久后清 |
+| 清理 | `STALE_RUNNING_FAIL_HOURS` | `4` | 非终态任务多久无心跳就置 FAILED |
+| 清理 | `CLEANUP_INTERVAL_SECONDS` | `3600` | 清理循环周期 |
+| 清理 | `WAL_CHECKPOINT_INTERVAL_HOURS` | `24` | WAL 截断周期 |
+| 清理 | `DB_VACUUM_INTERVAL_DAYS` | `30` | VACUUM 周期 |
+| 并发 | `MAX_CONCURRENT_JOBS` | `2` | 重 IO/CPU 段并发上限 |
+| 并发 | `MAX_CONCURRENT_SUMMARIES` | `2` | LLM 总结并发上限 |
+
+---
+
+## 名字 / 灵感
+
+`要約`（ようやく / yōyaku）在日语里是「摘要、总结」，同音 `ようやく` 又有「终于」之意。
+`biri` 来自 Bilibili 的日语口语叫法 `ビリビリ`。
+
+灵感：
+- [linzzzzzz/openclip](https://github.com/linzzzzzz/openclip)
+- [IndieKKY/bilibili-subtitle](https://github.com/IndieKKY/bilibili-subtitle)
 
 ## License
 

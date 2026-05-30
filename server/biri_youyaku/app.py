@@ -37,6 +37,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         "enabled" if token else "disabled",
         len(token),
     )
+    # 邮件配置一致性自检：开关打开却没配 webhook / 收件人时给一条警告，
+    # 避免后端启动「看起来正常」但每个 job 走到 EMAILING 都报错。
+    if settings.email_enabled:
+        missing = []
+        if not settings.email_webhook_url:
+            missing.append("EMAIL_WEBHOOK_URL")
+        if not settings.email_default_recipient:
+            missing.append("EMAIL_DEFAULT_RECIPIENT")
+        if missing:
+            log.warning(
+                "EMAIL_ENABLED=true 但下列必填项为空 → 邮件将失败：%s。请在 .env 配齐或设 EMAIL_ENABLED=false。",
+                ", ".join(missing),
+            )
     init_db()
     # 启动期：清掉上次崩溃残留 + 跑一遍常规清理 + 兜底僵尸 + 扫孤儿
     clean_tempfile_residues()

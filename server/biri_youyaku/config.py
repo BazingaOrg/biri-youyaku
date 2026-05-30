@@ -6,8 +6,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_host: str = "0.0.0.0"
-    app_port: int = 17821
+    # 注：uvicorn 的监听 host/port 由启动命令 `--host / --port` 决定，
+    # 不再保留独立的 APP_HOST / APP_PORT 设置以免误导。
     app_log_level: str = "INFO"
     app_cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
@@ -37,10 +37,12 @@ class Settings(BaseSettings):
 
     summary_language: str = "中文简体"
 
-    email_enabled: bool = True
+    # 邮件默认关闭：fork 的人开箱即用不会因为没配 webhook 而 fail；
+    # email_default_recipient 默认空：避免「忘了改收件人 → 发到陌生人邮箱」。
+    email_enabled: bool = False
     email_webhook_url: str = ""
     email_webhook_token: str = ""
-    email_default_recipient: str = "zhangyouxiu66@gmail.com"
+    email_default_recipient: str = ""
     email_subject_template: str = "[Biri-Youyaku] {{title}}"
 
     audio_storage_dir: Path = Path("data/audio")
@@ -53,7 +55,7 @@ class Settings(BaseSettings):
     max_concurrent_summaries: int = 2
 
     # P3 新增：清理 / 维护策略
-    subtitle_cache_retention_days: int = 7
+    # 注：字幕落盘缓存（subtitle_cache_retention_days）已规划但未实现，先不暴露。
     orphan_file_retention_days: int = 3
     stale_running_fail_hours: int = 4
     db_vacuum_interval_days: int = 30

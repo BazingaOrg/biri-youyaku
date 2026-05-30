@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   subtitle_source TEXT,
   chapters_json   TEXT,
   transcript_json TEXT,
-  segments_json   TEXT,
+  -- segments_json: 历史遗留列，代码从不写入。新库不再创建；旧库通过 init_db 探测保留以不破坏 SELECT * 兼容。
   summary_path    TEXT,
   options_json    TEXT NOT NULL,
   effective_options_json TEXT,
@@ -75,7 +75,6 @@ def init_db() -> None:
         migrations = {
             "chapters_json": "ALTER TABLE jobs ADD COLUMN chapters_json TEXT",
             "transcript_json": "ALTER TABLE jobs ADD COLUMN transcript_json TEXT",
-            "segments_json": "ALTER TABLE jobs ADD COLUMN segments_json TEXT",
             "effective_options_json": "ALTER TABLE jobs ADD COLUMN effective_options_json TEXT",
             "error_code": "ALTER TABLE jobs ADD COLUMN error_code TEXT",
             "stream_finished_at": "ALTER TABLE jobs ADD COLUMN stream_finished_at INTEGER",

@@ -1,0 +1,8 @@
+name = "biri-youyaku-mail"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# 部署后用 `wrangler secret put` 注入：
+#   BIRI_YOUYAKU_TOKEN   与后端 EMAIL_WEBHOOK_TOKEN 一致
+#   RESEND_API_KEY       Resend 控制台
+#   RESEND_FROM          "Biri-Youyaku <noreply@your-domain.com>"

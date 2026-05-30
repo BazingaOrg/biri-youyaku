@@ -120,6 +120,17 @@ async def create_job(payload: CreateJobPayload) -> dict:
         option_overrides,
         settings,
     )
+    # 早失败：开了邮件却没有有效收件人 → 直接拒，别让任务跑完才在 EMAILING 阶段 fail。
+    if options.email_enabled:
+        effective_recipient = (options.email_recipient or settings.email_default_recipient or "").strip()
+        if not effective_recipient or not settings.email_webhook_url:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "邮件已启用但未配置：请在 .env 设置 EMAIL_WEBHOOK_URL 与 "
+                    "EMAIL_DEFAULT_RECIPIENT，或本次请求里把 email_enabled 设为 false。"
+                ),
+            )
     job = repo.create_job(payload.url, options, option_overrides=option_overrides)
     start_job(job.id, llm_api_key=llm_api_key)
     return {"ok": True, "job_id": job.id}

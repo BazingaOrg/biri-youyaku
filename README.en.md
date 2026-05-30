@@ -2,121 +2,141 @@
 
 [中文](README.md) | [English](README.en.md)
 
-Paste a Bilibili video link, fetch subtitles first, fall back to audio transcription when subtitles are unavailable, review the transcript, and generate a summary with one click. The summary can also be sent by email.
+Paste a Bilibili video link, fetch subtitles when available, fall back to audio
+transcription, and generate a Markdown summary in one click. Optionally email the
+result.
 
-## Name
+## 60-second quickstart
 
-`要約` (ようやく / yōyaku) means "summary" in Japanese, while the same pronunciation `ようやく` can also mean "finally" or "at last". The name is a small pun: summarize the video and finally understand it without watching the whole thing. `biri` comes from the Japanese colloquial sound of Bilibili, `ビリビリ`, so together it becomes `biri-youyaku`.
-
-## Inspired By
-
-- [linzzzzzz/openclip](https://github.com/linzzzzzz/openclip)
-- [IndieKKY/bilibili-subtitle](https://github.com/IndieKKY/bilibili-subtitle)
-
-## Project Structure
-
-- `web/`: frontend app.
-- `server/`: backend service for subtitles, audio download, speech-to-text, summary generation, email delivery, and local job storage.
-
-## Requirements
-
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/)
-- Node.js 18+
-- npm
-
-## Backend Setup
+You need Python 3.11+, Node.js 18+, [uv](https://docs.astral.sh/uv/), and `npm`.
 
 ```bash
-cd server
-cp .env.example .env
-uv sync
-uv run uvicorn biri_youyaku.app:app --reload --host 0.0.0.0 --port 17821
+# 1. Copy the env template and fill LLM_API_KEY (any OpenAI-compatible endpoint works)
+cp server/.env.example server/.env
+$EDITOR server/.env
+
+# 2. Spin up backend + frontend dev servers (the script handles web/.env and npm install)
+bash scripts/dev.sh
 ```
 
-For local ASR support:
+Open <http://127.0.0.1:5173> and paste any Bilibili video URL.
+
+> Prefer Docker? `cp server/.env.example server/.env` then `docker compose up --build`.
+
+---
+
+## Project layout
+
+- `web/` — Vite + React frontend.
+- `server/` — FastAPI + SQLite backend.
+- `examples/email-worker/` — optional Cloudflare Worker template for emailing summaries.
+- `docs/` — design and optimization notes.
+- `scripts/dev.sh`, `docker-compose.yml` — one-command local startup.
+
+---
+
+## Pick an LLM API key
+
+Any OpenAI-compatible endpoint works:
+
+| Provider | Sample `LLM_BASE_URL` | Notes |
+| --- | --- | --- |
+| OpenAI | `https://api.openai.com/v1` | Standard |
+| Moonshot / Kimi | `https://api.moonshot.cn/v1` | Backend auto-forces `temperature=1` |
+| Tongyi Qianwen DashScope | `https://dashscope.aliyuncs.com/compatible-mode/v1` | |
+| DeepSeek | `https://api.deepseek.com` | |
+| Local ollama / vLLM | `http://localhost:11434/v1` | |
+
+Set `LLM_MODEL` to whatever your provider supports (`gpt-4o-mini`, `moonshot-v1-32k`,
+`qwen-plus`, …).
+
+---
+
+## Manual local dev
+
+If you'd rather not use `scripts/dev.sh`:
+
+```bash
+# Backend
+cd server
+cp .env.example .env       # fill LLM_API_KEY
+uv sync
+uv run uvicorn biri_youyaku.app:app --reload --host 0.0.0.0 --port 17821
+
+# Frontend (new terminal)
+cd web
+cp .env.example .env
+npm install
+npm run dev                # http://localhost:5173
+```
+
+---
+
+## Optional features
+
+### Bilibili login cookies (private / high-quality subtitles)
+
+Log in on bilibili.com in your browser, copy `SESSDATA`, paste into `server/.env`:
+
+```env
+BILI_SESSDATA=your-sessdata
+# Usually SESSDATA alone is enough; some endpoints want these too
+# BILI_BUVID3=
+# BILI_BILI_JCT=
+```
+
+### Local ASR (videos without subtitles)
 
 ```bash
 cd server
 uv sync --extra asr
 ```
 
-Common backend `.env` values:
+You need `ffmpeg` / `ffprobe` installed; on macOS `brew install ffmpeg`. Default
+engine is [SenseVoice](https://github.com/FunAudioLLM/SenseVoice); set
+`ASR_MODEL=faster-whisper` to switch.
 
-```env
-API_TOKEN=
-LLM_API_KEY=your LLM API key
-LLM_BASE_URL=your OpenAI-compatible base URL
-LLM_MODEL=your model name
-APP_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-```
+### Email delivery
 
-If a public frontend needs to access the backend, add your production frontend domain to `APP_CORS_ORIGINS`. When backend `API_TOKEN` is empty, Bearer-token authentication is disabled; set it before exposing the API publicly.
-
-For deployment, set `API_TOKEN`. You can generate one with:
+> Email is **disabled by default** — you bring your own webhook. The repo ships a
+> Cloudflare Worker template:
 
 ```bash
-openssl rand -hex 32
+cd examples/email-worker
+# Follow examples/email-worker/README.md, ~5 minutes
 ```
 
-Then put the generated value in `server/.env`:
-
-```env
-API_TOKEN=the-generated-token
-```
-
-Email is optional:
+Then in `server/.env`:
 
 ```env
 EMAIL_ENABLED=true
-EMAIL_WEBHOOK_URL=https://your-mail-worker.example.com
-EMAIL_WEBHOOK_TOKEN=your email webhook token
+EMAIL_WEBHOOK_URL=https://biri-youyaku-mail.<account>.workers.dev
+EMAIL_WEBHOOK_TOKEN=must match the Worker's BIRI_YOUYAKU_TOKEN
 EMAIL_DEFAULT_RECIPIENT=you@example.com
-EMAIL_SUBJECT_TEMPLATE=[Video Summary] {{title}}
 ```
 
-Some videos may require login cookies for subtitle extraction or audio download. Configure `BILI_SESSDATA`, `BILI_BUVID3`, and `BILI_BILI_JCT` when needed.
+If `EMAIL_ENABLED=true` but any of the required values are empty, the server logs
+a WARN and refuses to create jobs to avoid sending to the wrong address.
 
-## Frontend Setup
+---
 
-```bash
-cd web
-cp .env.example .env
-npm install
-npm run dev
-```
+## Public deployment
 
-Open:
+One common setup:
 
-```text
-http://localhost:5173
-```
+- Frontend on Vercel;
+- Backend on your own machine (VPS / Raspberry Pi / workstation);
+- Cloudflare Tunnel exposes the backend as an HTTPS domain;
+- Email via Cloudflare Worker + Resend (see above).
 
-Frontend `.env`:
+Backend `server/.env`:
 
 ```env
-VITE_API_BASE_URL=http://localhost:17821
+API_TOKEN=generate with `openssl rand -hex 32`
+APP_CORS_ORIGINS=https://your-frontend-domain.example.com
 ```
 
-If the backend sets `API_TOKEN`, enter that token in the frontend authorization dialog on first visit. The token is stored only in this browser's `localStorage`; it is not bundled into browser JavaScript. For public deployments, still use Vercel Protection, Cloudflare Access, or another access-control layer.
-
-## Build
-
-```bash
-cd web
-npm run build
-```
-
-## Deployment
-
-A common setup:
-
-- Deploy the frontend to Vercel.
-- Run the backend on your own machine or server.
-- Expose the backend through Cloudflare Tunnel as an HTTPS API domain.
-- Send emails through Cloudflare Worker + Resend.
-
-Vercel settings:
+Vercel frontend settings:
 
 ```text
 Framework: Vite
@@ -129,40 +149,92 @@ Vercel environment variables:
 
 ```env
 VITE_API_BASE_URL=https://your-api-domain.example.com
+VITE_API_TOKEN=match backend API_TOKEN, or leave empty if a reverse proxy handles auth
 ```
 
-Do not configure the API token as a Vercel environment variable. After deployment, open the page and enter the backend `API_TOKEN` in the browser authorization dialog.
+> ⚠️ `VITE_API_TOKEN` is **bundled into the JS at build time**. Any visitor with
+> devtools can read it; treat it as a weak credential and pair with Vercel
+> Protection / Cloudflare Access for real public deployments.
 
-Cloudflare Tunnel example:
+Cloudflare Tunnel:
 
 ```text
 your-api-domain.example.com -> http://localhost:17821
 ```
 
-The Worker's `BIRI_YOUYAKU_TOKEN` must match the backend `EMAIL_WEBHOOK_TOKEN`. The backend calls the Worker with `Authorization: Bearer <EMAIL_WEBHOOK_TOKEN>`.
-
-Set these backend values for deployment:
-
-```env
-APP_CORS_ORIGINS=https://your-frontend-domain.example.com
-API_TOKEN=the-generated-token
-```
+---
 
 ## API
 
 - `GET /healthz`
 - `GET /v1/config/defaults`
+- `GET /v1/config/runtime` (public, reports what is configured)
+- `GET /v1/usage?range=7d`
 - `POST /v1/llm/models`
 - `POST /v1/jobs`
-- `GET /v1/jobs?limit=50&offset=0`
+- `POST /v1/jobs/preview`
+- `GET /v1/jobs?limit=50&offset=0&cursor=...`
 - `GET /v1/jobs/{id}`
-- `GET /v1/jobs/{id}/stream`
+- `GET /v1/jobs/{id}/stream` (SSE)
 - `POST /v1/jobs/{id}/cancel`
 - `POST /v1/jobs/{id}/resume`
+- `POST /v1/jobs/{id}/retry`
+- `POST /v1/jobs/{id}/transcript` (upload / replace subtitles)
 - `GET /v1/jobs/{id}/audio`
 - `DELETE /v1/jobs`
 - `DELETE /v1/jobs/{id}`
-- `POST /v1/jobs/{id}/email`
+- `POST /v1/jobs/{id}/email` (resend)
+
+---
+
+## Config reference
+
+Every tunable in `server/.env` (defaults live in `server/biri_youyaku/config.py`):
+
+| Group | Variable | Default | Notes |
+| --- | --- | --- | --- |
+| App | `APP_LOG_LEVEL` | `INFO` | uvicorn / app log level |
+| App | `APP_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated |
+| Auth | `API_TOKEN` | empty | Empty = no Bearer Token check |
+| Bilibili | `BILI_SESSDATA / BILI_BUVID3 / BILI_BILI_JCT` | empty | Only when login needed |
+| ASR | `ASR_MODEL` | `sensevoice` | Or `faster-whisper` |
+| ASR | `ASR_DEVICE` | `auto` | `cpu` / `cuda` / `auto` |
+| ASR | `ASR_LANGUAGE_DEFAULT` | `auto` | |
+| ASR | `SENSEVOICE_MODEL_DIR` | empty | Auto-download or path to local weights |
+| LLM | `LLM_API_KEY` | empty | **Required** |
+| LLM | `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible base URL |
+| LLM | `LLM_MODEL` | `gpt-4o-mini` | |
+| LLM | `LLM_TIMEOUT_SECONDS` | `300` | Per-request timeout |
+| LLM | `LLM_MAX_RETRIES` | `2` | SDK-level retries |
+| LLM | `LLM_TEMPERATURE` | empty | Empty uses provider-aware default |
+| LLM | `LLM_CHUNK_TOKEN_THRESHOLD` | `30000` | Threshold for chunked summarization |
+| LLM | `LLM_FORCE_TEMP_ONE_PREFIXES` | `kimi,moonshot` | Force `temperature=1` for matching model prefixes |
+| LLM | `LLM_SEGMENT_CONCURRENCY` | `3` | Parallel segment summaries |
+| Summary | `SUMMARY_LANGUAGE` | `中文简体` | Output language |
+| Email | `EMAIL_ENABLED` | `false` | |
+| Email | `EMAIL_WEBHOOK_URL / EMAIL_WEBHOOK_TOKEN / EMAIL_DEFAULT_RECIPIENT` | empty | |
+| Email | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | Supports `{{title}}` / `{{author}}` |
+| Storage | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DB_PATH` | `data/...` | |
+| Cleanup | `AUDIO_RETENTION_DAYS` | `7` | |
+| Cleanup | `JOB_RETENTION_DAYS` | `180` | |
+| Cleanup | `ORPHAN_FILE_RETENTION_DAYS` | `3` | How long an orphan file (no DB ref) lingers before cleanup |
+| Cleanup | `STALE_RUNNING_FAIL_HOURS` | `4` | Non-terminal job is auto-FAILED after no heartbeat for N hours |
+| Cleanup | `CLEANUP_INTERVAL_SECONDS` | `3600` | Cleanup loop period |
+| Cleanup | `WAL_CHECKPOINT_INTERVAL_HOURS` | `24` | WAL truncation period |
+| Cleanup | `DB_VACUUM_INTERVAL_DAYS` | `30` | VACUUM period |
+| Concurrency | `MAX_CONCURRENT_JOBS` | `2` | Heavy IO/CPU cap |
+| Concurrency | `MAX_CONCURRENT_SUMMARIES` | `2` | LLM summarize cap |
+
+---
+
+## Name / inspiration
+
+`要約` (ようやく / yōyaku) means "summary" in Japanese; the same pronunciation
+also means "at last". `biri` comes from `ビリビリ`, Japanese for Bilibili.
+
+Inspired by:
+- [linzzzzzz/openclip](https://github.com/linzzzzzz/openclip)
+- [IndieKKY/bilibili-subtitle](https://github.com/IndieKKY/bilibili-subtitle)
 
 ## License
 

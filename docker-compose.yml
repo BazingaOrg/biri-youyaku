@@ -1,0 +1,29 @@
+# 极简一键起：跑后端 + 前端 nginx。生产前请按 README 部署章节配 API_TOKEN / CORS。
+# 用法：
+#   1. cp server/.env.example server/.env && 填 LLM_API_KEY
+#   2. docker compose up --build
+#   3. 浏览器开 http://localhost:5173
+
+services:
+  server:
+    build: ./server
+    env_file: ./server/.env
+    ports:
+      - "17821:17821"
+    volumes:
+      - ./server/data:/app/data
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      args:
+        # 浏览器到后端的地址；docker compose 内通过 host 端口转发即可
+        VITE_API_BASE_URL: http://localhost:17821
+        # 与后端 API_TOKEN 一致（留空 = 不鉴权，仅本地）
+        VITE_API_TOKEN: ${API_TOKEN:-}
+    ports:
+      - "5173:80"
+    depends_on:
+      - server
+    restart: unless-stopped
