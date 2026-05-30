@@ -84,14 +84,35 @@ BILI_SESSDATA=你的-sessdata
 
 ### 本地 ASR 转写（无字幕的视频）
 
+需要 `ffmpeg` / `ffprobe`；Mac `brew install ffmpeg`，Ubuntu `apt install ffmpeg`。
+
+**跨平台（默认）—— funasr CPU 后端**：
+
 ```bash
 cd server
-uv sync --extra asr
+uv sync --extra asr     # 装 funasr + torch
+# server/.env
+ASR_MODEL=sensevoice    # 默认就是这个，可省
 ```
 
-需要 `ffmpeg` / `ffprobe` 已安装；Mac 用 `brew install ffmpeg`。默认 ASR 引擎是
-[SenseVoice](https://github.com/FunAudioLLM/SenseVoice)；切 faster-whisper 设
-`ASR_MODEL=faster-whisper`。
+**Apple Silicon Mac（M1+）—— MLX 后端（推荐，15-30× 加速）**：
+
+```bash
+cd server
+uv sync --extra asr-mlx # 装 mlx-audio + parakeet-mlx
+```
+
+可选 ASR 后端：
+
+| `ASR_MODEL` | 适合 | 备注 |
+| --- | --- | --- |
+| `sensevoice` | 跨平台、Docker | funasr CPU，慢但兼容 |
+| `sensevoice-mlx` | M 系列 Mac、中日韩视频 | 同模型同精度，吃 GPU/ANE |
+| `parakeet-mlx` | M 系列 Mac、英语 / 欧语 | NVIDIA Parakeet TDT v3，WER 6.34%（超 Whisper-Large-v3） |
+| `auto` | 不想纠结 | 按任务语言路由：CJK → sensevoice-mlx，其余 → parakeet-mlx |
+| `faster-whisper` | 已有 whisper 工作流 | CTranslate2 优化版 |
+
+Mac mini M4 推荐：`ASR_MODEL=auto`。
 
 ### 邮件发送
 

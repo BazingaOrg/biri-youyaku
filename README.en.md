@@ -87,14 +87,35 @@ BILI_SESSDATA=your-sessdata
 
 ### Local ASR (videos without subtitles)
 
+You need `ffmpeg` / `ffprobe`; macOS `brew install ffmpeg`, Ubuntu `apt install ffmpeg`.
+
+**Cross-platform (default) — funasr CPU backend:**
+
 ```bash
 cd server
-uv sync --extra asr
+uv sync --extra asr     # installs funasr + torch
+# server/.env
+ASR_MODEL=sensevoice    # the default; can be omitted
 ```
 
-You need `ffmpeg` / `ffprobe` installed; on macOS `brew install ffmpeg`. Default
-engine is [SenseVoice](https://github.com/FunAudioLLM/SenseVoice); set
-`ASR_MODEL=faster-whisper` to switch.
+**Apple Silicon Mac (M1+) — MLX backend (recommended, 15-30× faster):**
+
+```bash
+cd server
+uv sync --extra asr-mlx # installs mlx-audio + parakeet-mlx
+```
+
+Available `ASR_MODEL` values:
+
+| `ASR_MODEL` | Best for | Notes |
+| --- | --- | --- |
+| `sensevoice` | Cross-platform, Docker | funasr CPU, slow but portable |
+| `sensevoice-mlx` | M-series Mac, CJK videos | Same weights, runs on GPU/ANE |
+| `parakeet-mlx` | M-series Mac, English / European | NVIDIA Parakeet TDT v3, 6.34% WER (beats Whisper-Large-v3) |
+| `auto` | Don't want to choose | Routes by job language: CJK → sensevoice-mlx, else → parakeet-mlx |
+| `faster-whisper` | Existing whisper workflow | CTranslate2-optimized |
+
+Mac mini M4 recommendation: `ASR_MODEL=auto`.
 
 ### Email delivery
 

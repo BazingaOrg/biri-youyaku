@@ -15,10 +15,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# 跨平台 ASR：funasr 走 PyTorch CPU。Linux Docker / Intel Mac / Windows 用这个。
 asr = [
   "funasr>=1.1.0",
   "torch>=2.2.0",
   "torchaudio>=2.2.0",
+]
+# Apple Silicon GPU/ANE 加速版：仅 macOS arm64 可装。
+# 比 asr extras 快 15-30×，模型权重等价（SenseVoice-Small）。
+# 同时带 Parakeet TDT v3（英语 / 欧语 SOTA），通过 ASR_MODEL=parakeet-mlx 启用。
+asr-mlx = [
+  "mlx-audio>=0.2.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "parakeet-mlx>=0.4.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 dev = [
   "pytest>=8.2.0",
