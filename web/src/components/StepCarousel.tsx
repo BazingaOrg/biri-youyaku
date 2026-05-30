@@ -76,7 +76,7 @@ export function StepCarousel({steps, currentIndex}: StepCarouselProps) {
                     </span>
                     <span className="text-base font-semibold text-ink">{step.label}</span>
                   </div>
-                  <div className="min-h-[120px] text-sm leading-6 text-muted">
+                  <div className="h-[220px] overflow-y-auto text-sm leading-6 text-muted">
                     {step.render()}
                   </div>
                 </div>

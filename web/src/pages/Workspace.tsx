@@ -337,18 +337,18 @@ function RunningView({
       <MetaBar job={job} />
       <StepCarousel steps={steps} currentIndex={currentIdx} />
       {failure && (
-        <div className="rounded-2xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
+        <div className="rounded-2xl border border-danger/50 bg-danger/20 p-4 text-sm text-danger shadow-card">
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <p className="font-semibold">{failure.title}</p>
+            <p className="text-base font-semibold">{failure.title}</p>
             <button
               type="button"
               onClick={copyErrorDetail}
-              className="inline-flex items-center gap-1 rounded-lg border border-danger/30 px-2 py-1 text-xs text-danger transition hover:bg-danger/20"
+              className="inline-flex items-center gap-1 rounded-lg border border-danger/40 bg-panel/40 px-2 py-1 text-xs text-danger transition hover:bg-danger/30"
             >
               <Copy size={12} /> 复制
             </button>
           </div>
-          <p className="mt-1 break-words leading-6">{failure.message}</p>
+          <p className="mt-1.5 break-words leading-6 text-danger/90">{failure.message}</p>
         </div>
       )}
       {(canCancel || canRetry) && (

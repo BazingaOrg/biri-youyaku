@@ -199,7 +199,7 @@ async def run_until_transcript(job_id: str) -> None:
             current_stage = JobStatus.TRANSCRIBING.value
             await transition(job_id, JobStatus.TRANSCRIBING)
             async def _on_transcribe_progress(progress: TranscribeProgress) -> None:
-                event_bus.publish(
+                await event_bus.publish(
                     job_id,
                     "transcribe_progress",
                     {
