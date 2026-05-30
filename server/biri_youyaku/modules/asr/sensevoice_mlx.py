@@ -46,7 +46,7 @@ def _load_model() -> Any:
         raise RuntimeError(
             "mlx-audio 未安装。在 server 目录执行：uv sync --extra asr-mlx"
         ) from exc
-    model_id = settings.sensevoice_model_dir or "mlx-community/sensevoice-small"
+    model_id = settings.sensevoice_model_dir or "mlx-community/SenseVoiceSmall"
     logger.info("Loading SenseVoice MLX model: %s", model_id)
     return load(model_id)
 
