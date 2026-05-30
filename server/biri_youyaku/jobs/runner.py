@@ -168,7 +168,7 @@ async def run_until_transcript(job_id: str) -> None:
             async with _io_semaphore:
                 await _with_timeout(
                     JobStatus.DOWNLOADING_AUDIO,
-                    600,
+                    1800,
                     download_audio(
                         fresh_job,
                         video_meta,
@@ -180,14 +180,14 @@ async def run_until_transcript(job_id: str) -> None:
             return
 
         if video_meta.has_subtitle and not fresh_job.options.force_asr:
-            items = await _with_timeout(JobStatus.DOWNLOADING_AUDIO, 60, fetch_platform_transcript(fresh_job, video_meta))
+            items = await _with_timeout(JobStatus.DOWNLOADING_AUDIO, 120, fetch_platform_transcript(fresh_job, video_meta))
         else:
             current_stage = JobStatus.DOWNLOADING_AUDIO.value
             await transition(job_id, JobStatus.DOWNLOADING_AUDIO)
             async with _io_semaphore:
                 audio_path = await _with_timeout(
                     JobStatus.DOWNLOADING_AUDIO,
-                    600,
+                    1800,
                     download_audio(
                         fresh_job,
                         video_meta,
@@ -248,9 +248,10 @@ async def run_after_resume(job_id: str) -> None:
         current_stage = JobStatus.SUMMARIZING.value
         await transition(job_id, JobStatus.SUMMARIZING)
         async with _summary_semaphore:
+            # 长视频字幕一次喂给 LLM 流式输出，5 分钟常常超；放宽到 20 分钟兜底
             summary_md = await _with_timeout(
                 JobStatus.SUMMARIZING,
-                300,
+                1200,
                 summarize(
                     fresh_job,
                     video_meta,
@@ -265,7 +266,7 @@ async def run_after_resume(job_id: str) -> None:
         if fresh_job.options.email_enabled:
             current_stage = JobStatus.EMAILING.value
             await transition(job_id, JobStatus.EMAILING)
-            await _with_timeout(JobStatus.EMAILING, 60, send_email(video_meta, summary_md, fresh_job.options))
+            await _with_timeout(JobStatus.EMAILING, 120, send_email(video_meta, summary_md, fresh_job.options))
 
         await transition(job_id, JobStatus.COMPLETED, summary=summary_md)
     except (asyncio.CancelledError, CanceledError):

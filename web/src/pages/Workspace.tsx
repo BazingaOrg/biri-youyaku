@@ -309,7 +309,7 @@ function RunningView({
 }) {
   const steps = useMemo(() => buildSteps(job), [job])
   const currentIdx = statusToStepIndex(job.status)
-  const failure = job.error_message ? friendlyError(job.error_code, job.error_message) : null
+  const failure = job.error_message ? friendlyError(job.error_code, job.error_message, job.error_stage) : null
   const canCancel = RUNNING_STATUSES.includes(job.status)
   const canRetry = job.status === 'FAILED'
 
@@ -465,7 +465,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     if (job.status === 'FAILED' && job.error_message) {
       notifiedRef.current = key
       clearActive(jobId)
-      const fe = friendlyError(job.error_code, job.error_message)
+      const fe = friendlyError(job.error_code, job.error_message, job.error_stage)
       toast.error(fe.title, fe.message)
     }
     if (job.status === 'CANCELED') {

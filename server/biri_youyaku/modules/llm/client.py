@@ -1,7 +1,10 @@
 import json
+import logging
 from collections.abc import Awaitable, Callable
 
 from openai import AsyncOpenAI
+
+logger = logging.getLogger(__name__)
 
 from biri_youyaku.config import settings
 from biri_youyaku.jobs.model import JobOptions
@@ -24,7 +27,10 @@ TokenUsageCallback = Callable[[dict], Awaitable[None]]
 def resolve_temperature(model: str) -> float:
     if settings.llm_temperature is not None:
         return settings.llm_temperature
-    if model == "kimi-k2.5":
+    # Moonshot / Kimi 系列普遍强制 temperature=1，否则首请求返回 400。
+    # 命中前缀直接给 1，省掉一次 400→retry 的往返。
+    lowered = (model or "").lower()
+    if lowered.startswith(("kimi", "moonshot")):
         return 1
     return 0.2
 
@@ -71,6 +77,19 @@ def _is_temperature_rejected_error(exc: Exception) -> bool:
     return "temperature" in message and "only 1" in message
 
 
+def _format_llm_error(exc: Exception) -> str:
+    """把 openai/httpx 异常里通常被吞掉的 response body 拼到日志里。"""
+    body = getattr(exc, "body", None) or getattr(getattr(exc, "response", None), "text", None)
+    status = getattr(getattr(exc, "response", None), "status_code", None) or getattr(exc, "status_code", None)
+    parts = [type(exc).__name__]
+    if status is not None:
+        parts.append(f"HTTP {status}")
+    parts.append(str(exc))
+    if body:
+        parts.append(f"body={body!s:.500}")
+    return " | ".join(parts)
+
+
 def _usage_to_dict(usage) -> dict | None:
     if usage is None:
         return None
@@ -109,12 +128,14 @@ async def _complete(
         )
     except Exception as exc:
         if temperature != 1 and _is_temperature_rejected_error(exc):
+            logger.warning("LLM 拒收 temperature=%s，自动切到 1 重试（model=%s）", temperature, model)
             response = await client.chat.completions.create(
                 model=model,
                 messages=messages,
                 temperature=1,
             )
         else:
+            logger.error("LLM 调用失败 model=%s: %s", model, _format_llm_error(exc))
             raise
     usage = _usage_to_dict(getattr(response, "usage", None))
     if usage is not None and on_usage is not None:
@@ -141,6 +162,7 @@ async def _complete_stream(
         )
     except Exception as exc:
         if temperature != 1 and _is_temperature_rejected_error(exc):
+            logger.warning("LLM 流式拒收 temperature=%s，自动切到 1 重试（model=%s）", temperature, model)
             stream = await client.chat.completions.create(
                 model=model,
                 messages=messages,
@@ -149,6 +171,7 @@ async def _complete_stream(
                 stream_options={"include_usage": True},
             )
         else:
+            logger.error("LLM 流式调用失败 model=%s: %s", model, _format_llm_error(exc))
             raise
 
     content = ""
