@@ -1,4 +1,5 @@
 import asyncio
+from functools import lru_cache
 
 from biri_youyaku.config import settings
 from biri_youyaku.modules.asr.base import (
@@ -15,20 +16,31 @@ def resolve_device() -> str:
     return "auto"
 
 
-def _run_sync(audio_path: str, language: str | None):
+@lru_cache(maxsize=1)
+def _load_model():
+    """faster-whisper 模型单例：第一次推理后驻留内存。"""
     try:
         from faster_whisper import WhisperModel
     except ImportError as exc:
         raise RuntimeError(
             "faster-whisper 依赖未安装，请安装 faster-whisper 后再设置 ASR_MODEL=faster-whisper"
         ) from exc
-    model = WhisperModel(settings.sensevoice_model_dir or "small", device=resolve_device())
+    return WhisperModel(settings.sensevoice_model_dir or "small", device=resolve_device())
+
+
+def _run_sync(audio_path: str, language: str | None):
+    model = _load_model()
     segments, info = model.transcribe(audio_path, language=language)
     # 物化为列表，便于后面遍历两次（边推边算进度）
     return list(segments), info
 
 
 class FasterWhisperTranscriber:
+    @staticmethod
+    def warmup() -> None:
+        """同步加载模型权重，与 transcribe 共用 @lru_cache 的 _load_model 单例。"""
+        _load_model()
+
     async def transcribe(
         self,
         request: TranscribeRequest,

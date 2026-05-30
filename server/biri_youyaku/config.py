@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     llm_max_retries: int = 2
     llm_temperature: float | None = None
     llm_chunk_token_threshold: int = 30000
+    # 哪些模型前缀必须强制 temperature=1（Moonshot/Kimi 系列对非 1 会返 400）。
+    # 逗号分隔，前缀匹配（大小写不敏感）。
+    llm_force_temp_one_prefixes: str = "kimi,moonshot"
+    # 段级总结并发上限，>1 时长视频分段总结走 asyncio.gather。
+    llm_segment_concurrency: int = 3
 
     summary_language: str = "中文简体"
 
@@ -46,6 +51,14 @@ class Settings(BaseSettings):
     job_retention_days: int = 180
     max_concurrent_jobs: int = 2
     max_concurrent_summaries: int = 2
+
+    # P3 新增：清理 / 维护策略
+    subtitle_cache_retention_days: int = 7
+    orphan_file_retention_days: int = 3
+    stale_running_fail_hours: int = 4
+    db_vacuum_interval_days: int = 30
+    wal_checkpoint_interval_hours: int = 24
+    cleanup_interval_seconds: int = 3600
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

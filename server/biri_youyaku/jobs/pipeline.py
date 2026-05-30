@@ -4,16 +4,15 @@ from collections.abc import Awaitable, Callable
 from biri_youyaku.config import settings
 from biri_youyaku.jobs import repo
 from biri_youyaku.jobs.model import Job, JobOptions
+from biri_youyaku.modules.asr import get_transcriber
 from biri_youyaku.modules.asr.base import ProgressCallback, TranscribeRequest
-from biri_youyaku.modules.asr.sensevoice import SenseVoiceTranscriber
-from biri_youyaku.modules.asr.whisper import FasterWhisperTranscriber
 from biri_youyaku.modules.bilibili import audio, meta, subtitle
 from biri_youyaku.modules.bilibili.meta import VideoMeta
-from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
 from biri_youyaku.modules.email import webhook
 from biri_youyaku.modules.llm import client as llm_client
 from biri_youyaku.modules.storage import audio as audio_storage
 from biri_youyaku.modules.storage import summary as summary_storage
+from biri_youyaku.modules.transcript import TranscriptItem
 
 
 class CanceledError(Exception):
@@ -43,7 +42,7 @@ async def transcribe_audio(
     *,
     on_progress: ProgressCallback | None = None,
 ) -> list[TranscriptItem]:
-    transcriber = FasterWhisperTranscriber() if settings.asr_model == "faster-whisper" else SenseVoiceTranscriber()
+    transcriber = get_transcriber(settings.asr_model)
     items = await transcriber.transcribe(
         TranscribeRequest(audio_path=audio_path, language=job.options.language or settings.asr_language_default),
         on_progress=on_progress,

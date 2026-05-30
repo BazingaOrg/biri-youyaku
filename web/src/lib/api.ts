@@ -85,6 +85,8 @@ export interface Job {
   options: JobOptions
   option_overrides: JobOptionOverrides
   audio_available: boolean
+  /** 邮件发送失败时的原因；存在时表示总结已完成但邮件未送达。 */
+  email_error?: string | null
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:17821'

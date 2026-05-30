@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
@@ -8,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 from biri_youyaku.config import settings
 from biri_youyaku.jobs.model import JobOptions
+from biri_youyaku.modules._http import openai_client
 from biri_youyaku.modules.bilibili.meta import VideoMeta
 from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
 from biri_youyaku.modules.asr.formatter import transcript_to_text
@@ -24,13 +26,18 @@ SummaryChunkCallback = Callable[[str], Awaitable[None]]
 TokenUsageCallback = Callable[[dict], Awaitable[None]]
 
 
+def _force_temp_one_prefixes() -> tuple[str, ...]:
+    """从 settings 里解析「必须 temperature=1」的前缀列表（逗号分隔，小写）。"""
+    raw = settings.llm_force_temp_one_prefixes or ""
+    return tuple(p.strip().lower() for p in raw.split(",") if p.strip())
+
+
 def resolve_temperature(model: str) -> float:
     if settings.llm_temperature is not None:
         return settings.llm_temperature
-    # Moonshot / Kimi 系列普遍强制 temperature=1，否则首请求返回 400。
     # 命中前缀直接给 1，省掉一次 400→retry 的往返。
     lowered = (model or "").lower()
-    if lowered.startswith(("kimi", "moonshot")):
+    if lowered.startswith(_force_temp_one_prefixes()):
         return 1
     return 0.2
 
@@ -229,6 +236,26 @@ async def _complete_json_summary(
         return await _repair_summary_json(client, model=model, content=content, on_usage=on_usage)
 
 
+async def _summarize_segment_markdown(
+    client: AsyncOpenAI,
+    *,
+    model: str,
+    prompt: str,
+    on_usage: TokenUsageCallback | None,
+) -> str:
+    """段级总结直接出 markdown，不再走 JSON wrap → 省一轮 JSON repair。
+
+    合并阶段才需要严格结构，段级只是中间产物。
+    """
+    return await _complete(
+        client,
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=resolve_temperature(model),
+        on_usage=on_usage,
+    )
+
+
 async def _summarize_chunked(
     client: AsyncOpenAI,
     *,
@@ -240,10 +267,13 @@ async def _summarize_chunked(
     on_chunk: SummaryChunkCallback | None = None,
     on_usage: TokenUsageCallback | None = None,
 ) -> str:
-    segment_summaries = []
-    for index, segment in enumerate(split_transcript(items, settings.llm_chunk_token_threshold), start=1):
+    segments = list(split_transcript(items, settings.llm_chunk_token_threshold))
+    concurrency = max(1, int(settings.llm_segment_concurrency))
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def _one_segment(index: int, segment: list[TranscriptItem]) -> tuple[int, str]:
         prompt = render_prompt(
-            SUMMARY_PROMPT,
+            SUMMARY_MARKDOWN_PROMPT,
             language=language,
             title=f"{meta.title}（分段 {index}）",
             author=meta.author,
@@ -251,8 +281,18 @@ async def _summarize_chunked(
             transcript=transcript_to_text(segment),
             subtitle_source=subtitle_source_label(subtitle_source),
         )
-        segment_summary = await _complete_json_summary(client, model=model, prompt=prompt, on_usage=on_usage)
-        segment_summaries.append(f"### 分段 {index}\n{segment_summary}")
+        async with semaphore:
+            text = await _summarize_segment_markdown(client, model=model, prompt=prompt, on_usage=on_usage)
+        return index, text
+
+    # 段级总结并行：长视频 5-6 段串行通常 5-10min，并行 2-3 路压到 2-3min
+    tasks = [
+        asyncio.create_task(_one_segment(idx, seg))
+        for idx, seg in enumerate(segments, start=1)
+    ]
+    pairs = await asyncio.gather(*tasks)
+    pairs.sort(key=lambda p: p[0])
+    segment_summaries = [f"### 分段 {idx}\n{text}" for idx, text in pairs]
 
     merge_prompt = render_prompt(
         SUMMARY_MERGE_MARKDOWN_PROMPT if on_chunk is not None else SUMMARY_MERGE_PROMPT,
@@ -290,7 +330,8 @@ async def summarize(
         raise RuntimeError("LLM_API_KEY 未配置")
 
     transcript = transcript_to_text(items)
-    client = AsyncOpenAI(
+    # 按 (api_key, base_url, timeout, max_retries) 复用 client，HTTP 连接池命中
+    client = openai_client(
         api_key=resolved_api_key,
         base_url=options.llm_base_url or settings.llm_base_url,
         timeout=settings.llm_timeout_seconds,

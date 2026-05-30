@@ -1,20 +1,14 @@
-from dataclasses import dataclass
+from biri_youyaku.modules._http import bili_client
+from biri_youyaku.modules.transcript import TranscriptItem
 
-import httpx
-
-
-@dataclass(frozen=True)
-class TranscriptItem:
-    start: float
-    end: float
-    text: str
+__all__ = ["TranscriptItem", "download"]
 
 
 async def download(subtitle_url: str) -> list[TranscriptItem]:
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.get(subtitle_url)
-        response.raise_for_status()
-        payload = response.json()
+    # 走共享 client，复用 TCP / TLS 连接池
+    response = await bili_client().get(subtitle_url)
+    response.raise_for_status()
+    payload = response.json()
 
     items = []
     for row in payload.get("body", []):

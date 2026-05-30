@@ -153,6 +153,11 @@ async def _emit(on_progress: ProgressCallback | None, items: list[TranscriptItem
 
 
 class SenseVoiceTranscriber:
+    @staticmethod
+    def warmup() -> None:
+        """同步加载模型权重；与 transcribe 共用 @lru_cache 的 _load_model 单例。"""
+        _load_model()
+
     async def transcribe(
         self,
         request: TranscribeRequest,

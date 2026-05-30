@@ -1,6 +1,6 @@
 import {Clipboard, X} from 'lucide-react'
 import type React from 'react'
-import {extractBiliUrl} from '../lib/url'
+import {sanitizeBiliInput} from '../lib/url'
 
 interface UrlInputProps {
   value: string
@@ -15,7 +15,7 @@ export function UrlInput({value, loading, error, actions, onChange, onSubmit}: U
   const paste = async () => {
     try {
       const text = await navigator.clipboard.readText()
-      onChange(extractBiliUrl(text))
+      onChange(sanitizeBiliInput(text))
     } catch {
       // Clipboard permission errors are browser UI decisions; keep the input usable.
     }
@@ -26,10 +26,12 @@ export function UrlInput({value, loading, error, actions, onChange, onSubmit}: U
     if (!text) {
       return
     }
-    const extracted = extractBiliUrl(text)
-    if (extracted !== text) {
+    // 始终 normalize：即使用户粘贴的就是「干净 URL」，也要剥掉 share_source / vd_source
+    // 之类的追踪参数，避免它们进 DB 与 dedup hash。
+    const cleaned = sanitizeBiliInput(text)
+    if (cleaned && cleaned !== text) {
       event.preventDefault()
-      onChange(extracted)
+      onChange(cleaned)
     }
   }
 

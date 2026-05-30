@@ -97,6 +97,7 @@ def serialize_job(job: Job) -> dict:
         "options": job.options.as_dict(),
         "option_overrides": job.option_overrides or {},
         "audio_available": _has_audio(job),
+        "email_error": job.email_error,
     }
 
 
@@ -181,6 +182,7 @@ async def stream_job(job_id: str):
                         "stage": job.error_stage,
                         "message": job.error_message,
                         "error_code": job.error_code,
+                        "email_error": job.email_error,
                     },
                     ensure_ascii=False,
                 ),
@@ -352,4 +354,7 @@ async def resend_email(job_id: str) -> dict:
     if job.status != JobStatus.COMPLETED or not summary:
         raise HTTPException(status_code=409, detail="Only completed jobs with a summary can be emailed")
     await send_email(_video_meta_from_job(job), summary, job.options)
+    # 重发成功 → 把上次记下的 email_error 清掉
+    repo.set_email_error(job_id, None)
+    await event_bus.publish(job_id, "status", {"status": JobStatus.COMPLETED.value, "email_error": None})
     return {"ok": True}

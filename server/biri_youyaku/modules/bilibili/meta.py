@@ -1,4 +1,3 @@
-import asyncio
 import re
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlparse
@@ -6,24 +5,8 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 
 from biri_youyaku.config import settings
-
-_BILI_TIMEOUT = 15.0
-_BILI_RETRIES = 3
-
-
-async def _get_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
-    """GET with exponential backoff retry (3 attempts, 15 s timeout per request)."""
-    last_exc: Exception | None = None
-    for attempt in range(_BILI_RETRIES):
-        try:
-            response = await client.get(url, **kwargs)
-            response.raise_for_status()
-            return response
-        except (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException) as exc:
-            last_exc = exc
-            if attempt < _BILI_RETRIES - 1:
-                await asyncio.sleep(2 ** attempt)  # 0 s, 1 s, 2 s before each retry
-    raise last_exc  # type: ignore[misc]
+from biri_youyaku.modules._cache import ttl_lru
+from biri_youyaku.modules._http import bili_client, bili_get
 
 
 @dataclass(frozen=True)
@@ -67,25 +50,24 @@ def _is_short_link(url: str) -> bool:
     return any(host == h or host.endswith("." + h) for h in _SHORT_HOSTS)
 
 
-async def resolve_short_url(url: str) -> str:
-    """Follow b23.tv / b.23.tv redirects until we land on a bilibili.com URL.
+@ttl_lru(maxsize=1024, ttl_seconds=24 * 3600)
+async def _resolve_short_url_cached(url: str) -> str:
+    """实际的短链解析，被 LRU 包一层 TTL=24h。"""
+    try:
+        response = await bili_client().get(url)
+        return str(response.url) or url
+    except (httpx.HTTPError, httpx.TransportError):
+        return url
 
-    Falls back to the original URL on network failure so the caller still has a
-    chance to surface a parsing error to the user.
+
+async def resolve_short_url(url: str) -> str:
+    """b23.tv / b.23.tv → 长 URL。非短链直接原样返回。
+
+    解析结果走 24h LRU；同一短链不会反复打 302。
     """
     if not _is_short_link(url):
         return url
-    try:
-        async with httpx.AsyncClient(
-            timeout=_BILI_TIMEOUT,
-            follow_redirects=True,
-            headers={"User-Agent": "Mozilla/5.0 Biri-Youyaku/0.1"},
-        ) as client:
-            response = await client.get(url)
-            final_url = str(response.url)
-            return final_url or url
-    except (httpx.HTTPError, httpx.TransportError):
-        return url
+    return await _resolve_short_url_cached(url)
 
 
 def extract_page_number(url: str) -> int | None:
@@ -172,71 +154,106 @@ def _cookie_header() -> str:
     return "; ".join(parts)
 
 
+# 记录上一次 fetch 看到的 cookie；变化时主动清缓存，避免旧 cookie 的 entry 占
+# 256 slot 永不淘汰（cookie 在 settings 里换是少见操作，但 lifespan/dev reload
+# 改 .env 后我们希望立刻看到新数据）。
+_last_cookie_seen: str | None = None
+
+
+def _maybe_invalidate_on_cookie_change(cookie: str) -> None:
+    global _last_cookie_seen
+    if _last_cookie_seen is None:
+        _last_cookie_seen = cookie
+        return
+    if cookie != _last_cookie_seen:
+        # cookie 变化 → 之前所有按 cookie 缓存的元信息可能已过期/可能从「无权」变「有权」
+        _fetch_view_cached.cache_clear()  # type: ignore[attr-defined]
+        _fetch_player_cached.cache_clear()  # type: ignore[attr-defined]
+        _last_cookie_seen = cookie
+
+
+def _auth_headers() -> dict[str, str]:
+    """每次构建本次请求的额外 header（带 Cookie）。
+
+    Cookie 可能在运行期被改（settings 是单例，但 SESSDATA 等可用环境变量重启刷新），
+    所以不在 client 初始化时固化进去。
+    """
+    cookie = _cookie_header()
+    return {"Cookie": cookie} if cookie else {}
+
+
+@ttl_lru(maxsize=256, ttl_seconds=3600)
+async def _fetch_view_cached(bvid: str, cookie_header: str) -> dict:
+    """`/x/web-interface/view` 结果按 (bvid, cookie) 缓存 1h。
+
+    Cookie 进 key 是为了在「先无 Cookie 失败 → 用户配上 Cookie 后」能立刻拿到新结果。
+    """
+    headers = {"Cookie": cookie_header} if cookie_header else None
+    response = await bili_get(bili_client(), "https://api.bilibili.com/x/web-interface/view", params={"bvid": bvid}, headers=headers)
+    payload = response.json()
+    if payload.get("code") != 0:
+        raise RuntimeError(payload.get("message") or "B 站元信息接口返回失败")
+    return payload["data"]
+
+
+@ttl_lru(maxsize=256, ttl_seconds=3600)
+async def _fetch_player_cached(bvid: str, cid: int, cookie_header: str) -> dict:
+    headers = {"Cookie": cookie_header} if cookie_header else None
+    response = await bili_get(
+        bili_client(),
+        "https://api.bilibili.com/x/player/wbi/v2",
+        params={"bvid": bvid, "cid": cid},
+        headers=headers,
+    )
+    return response.json().get("data") or {}
+
+
 async def fetch(url: str) -> VideoMeta:
-    # Short-link forms (b23.tv / b.23.tv) need to be expanded to a canonical
-    # bilibili.com URL before we can pull a BV id out of the path.
+    # 短链 → 长 URL（短链解析走 24h LRU）
     canonical_url = await resolve_short_url(url) if _is_short_link(url) else url
     bvid = extract_bvid(canonical_url)
     page_number = extract_page_number(canonical_url)
-    headers = {
-        "User-Agent": "Mozilla/5.0 Biri-Youyaku/0.1",
-        "Referer": "https://www.bilibili.com",
-    }
+
     cookie = _cookie_header()
-    if cookie:
-        headers["Cookie"] = cookie
+    _maybe_invalidate_on_cookie_change(cookie)
+    data = await _fetch_view_cached(bvid, cookie)
 
-    async with httpx.AsyncClient(timeout=_BILI_TIMEOUT, headers=headers) as client:
-        view_response = await _get_with_retry(
-            client,
-            "https://api.bilibili.com/x/web-interface/view",
-            params={"bvid": bvid},
-        )
-        payload = view_response.json()
-        if payload.get("code") != 0:
-            raise RuntimeError(payload.get("message") or "B 站元信息接口返回失败")
-        data = payload["data"]
-        pages = data.get("pages") or []
-        selected_page = None
-        if pages:
-            selected_page = pages[min((page_number or 1) - 1, len(pages) - 1)]
-        cid = selected_page.get("cid") if selected_page else data.get("cid")
-        subtitle_url = None
-        chapters = []
-        for row in data.get("view_points") or []:
-            title = str(row.get("content") or "").strip()
-            if not title:
-                continue
-            chapters.append(
-                Chapter(
-                    start=float(row.get("from") or 0),
-                    end=float(row.get("to")) if row.get("to") is not None else None,
-                    title=title,
-                )
+    pages = data.get("pages") or []
+    selected_page = None
+    if pages:
+        selected_page = pages[min((page_number or 1) - 1, len(pages) - 1)]
+    cid = selected_page.get("cid") if selected_page else data.get("cid")
+    subtitle_url = None
+    chapters = []
+    for row in data.get("view_points") or []:
+        title = str(row.get("content") or "").strip()
+        if not title:
+            continue
+        chapters.append(
+            Chapter(
+                start=float(row.get("from") or 0),
+                end=float(row.get("to")) if row.get("to") is not None else None,
+                title=title,
             )
-        duration_value = selected_page.get("duration") if selected_page else data.get("duration")
-        duration = float(duration_value or 0)
-        if not chapters:
-            chapters = chapters_from_description(str(data.get("desc") or ""), duration)
-        if not chapters and pages and page_number is None:
-            chapters = chapters_from_pages(pages)
+        )
+    duration_value = selected_page.get("duration") if selected_page else data.get("duration")
+    duration = float(duration_value or 0)
+    if not chapters:
+        chapters = chapters_from_description(str(data.get("desc") or ""), duration)
+    if not chapters and pages and page_number is None:
+        chapters = chapters_from_pages(pages)
 
-        if cid is not None:
-            try:
-                player_response = await _get_with_retry(
-                    client,
-                    "https://api.bilibili.com/x/player/wbi/v2",
-                    params={"bvid": bvid, "cid": cid},
-                )
-                player_data = player_response.json().get("data") or {}
-                subtitles = ((player_data.get("subtitle") or {}).get("subtitles") or [])
-                if subtitles:
-                    subtitle_url = subtitles[0].get("subtitle_url")
-                    if subtitle_url and subtitle_url.startswith("//"):
-                        subtitle_url = f"https:{subtitle_url}"
-            except Exception:
-                # Subtitle fetch failure should not block meta fetch; subtitle_url stays None
-                pass
+    if cid is not None:
+        try:
+            player_data = await _fetch_player_cached(bvid, int(cid), cookie)
+            subtitles = ((player_data.get("subtitle") or {}).get("subtitles") or [])
+            if subtitles:
+                subtitle_url = subtitles[0].get("subtitle_url")
+                if subtitle_url and subtitle_url.startswith("//"):
+                    subtitle_url = f"https:{subtitle_url}"
+        except Exception:
+            # 字幕拉取失败不阻断 meta 返回
+            pass
 
     base_title = data.get("title") or bvid
     if selected_page is not None and len(pages) > 1 and page_number is not None:

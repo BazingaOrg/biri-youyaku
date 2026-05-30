@@ -2,6 +2,7 @@ import httpx
 
 from biri_youyaku.config import settings
 from biri_youyaku.jobs.model import JobOptions
+from biri_youyaku.modules._http import email_client
 from biri_youyaku.modules.bilibili.meta import VideoMeta
 
 
@@ -40,26 +41,26 @@ async def send(meta: VideoMeta, summary_md: str, options: JobOptions) -> None:
     if settings.email_webhook_token:
         headers["Authorization"] = f"Bearer {settings.email_webhook_token}"
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            settings.email_webhook_url,
-            headers=headers,
-            json={
-                "to": recipient,
-                "subject": subject,
-                "markdown": summary_md,
-                "videoMeta": {
-                    "title": meta.title,
-                    "url": meta.url,
-                    "author": meta.author,
-                    "publishedAt": "",
-                },
-                "segmentsStats": {
-                    "total": 0,
-                    "success": 0,
-                    "failed": 0,
-                },
+    # 共享 client，复用 keepalive
+    response = await email_client().post(
+        settings.email_webhook_url,
+        headers=headers,
+        json={
+            "to": recipient,
+            "subject": subject,
+            "markdown": summary_md,
+            "videoMeta": {
+                "title": meta.title,
+                "url": meta.url,
+                "author": meta.author,
+                "publishedAt": "",
             },
-        )
-        if response.is_error:
-            raise RuntimeError(_response_error(response))
+            "segmentsStats": {
+                "total": 0,
+                "success": 0,
+                "failed": 0,
+            },
+        },
+    )
+    if response.is_error:
+        raise RuntimeError(_response_error(response))

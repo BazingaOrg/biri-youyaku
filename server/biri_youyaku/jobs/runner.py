@@ -263,12 +263,31 @@ async def run_after_resume(job_id: str) -> None:
             )
         _raise_if_canceled(job_id)
 
+        # 邮件失败（含 EMAILING 阶段 timeout = StageTimeoutError(RuntimeError)）一律
+        # 不阻断 COMPLETED：summary 已经落盘，用户可手动 ↻ 重发。
+        # - 与旧契约不同：之前任何邮件异常会把整个 job 置 FAILED。新契约把失败原因
+        #   存到 email_error 字段，前端展示「邮件未送达 ↻ 重发邮件」提示。
+        # - 取消（CancelledError / CanceledError）必须 re-raise，让外层 except 走
+        #   CANCELED 分支；否则会被静默吞掉变成「completed + email_error=取消」。
+        email_error: str | None = None
         if fresh_job.options.email_enabled:
             current_stage = JobStatus.EMAILING.value
             await transition(job_id, JobStatus.EMAILING)
-            await _with_timeout(JobStatus.EMAILING, 120, send_email(video_meta, summary_md, fresh_job.options))
+            try:
+                await _with_timeout(JobStatus.EMAILING, 120, send_email(video_meta, summary_md, fresh_job.options))
+            except (asyncio.CancelledError, CanceledError):
+                raise
+            except Exception as exc:
+                email_error = str(exc) or "邮件发送失败"
+                logger.warning("Job %s email send failed: %s", job_id, email_error)
+                repo.set_email_error(job_id, email_error)
 
-        await transition(job_id, JobStatus.COMPLETED, summary=summary_md)
+        await transition(
+            job_id,
+            JobStatus.COMPLETED,
+            summary=summary_md,
+            email_error=email_error,
+        )
     except (asyncio.CancelledError, CanceledError):
         await transition(job_id, JobStatus.CANCELED)
     except Exception as exc:

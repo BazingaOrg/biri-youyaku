@@ -9,9 +9,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from biri_youyaku.auth import _expected_token
 from biri_youyaku.config import settings
 from biri_youyaku.db import init_db
-from biri_youyaku.jobs.cleanup import cleanup_loop, cleanup_once
+from biri_youyaku.jobs.cleanup import (
+    cleanup_loop,
+    cleanup_once,
+    clean_tempfile_residues,
+    fail_stale_running_once,
+    scan_orphans_once,
+)
 from biri_youyaku.jobs.runner import recover_unfinished_jobs
 from biri_youyaku.logging import configure_logging
+from biri_youyaku.modules._http import aclose_all
 from biri_youyaku.routes import (
     config_public_router,
     config_router,
@@ -31,17 +38,47 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         len(token),
     )
     init_db()
+    # 启动期：清掉上次崩溃残留 + 跑一遍常规清理 + 兜底僵尸 + 扫孤儿
+    clean_tempfile_residues()
     await cleanup_once()
+    await fail_stale_running_once()
+    await scan_orphans_once()
     recover_unfinished_jobs()
     cleanup_task = asyncio.create_task(cleanup_loop())
+    warmup_task = asyncio.create_task(_warmup_asr())
     try:
         yield
     finally:
-        cleanup_task.cancel()
-        try:
-            await cleanup_task
-        except asyncio.CancelledError:
-            pass
+        for task in (cleanup_task, warmup_task):
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):  # warmup 失败不阻塞退出
+                pass
+        # 关闭共享 client 释放 socket，避免 pytest / reload 留连接
+        await aclose_all()
+
+
+async def _warmup_asr() -> None:
+    """异步预加载 ASR 模型。
+
+    第一次推理通常要 5-15s 加载 funasr / faster-whisper 权重；放后台跑可以让第一个
+    真实请求直接命中已驻留内存的模型。失败只 log，不影响服务可用。
+    """
+    log = logging.getLogger("biri_youyaku.startup")
+    try:
+        # 推迟 import：sandbox / 未装 ASR 依赖的部署不会因为加载这一行就拉链
+        from biri_youyaku.modules.asr import get_transcriber
+
+        transcriber = get_transcriber(settings.asr_model)
+        warmup = getattr(transcriber, "warmup", None)
+        if warmup is None:
+            log.info("ASR warmup skipped: transcriber %s has no warmup hook", type(transcriber).__name__)
+            return
+        await asyncio.to_thread(warmup)
+        log.info("ASR warmup completed: %s", type(transcriber).__name__)
+    except Exception as exc:
+        log.warning("ASR warmup failed (will load on first use): %s", exc)
 
 
 def create_app() -> FastAPI:

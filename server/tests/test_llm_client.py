@@ -57,16 +57,23 @@ def test_usage_to_dict_normalizes_openai_usage():
 
 @pytest.mark.asyncio
 async def test_summarize_chunked_summarizes_segments_then_merges(monkeypatch):
+    """段级总结改 markdown 直出 + 并行（_summarize_segment_markdown），合并阶段仍走
+    JSON wrap（_complete_json_summary）。两路 stub 都拦。"""
     calls = []
+
+    async def fake_segment_markdown(fake_client, *, model, prompt, on_usage=None):
+        calls.append(prompt)
+        return f"segment-{len(calls)}"
 
     async def fake_complete_json_summary(fake_client, *, model, prompt, on_usage=None):
         calls.append(prompt)
-        if "分段摘要" in prompt:
-            return "merged"
-        return f"segment-{len(calls)}"
+        return "merged"
 
     monkeypatch.setattr(client.settings, "llm_api_key", "key")
     monkeypatch.setattr(client.settings, "llm_chunk_token_threshold", 5)
+    # 并发=1 让段级调用顺序稳定可断言
+    monkeypatch.setattr(client.settings, "llm_segment_concurrency", 1)
+    monkeypatch.setattr(client, "_summarize_segment_markdown", fake_segment_markdown)
     monkeypatch.setattr(client, "_complete_json_summary", fake_complete_json_summary)
 
     result = await client.summarize(

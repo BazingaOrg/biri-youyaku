@@ -46,6 +46,54 @@ def _row_to_job(row: Any) -> Job:
         token_usage=json.loads(row["token_usage_json"]) if "token_usage_json" in row.keys() and row["token_usage_json"] else None,
         content_hash=row["content_hash"] if "content_hash" in row.keys() else None,
         stage_timings=json.loads(row["stage_timings_json"]) if "stage_timings_json" in row.keys() and row["stage_timings_json"] else None,
+        email_error=row["email_error"] if "email_error" in row.keys() else None,
+    )
+
+
+# 列表 / 抽屉 / 清理用的 lite 投影：不拉 `chapters_json` / `transcript_json` /
+# `stage_timings_json` 这种长 JSON 字段，30 条一拉从十几兆降到几十 KB。
+_LITE_COLUMNS = (
+    "id, url, bvid, cid, title, author, duration, status, "
+    "error_stage, error_message, error_code, audio_path, "
+    "subtitle_source, summary_path, options_json, effective_options_json, "
+    "created_at, updated_at, completed_at, stream_finished_at, "
+    "token_usage_json, content_hash, email_error"
+)
+
+
+def _row_to_job_lite(row: Any) -> Job:
+    """与 `_row_to_job` 行为一致，但把长 JSON 字段（chapters/transcript/stage_timings）
+    视为 None，避免在列表页拉巨型 payload。详情接口仍走 get_job → _row_to_job 拿全量。
+    """
+    option_overrides = json.loads(row["options_json"])
+    effective_options = json.loads(row["effective_options_json"] or row["options_json"])
+    return Job(
+        id=row["id"],
+        url=row["url"],
+        bvid=row["bvid"],
+        cid=row["cid"],
+        title=row["title"],
+        author=row["author"],
+        duration=row["duration"],
+        status=JobStatus(row["status"]),
+        error_stage=row["error_stage"],
+        error_message=row["error_message"],
+        error_code=row["error_code"] if "error_code" in row.keys() else None,
+        audio_path=row["audio_path"],
+        subtitle_source=row["subtitle_source"],
+        chapters=None,
+        transcript=None,
+        summary_path=row["summary_path"],
+        options=JobOptions.from_dict(effective_options),
+        option_overrides=option_overrides,
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        completed_at=row["completed_at"],
+        stream_finished_at=row["stream_finished_at"] if "stream_finished_at" in row.keys() else None,
+        token_usage=json.loads(row["token_usage_json"]) if "token_usage_json" in row.keys() and row["token_usage_json"] else None,
+        content_hash=row["content_hash"] if "content_hash" in row.keys() else None,
+        stage_timings=None,
+        email_error=row["email_error"] if "email_error" in row.keys() else None,
     )
 
 
@@ -93,21 +141,23 @@ def get_job(job_id: str) -> Job | None:
 
 
 def list_jobs(limit: int = 50, offset: int = 0, cursor: int | None = None) -> list[Job]:
+    """列表页接口：走 lite 投影，不拉 transcript/chapters/stage_timings。"""
     with connect() as connection:
         if cursor is not None:
             rows = connection.execute(
-                "SELECT * FROM jobs WHERE created_at < ? ORDER BY created_at DESC LIMIT ?",
+                f"SELECT {_LITE_COLUMNS} FROM jobs WHERE created_at < ? ORDER BY created_at DESC LIMIT ?",
                 (cursor, limit),
             ).fetchall()
         else:
             rows = connection.execute(
-                "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                f"SELECT {_LITE_COLUMNS} FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?",
                 (limit, offset),
             ).fetchall()
-    return [_row_to_job(row) for row in rows]
+    return [_row_to_job_lite(row) for row in rows]
 
 
 def list_recoverable_jobs() -> list[Job]:
+    """启动恢复：只需要 status / url / options 这些 lite 字段决定是否能恢复。"""
     terminal_statuses = (
         JobStatus.COMPLETED.value,
         JobStatus.FAILED.value,
@@ -116,27 +166,28 @@ def list_recoverable_jobs() -> list[Job]:
     )
     with connect() as connection:
         rows = connection.execute(
-            """
-            SELECT * FROM jobs
+            f"""
+            SELECT {_LITE_COLUMNS} FROM jobs
             WHERE status NOT IN (?, ?, ?, ?)
             ORDER BY created_at ASC
             """,
             terminal_statuses,
         ).fetchall()
-    return [_row_to_job(row) for row in rows]
+    return [_row_to_job_lite(row) for row in rows]
 
 
 def list_jobs_by_status(statuses: set[JobStatus]) -> list[Job]:
+    """清理 / 批量删除用：走 lite 投影，省内存。"""
     if not statuses:
         return []
     placeholders = ",".join("?" for _ in statuses)
     values = [status.value for status in statuses]
     with connect() as connection:
         rows = connection.execute(
-            f"SELECT * FROM jobs WHERE status IN ({placeholders}) ORDER BY created_at DESC",
+            f"SELECT {_LITE_COLUMNS} FROM jobs WHERE status IN ({placeholders}) ORDER BY created_at DESC",
             values,
         ).fetchall()
-    return [_row_to_job(row) for row in rows]
+    return [_row_to_job_lite(row) for row in rows]
 
 
 def list_jobs_by_status_before(statuses: set[JobStatus], before_ms: int) -> list[Job]:
@@ -147,13 +198,50 @@ def list_jobs_by_status_before(statuses: set[JobStatus], before_ms: int) -> list
     with connect() as connection:
         rows = connection.execute(
             f"""
-            SELECT * FROM jobs
+            SELECT {_LITE_COLUMNS} FROM jobs
             WHERE status IN ({placeholders}) AND updated_at < ?
             ORDER BY updated_at ASC
             """,
             [*values, before_ms],
         ).fetchall()
-    return [_row_to_job(row) for row in rows]
+    return [_row_to_job_lite(row) for row in rows]
+
+
+def list_running_jobs_stale_before(before_ms: int) -> list[Job]:
+    """非终态且 `updated_at` 早于 before_ms 的僵尸任务。"""
+    terminal = (
+        JobStatus.COMPLETED.value,
+        JobStatus.FAILED.value,
+        JobStatus.CANCELED.value,
+        JobStatus.TRANSCRIPT_READY.value,
+    )
+    with connect() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT {_LITE_COLUMNS} FROM jobs
+            WHERE status NOT IN (?, ?, ?, ?) AND updated_at < ?
+            ORDER BY updated_at ASC
+            """,
+            (*terminal, before_ms),
+        ).fetchall()
+    return [_row_to_job_lite(row) for row in rows]
+
+
+def all_audio_paths() -> set[str]:
+    """孤儿扫描用：返回 DB 里所有 `audio_path` 集合。"""
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT audio_path FROM jobs WHERE audio_path IS NOT NULL"
+        ).fetchall()
+    return {row["audio_path"] for row in rows if row["audio_path"]}
+
+
+def all_summary_paths() -> set[str]:
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT summary_path FROM jobs WHERE summary_path IS NOT NULL"
+        ).fetchall()
+    return {row["summary_path"] for row in rows if row["summary_path"]}
 
 
 def update_status(job_id: str, status: JobStatus) -> None:
@@ -350,6 +438,15 @@ def clear_summary_path(job_id: str) -> None:
         connection.execute(
             "UPDATE jobs SET summary_path = NULL, completed_at = NULL, updated_at = ? WHERE id = ?",
             (now_ms(), job_id),
+        )
+
+
+def set_email_error(job_id: str, message: str | None) -> None:
+    """`COMPLETED + email_error` 表示总结成功但邮件失败，前端展示「邮件未送达 ↻ 重发」。"""
+    with connect() as connection:
+        connection.execute(
+            "UPDATE jobs SET email_error = ?, updated_at = ? WHERE id = ?",
+            (message, now_ms(), job_id),
         )
 
 
