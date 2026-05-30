@@ -50,17 +50,17 @@ export function ToastProvider({children}: {children: ReactNode}) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      {/* 左下角；抽屉打开时整层隐藏（styles.css 里的 body[data-history-drawer="open"] 规则） */}
+      {/* 右上角；抽屉改成底部弹层后两者不再重叠 */}
       <div
         data-toast-stack
-        className="pointer-events-none fixed bottom-4 left-4 z-50 grid max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-sm gap-3 overflow-y-auto [&>*]:pointer-events-auto"
+        className="pointer-events-none fixed right-4 top-4 z-50 flex max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-sm flex-col gap-3 overflow-y-auto [&>*]:pointer-events-auto"
       >
         {toasts.map((toast) => {
           const Icon = icons[toast.type]
           const copyText = [toast.title, toast.message].filter(Boolean).join('\n')
           return (
-            <div key={toast.id} className={`animate-pop rounded-2xl border bg-panel/95 p-4 shadow-card backdrop-blur ${
-              toast.type === 'error' ? 'border-danger/20' : toast.type === 'success' ? 'border-success/20' : 'border-line'
+            <div key={toast.id} className={`animate-pop overflow-hidden rounded-2xl border bg-panel p-4 shadow-card ${
+              toast.type === 'error' ? 'border-danger/30' : toast.type === 'success' ? 'border-success/30' : 'border-line'
             }`}>
               <div className="flex gap-3">
                 <Icon size={20} className={toast.type === 'error' ? 'text-danger' : toast.type === 'success' ? 'text-success' : 'text-brand'} />

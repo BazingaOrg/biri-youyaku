@@ -27,7 +27,6 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(false)
 
-  // 开抽屉时拉、refreshKey 变化时拉
   useEffect(() => {
     if (!open) return
     let canceled = false
@@ -39,24 +38,12 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
     return () => { canceled = true }
   }, [open, refreshKey])
 
-  // ESC 关闭
   useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
-
-  // 标记 body：toast 层会读这个属性，抽屉开着的时候自己隐藏，避免遮挡列表内容
-  useEffect(() => {
-    if (open) {
-      document.body.dataset.historyDrawer = 'open'
-      return () => {
-        delete document.body.dataset.historyDrawer
-      }
-    }
-    return undefined
-  }, [open])
 
   const handleOpen = (jobId: string) => {
     onClose()
@@ -70,7 +57,7 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
       setJobs((current) => current.filter((j) => j.id !== jobId))
       onDeleted?.(jobId)
     } catch {
-      // 静默：列表会在下次开抽屉时刷新
+      // 静默：下次开抽屉会刷新
     }
   }
 
@@ -83,13 +70,17 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
       aria-hidden={!open}
     >
       <div className="absolute inset-0 bg-ink/30 backdrop-blur-sm" />
+      {/* 底部弹层：居中、最大 xl，70vh 高，圆角只在顶部 */}
       <aside
         onClick={(e) => e.stopPropagation()}
-        className={`absolute right-0 top-0 flex h-full w-full max-w-[360px] flex-col bg-panel shadow-card transition-transform duration-[320ms] ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
-          open ? 'translate-x-0' : 'translate-x-full'
+        className={`absolute inset-x-0 bottom-0 mx-auto flex h-[70vh] w-full max-w-xl flex-col rounded-t-3xl border-t border-line bg-canvas shadow-card transition-transform duration-[320ms] ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
+          open ? 'translate-y-0' : 'translate-y-full'
         }`}
       >
-        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+        <div className="pt-2">
+          <div className="mx-auto h-1.5 w-12 rounded-full bg-line" />
+        </div>
+        <header className="flex items-center justify-between gap-3 px-5 py-3">
           <h2 className="text-base font-semibold">历史</h2>
           <button
             type="button"
@@ -100,7 +91,7 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
             <X size={18} />
           </button>
         </header>
-        <div className="flex-1 overflow-y-auto p-3">
+        <div className="flex-1 overflow-y-auto px-3 pb-4">
           {loading && <p className="py-6 text-center text-sm text-muted">加载中</p>}
           {!loading && jobs.length === 0 && (
             <p className="py-6 text-center text-sm text-muted">还没有任务记录</p>
@@ -113,7 +104,7 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
                   <button
                     type="button"
                     onClick={() => handleOpen(job.id)}
-                    className="group grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-2xl border border-line bg-lift p-3 text-left transition hover:border-brand/30 hover:bg-brandSoft/30 active:scale-[0.99]"
+                    className="group grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-2xl border border-line bg-panel p-3 text-left transition hover:border-brand/30 hover:bg-brandSoft/30 active:scale-[0.99]"
                   >
                     <div className="min-w-0">
                       <p className="line-clamp-2 break-words text-sm font-medium text-ink">
@@ -131,7 +122,7 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
                                 ? 'bg-danger/15 text-danger'
                                 : isRunning
                                   ? 'bg-warning/15 text-warning'
-                                  : 'bg-panel text-muted'
+                                  : 'bg-lift text-muted'
                           }`}
                         >
                           {formatStatus(job.status)}
@@ -143,7 +134,7 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
                       role="button"
                       aria-label="删除"
                       onClick={(e) => void handleDelete(job.id, e)}
-                      className="grid h-9 w-9 shrink-0 self-start place-items-center rounded-xl text-muted opacity-100 transition hover:bg-panel hover:text-danger active:scale-95 sm:opacity-0 sm:group-hover:opacity-100"
+                      className="grid h-9 w-9 shrink-0 self-start place-items-center rounded-xl text-muted opacity-100 transition hover:bg-lift hover:text-danger active:scale-95 sm:opacity-0 sm:group-hover:opacity-100"
                     >
                       <Trash2 size={15} />
                     </span>

@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import type {ReactNode} from 'react'
-import {Download, ExternalLink, History, Plus, RotateCw, XCircle} from 'lucide-react'
+import {Copy, ExternalLink, FileDown, History, Music, Plus, RotateCw, Sparkles, XCircle} from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import {useLocation} from 'wouter'
 import {cancelJob, createJob, downloadJobAudio, getJob, resumeJob, retryJob} from '../lib/api'
@@ -14,6 +14,7 @@ import {useToast} from '../components/ToastProvider'
 import {UrlInput} from '../components/UrlInput'
 import {StepCarousel, type StepDef, type StepState} from '../components/StepCarousel'
 import {HistoryDrawer} from '../components/HistoryDrawer'
+import {IconButton} from '../components/IconButton'
 import {clearActive, readActive, subscribeActive, writeActive} from '../lib/activeJob'
 
 interface WorkspaceProps {
@@ -66,13 +67,6 @@ function pickStepState(idx: number, currentIdx: number, status: JobStatus): Step
   return 'pending'
 }
 
-// ---------- 公用按钮样式 ----------
-
-const PRIMARY_BTN =
-  'inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-brand px-5 text-sm font-semibold text-white transition hover:brightness-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50'
-const GHOST_BTN =
-  'inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-lift px-4 text-sm font-medium text-muted transition hover:bg-line/70 hover:text-ink active:scale-95 disabled:cursor-not-allowed disabled:opacity-40'
-
 // ---------- A. Idle ----------
 
 function IdleView({
@@ -118,19 +112,16 @@ function IdleView({
           }}
           onSubmit={submit}
         />
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <button
-            type="button"
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <IconButton
+            icon={busy ? <RotateCw size={20} className="animate-spin" /> : <Sparkles size={22} />}
+            label={busy ? '处理中…' : '开始总结'}
             onClick={() => void submit()}
             disabled={busy || url.trim().length === 0}
-            className={PRIMARY_BTN + ' min-w-[120px]'}
-          >
-            {busy ? '处理中…' : '开始总结'}
-          </button>
-          <button type="button" onClick={onOpenHistory} className={GHOST_BTN}>
-            <History size={16} />
-            历史
-          </button>
+            variant="primary"
+            size="lg"
+          />
+          <IconButton icon={<History size={20} />} label="历史" onClick={onOpenHistory} size="lg" />
         </div>
       </div>
     </div>
@@ -315,13 +306,9 @@ function RunningView({
 
   return (
     <div className="grid gap-4 py-4">
-      <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-        <button type="button" onClick={onNew} className={GHOST_BTN}>
-          <Plus size={16} /> 新建
-        </button>
-        <button type="button" onClick={onOpenHistory} className={GHOST_BTN}>
-          <History size={16} /> 历史
-        </button>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <IconButton icon={<Plus size={18} />} label="新建" onClick={onNew} />
+        <IconButton icon={<History size={18} />} label="历史" onClick={onOpenHistory} />
       </div>
       <MetaBar job={job} />
       <StepCarousel steps={steps} currentIndex={currentIdx} />
@@ -334,14 +321,16 @@ function RunningView({
       {(canCancel || canRetry) && (
         <div className="flex flex-wrap items-center justify-center gap-2">
           {canCancel && (
-            <button type="button" onClick={onCancel} className={GHOST_BTN}>
-              <XCircle size={16} /> 取消
-            </button>
+            <IconButton icon={<XCircle size={18} />} label="取消" onClick={onCancel} variant="danger" />
           )}
           {canRetry && (
-            <button type="button" onClick={onRetry} disabled={busy} className={PRIMARY_BTN}>
-              <RotateCw size={16} /> {failure?.actionLabel || '重试'}
-            </button>
+            <IconButton
+              icon={<RotateCw size={18} />}
+              label={failure?.actionLabel || '重试'}
+              onClick={onRetry}
+              disabled={busy}
+              variant="primary"
+            />
           )}
         </div>
       )}
@@ -368,6 +357,28 @@ function DoneView({
 }) {
   return (
     <div className="grid gap-4 py-4">
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <IconButton icon={<Plus size={18} />} label="新建" onClick={onNew} />
+        <IconButton
+          icon={<Music size={18} />}
+          label="下载音频"
+          onClick={onDownloadAudio}
+          disabled={!job.audio_available}
+        />
+        <IconButton
+          icon={<Copy size={18} />}
+          label="复制总结"
+          onClick={onCopy}
+          disabled={!job.summary}
+        />
+        <IconButton
+          icon={<FileDown size={18} />}
+          label="下载 Markdown"
+          onClick={onDownloadMarkdown}
+          disabled={!job.summary}
+        />
+        <IconButton icon={<History size={18} />} label="历史" onClick={onOpenHistory} />
+      </div>
       <MetaBar job={job} />
       <section className="rounded-3xl bg-panel p-4 shadow-card sm:p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -382,33 +393,6 @@ function DoneView({
           <p className="text-sm text-muted">没有总结内容</p>
         )}
       </section>
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        <button type="button" onClick={onNew} className={GHOST_BTN}>
-          <Plus size={16} /> 新建
-        </button>
-        <button
-          type="button"
-          onClick={onDownloadAudio}
-          disabled={!job.audio_available}
-          className={GHOST_BTN}
-        >
-          <Download size={16} /> 下载音频
-        </button>
-        <button type="button" onClick={onCopy} disabled={!job.summary} className={GHOST_BTN}>
-          复制
-        </button>
-        <button
-          type="button"
-          onClick={onDownloadMarkdown}
-          disabled={!job.summary}
-          className={GHOST_BTN}
-        >
-          下载 .md
-        </button>
-        <button type="button" onClick={onOpenHistory} className={GHOST_BTN}>
-          <History size={16} /> 历史
-        </button>
-      </div>
     </div>
   )
 }
@@ -635,12 +619,8 @@ export function Workspace({jobId}: WorkspaceProps) {
         <div className="grid gap-3 py-8 text-center">
           <p className="text-sm text-danger">{error}</p>
           <div className="flex flex-wrap items-center justify-center gap-2">
-            <button type="button" onClick={goNew} className={GHOST_BTN}>
-              <Plus size={16} /> 新建
-            </button>
-            <button type="button" onClick={openHistory} className={GHOST_BTN}>
-              <History size={16} /> 历史
-            </button>
+            <IconButton icon={<Plus size={18} />} label="新建" onClick={goNew} />
+            <IconButton icon={<History size={18} />} label="历史" onClick={openHistory} />
           </div>
         </div>
         {drawer}
