@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # 公网部署防滥用：视频时长上限（秒）。超长视频拖死 ASR/LLM 槽位且总结质量差。
     # 默认 1 小时；想放宽设 7200（2h）即可，不建议更长。
     max_video_duration_seconds: int = 3600
+    # 在飞任务总数上限（PENDING + 各 RUNNING 阶段总和）。即便单 IP 在限流内灌任务，
+    # 也不会让 PENDING 队列无限堆积。超出 → 503 让前端友好提示「忙不过来」。
+    max_inflight_jobs: int = 20
     # 公网部署防 SSRF：/v1/llm/models 接受的 base_url 必须以这些 host 结尾。
     # 留空 = 允许任意（仅适合本地）。生产环境务必配齐。
     llm_base_url_allowed_hosts: str = (

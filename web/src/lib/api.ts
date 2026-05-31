@@ -119,6 +119,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       const hint = retryAfter ? `请 ${retryAfter}s 后再试` : '请稍后再试'
       throw new Error(`操作太频繁，${hint}`)
     }
+    // 503：在飞任务到上限了
+    if (response.status === 503) {
+      try {
+        const payload = await response.clone().json() as {detail?: string}
+        if (payload.detail) throw new Error(payload.detail)
+      } catch { /* fall through */ }
+      throw new Error('服务器繁忙，请稍后再试')
+    }
     const message = await response.text()
     throw new Error(message || `HTTP ${response.status}`)
   }

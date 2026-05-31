@@ -114,9 +114,19 @@ def _video_meta_from_job(job: Job) -> VideoMeta:
     )
 
 
+_TERMINAL_JOB_STATUSES = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED}
+
+
 @router.post("/jobs")
 @limiter.limit("10/minute")
 async def create_job(request: Request, payload: CreateJobPayload) -> dict:
+    # 容量保护：单 IP 限流挡不住多 IP 协同灌任务；这里看全局在飞总数兜底
+    inflight = repo.count_jobs_excluding_status(_TERMINAL_JOB_STATUSES)
+    if inflight >= settings.max_inflight_jobs:
+        raise HTTPException(
+            status_code=503,
+            detail=f"服务器忙不过来（在飞任务 {inflight}/{settings.max_inflight_jobs}），请稍后重试",
+        )
     option_overrides = payload.options.model_dump(exclude_unset=True)
     llm_api_key = option_overrides.pop("llm_api_key", None)
     options = JobOptions.from_overrides(
