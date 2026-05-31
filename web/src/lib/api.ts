@@ -113,6 +113,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     credentials: init.credentials ?? 'include',
   })
   if (!response.ok) {
+    // 429 走友好提示：服务器（或 CF）限流，不是用户姿势错
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('retry-after')
+      const hint = retryAfter ? `请 ${retryAfter}s 后再试` : '请稍后再试'
+      throw new Error(`操作太频繁，${hint}`)
+    }
     const message = await response.text()
     throw new Error(message || `HTTP ${response.status}`)
   }

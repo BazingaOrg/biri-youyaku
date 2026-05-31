@@ -45,6 +45,22 @@ class Settings(BaseSettings):
     email_default_recipient: str = ""
     email_subject_template: str = "[Biri-Youyaku] {{title}}"
 
+    # 公网部署防滥用：视频时长上限（秒）。超长视频拖死 ASR/LLM 槽位且总结质量差。
+    # 默认 1 小时；想放宽设 7200（2h）即可，不建议更长。
+    max_video_duration_seconds: int = 3600
+    # 公网部署防 SSRF：/v1/llm/models 接受的 base_url 必须以这些 host 结尾。
+    # 留空 = 允许任意（仅适合本地）。生产环境务必配齐。
+    llm_base_url_allowed_hosts: str = (
+        "api.openai.com,"
+        "api.moonshot.cn,"
+        "api.anthropic.com,"
+        "dashscope.aliyuncs.com,"
+        "api.deepseek.com,"
+        "generativelanguage.googleapis.com,"
+        "open.bigmodel.cn,"
+        "api.siliconflow.cn"
+    )
+
     audio_storage_dir: Path = Path("data/audio")
     summary_storage_dir: Path = Path("data/summaries")
     db_path: Path = Path("data/biri_youyaku.db")
@@ -67,6 +83,10 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [item.strip() for item in self.app_cors_origins.split(",") if item.strip()]
+
+    @property
+    def llm_allowed_hosts(self) -> list[str]:
+        return [item.strip().lower() for item in self.llm_base_url_allowed_hosts.split(",") if item.strip()]
 
     @field_validator("audio_storage_dir", "summary_storage_dir", "db_path", mode="before")
     @classmethod

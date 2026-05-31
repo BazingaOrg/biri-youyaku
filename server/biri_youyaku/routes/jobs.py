@@ -3,7 +3,7 @@ import asyncio
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
@@ -19,6 +19,8 @@ from biri_youyaku.modules.email.webhook import send as send_email
 from biri_youyaku.modules.bilibili.meta import VideoMeta
 from biri_youyaku.modules.bilibili import meta as bili_meta
 from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
+from biri_youyaku.rate_limit import limiter
+from biri_youyaku.routes.config import _validate_llm_base_url
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_token)])
 
@@ -113,16 +115,19 @@ def _video_meta_from_job(job: Job) -> VideoMeta:
 
 
 @router.post("/jobs")
-async def create_job(payload: CreateJobPayload) -> dict:
+@limiter.limit("10/minute")
+async def create_job(request: Request, payload: CreateJobPayload) -> dict:
     option_overrides = payload.options.model_dump(exclude_unset=True)
     llm_api_key = option_overrides.pop("llm_api_key", None)
     options = JobOptions.from_overrides(
         option_overrides,
         settings,
     )
+    # 防 SSRF：用户传入的 llm_base_url 必须过白名单（同 /v1/llm/models 规则）
+    _validate_llm_base_url(options.llm_base_url)
     # 早失败：开了邮件却没有有效收件人 → 直接拒，别让任务跑完才在 EMAILING 阶段 fail。
     if options.email_enabled:
-        effective_recipient = (options.email_recipient or settings.email_default_recipient or "").strip()
+        effective_recipient = (settings.email_default_recipient or "").strip()
         if not effective_recipient or not settings.email_webhook_url:
             raise HTTPException(
                 status_code=400,
@@ -137,8 +142,17 @@ async def create_job(payload: CreateJobPayload) -> dict:
 
 
 @router.post("/jobs/preview")
-async def preview_job(payload: PreviewJobPayload) -> dict:
+@limiter.limit("30/minute")
+async def preview_job(request: Request, payload: PreviewJobPayload) -> dict:
     meta = await bili_meta.fetch(payload.url)
+    if meta.duration and meta.duration > settings.max_video_duration_seconds:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"视频时长 {int(meta.duration // 60)} 分钟，超过上限 "
+                f"{settings.max_video_duration_seconds // 60} 分钟。"
+            ),
+        )
     existing = repo.find_latest_by_video(meta.bvid, meta.cid)
     response = {
         "ok": True,
@@ -233,7 +247,8 @@ async def cancel(job_id: str) -> dict:
 
 
 @router.post("/jobs/{job_id}/resume")
-async def resume(job_id: str, payload: ResumeJobPayload | None = None) -> dict:
+@limiter.limit("30/minute")
+async def resume(request: Request, job_id: str, payload: ResumeJobPayload | None = None) -> dict:
     job = repo.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -266,7 +281,8 @@ async def resume(job_id: str, payload: ResumeJobPayload | None = None) -> dict:
 
 
 @router.post("/jobs/{job_id}/retry")
-async def retry(job_id: str, payload: RetryJobPayload | None = None) -> dict:
+@limiter.limit("30/minute")
+async def retry(request: Request, job_id: str, payload: RetryJobPayload | None = None) -> dict:
     job = repo.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -357,7 +373,8 @@ async def delete(job_id: str) -> dict:
 
 
 @router.post("/jobs/{job_id}/email")
-async def resend_email(job_id: str) -> dict:
+@limiter.limit("10/minute")
+async def resend_email(request: Request, job_id: str) -> dict:
     job = repo.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")

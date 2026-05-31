@@ -3,12 +3,17 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from biri_youyaku.auth import _expected_token
 from biri_youyaku.config import settings
 from biri_youyaku.db import init_db
+from biri_youyaku.rate_limit import limiter
 from biri_youyaku.jobs.cleanup import (
     cleanup_loop,
     cleanup_once,
@@ -94,8 +99,26 @@ async def _warmup_asr() -> None:
         log.warning("ASR warmup failed (will load on first use): %s", exc)
 
 
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """全局兜底：未捕获异常一律返回通用 500，详细堆栈只进日志。
+    避免把内部路径 / API key / 堆栈片段直接吐给客户端。
+    """
+    logging.getLogger("biri_youyaku.error").exception(
+        "Unhandled exception on %s %s", request.method, request.url.path
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "服务器内部错误，请稍后重试"},
+    )
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="Biri-Youyaku Server", version="0.1.0", lifespan=lifespan)
+    # slowapi：超额自动 429，每路由用 @limiter.limit("...") 声明阈值
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_exception_handler(Exception, _unhandled_exception_handler)
+    app.add_middleware(SlowAPIMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

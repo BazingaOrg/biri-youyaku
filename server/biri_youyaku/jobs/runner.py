@@ -146,6 +146,12 @@ async def run_until_transcript(job_id: str) -> None:
         current_stage = JobStatus.FETCHING_META.value
         await transition(job_id, JobStatus.FETCHING_META)
         video_meta = await _with_timeout(JobStatus.FETCHING_META, 30, fetch_meta(job.url))
+        # 防滥用：preview 阶段已经拦了一次，这里兜底（用户绕过 preview 直接 POST /v1/jobs 也能挡）
+        if video_meta.duration and video_meta.duration > settings.max_video_duration_seconds:
+            raise RuntimeError(
+                f"视频时长 {int(video_meta.duration // 60)} 分钟超过上限 "
+                f"{settings.max_video_duration_seconds // 60} 分钟"
+            )
         repo.update_meta(
             job_id,
             bvid=video_meta.bvid,

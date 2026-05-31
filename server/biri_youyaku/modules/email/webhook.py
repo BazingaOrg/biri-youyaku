@@ -27,7 +27,10 @@ async def send(meta: VideoMeta, summary_md: str, options: JobOptions) -> None:
     if not settings.email_webhook_url:
         raise RuntimeError("EMAIL_WEBHOOK_URL 未配置")
 
-    recipient = (options.email_recipient or settings.email_default_recipient).strip()
+    # 安全：忽略 options.email_recipient，永远只发到 .env 配置的默认收件人。
+    # 防止拿到 API_TOKEN 的人借用 Worker 给任意邮箱发垃圾邮件，导致 Worker 域名进黑名单。
+    # 多收件人 / 转发场景请改用邮件客户端规则，不要把分发逻辑放到这里。
+    recipient = (settings.email_default_recipient or "").strip()
     if not recipient:
         raise RuntimeError("EMAIL_DEFAULT_RECIPIENT 未配置")
 
