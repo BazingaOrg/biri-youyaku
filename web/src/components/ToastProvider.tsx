@@ -64,7 +64,7 @@ export function ToastProvider({children}: {children: ReactNode}) {
       */}
       <div
         data-toast-stack
-        className="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex max-h-[calc(100vh-2rem)] flex-col gap-2 overflow-y-auto sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-4 sm:w-[calc(100vw-2rem)] sm:max-w-sm sm:gap-3 [&>*]:pointer-events-auto"
+        className="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex flex-col gap-2 sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-4 sm:w-[calc(100vw-2rem)] sm:max-w-sm sm:gap-3 [&>*]:pointer-events-auto"
       >
         {hiddenCount > 0 && (
           <button
