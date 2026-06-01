@@ -2,6 +2,11 @@
 
 [中文](README.md) | [English](README.en.md)
 
+> `要約`（ようやく / yōyaku）在日语里是「摘要、总结」，同音 `ようやく` 又有「终于」之意。
+> `biri` 来自 Bilibili 的日语口语叫法 `ビリビリ`。
+>
+> 灵感：[linzzzzzz/openclip](https://github.com/linzzzzzz/openclip) · [IndieKKY/bilibili-subtitle](https://github.com/IndieKKY/bilibili-subtitle)
+
 粘贴 B 站视频链接，先取字幕；没字幕则下载音频转写。一键生成摘要，也可以发到邮箱。
 
 ## 60 秒快速开始
@@ -28,7 +33,6 @@ bash scripts/dev.sh
 - `web/`：前端（Vite + React）。
 - `server/`：后端（FastAPI + SQLite）。
 - `examples/email-worker/`：可选的 Cloudflare Worker 模板，把总结发到邮箱。
-- `docs/`：设计文档与优化计划。
 - `scripts/dev.sh`、`docker-compose.yml`：本地一键启动。
 
 ---
@@ -242,15 +246,6 @@ your-api-domain.example.com -> http://localhost:17821
 | 并发 | `MAX_CONCURRENT_SUMMARIES` | `2` | LLM 总结并发上限 |
 
 ---
-
-## 名字 / 灵感
-
-`要約`（ようやく / yōyaku）在日语里是「摘要、总结」，同音 `ようやく` 又有「终于」之意。
-`biri` 来自 Bilibili 的日语口语叫法 `ビリビリ`。
-
-灵感：
-- [linzzzzzz/openclip](https://github.com/linzzzzzz/openclip)
-- [IndieKKY/bilibili-subtitle](https://github.com/IndieKKY/bilibili-subtitle)
 
 ## License
 

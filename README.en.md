@@ -2,6 +2,11 @@
 
 [中文](README.md) | [English](README.en.md)
 
+> `要約` (ようやく / yōyaku) means "summary" in Japanese; the same pronunciation
+> also means "at last". `biri` comes from `ビリビリ`, Japanese for Bilibili.
+>
+> Inspired by [linzzzzzz/openclip](https://github.com/linzzzzzz/openclip) · [IndieKKY/bilibili-subtitle](https://github.com/IndieKKY/bilibili-subtitle)
+
 Paste a Bilibili video link, fetch subtitles when available, fall back to audio
 transcription, and generate a Markdown summary in one click. Optionally email the
 result.
@@ -30,7 +35,6 @@ Open <http://127.0.0.1:5173> and paste any Bilibili video URL.
 - `web/` — Vite + React frontend.
 - `server/` — FastAPI + SQLite backend.
 - `examples/email-worker/` — optional Cloudflare Worker template for emailing summaries.
-- `docs/` — design and optimization notes.
 - `scripts/dev.sh`, `docker-compose.yml` — one-command local startup.
 
 ---
@@ -247,15 +251,6 @@ Every tunable in `server/.env` (defaults live in `server/biri_youyaku/config.py`
 | Concurrency | `MAX_CONCURRENT_SUMMARIES` | `2` | LLM summarize cap |
 
 ---
-
-## Name / inspiration
-
-`要約` (ようやく / yōyaku) means "summary" in Japanese; the same pronunciation
-also means "at last". `biri` comes from `ビリビリ`, Japanese for Bilibili.
-
-Inspired by:
-- [linzzzzzz/openclip](https://github.com/linzzzzzz/openclip)
-- [IndieKKY/bilibili-subtitle](https://github.com/IndieKKY/bilibili-subtitle)
 
 ## License
 
