@@ -327,7 +327,11 @@ async def summarize(
 ) -> str:
     resolved_api_key = api_key or settings.llm_api_key
     if not resolved_api_key:
-        raise RuntimeError("LLM_API_KEY 未配置")
+        # 中性表述：前端 Settings 填 key 或后端 server/.env 配 LLM_API_KEY 二选一都能用
+        raise RuntimeError(
+            "LLM_API_KEY 未配置：在前端 Settings 中填入，或在 server/.env 配置 LLM_API_KEY，"
+            "二选一即可（OpenAI 兼容供应商皆可；本地 ollama 可填任意非空字符串）。"
+        )
 
     transcript = transcript_to_text(items)
     # 按 (api_key, base_url, timeout, max_retries) 复用 client，HTTP 连接池命中

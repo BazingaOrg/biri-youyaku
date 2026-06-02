@@ -26,6 +26,20 @@ _stage_started_at: dict[str, tuple[str, int]] = {}
 _io_semaphore = asyncio.Semaphore(settings.max_concurrent_jobs)
 _summary_semaphore = asyncio.Semaphore(settings.max_concurrent_summaries)
 
+# 防御性上限：极端场景（前端疯狂建任务但全部失败、collect 钩子被 bug 跳过等）下
+# 这个 dict 不应该无限增长。每条 entry 在 job 结束时会 pop；这里做个兜底，超过就丢最早的。
+_JOB_KEY_LIMIT = 1024
+
+
+def _remember_job_key(job_id: str, llm_api_key: str | None) -> None:
+    if llm_api_key is None or not llm_api_key.strip():
+        return
+    _job_llm_api_keys[job_id] = llm_api_key.strip()
+    while len(_job_llm_api_keys) > _JOB_KEY_LIMIT:
+        oldest = next(iter(_job_llm_api_keys))
+        _job_llm_api_keys.pop(oldest, None)
+        logger.warning("_job_llm_api_keys 超出上限 %d，丢弃最早 entry: %s", _JOB_KEY_LIMIT, oldest)
+
 
 class StageTimeoutError(RuntimeError):
     pass
@@ -68,8 +82,7 @@ def retry_job(job_id: str, *, llm_api_key: str | None = None) -> None:
 def start_job(job_id: str, *, llm_api_key: str | None = None) -> None:
     if job_id in _tasks:
         return
-    if llm_api_key is not None and llm_api_key.strip():
-        _job_llm_api_keys[job_id] = llm_api_key.strip()
+    _remember_job_key(job_id, llm_api_key)
     task = asyncio.create_task(run_until_transcript(job_id))
     _tasks[job_id] = task
     task.add_done_callback(lambda _: _tasks.pop(job_id, None))
@@ -78,8 +91,7 @@ def start_job(job_id: str, *, llm_api_key: str | None = None) -> None:
 def resume_job(job_id: str, *, llm_api_key: str | None = None) -> None:
     if job_id in _tasks:
         return
-    if llm_api_key is not None and llm_api_key.strip():
-        _job_llm_api_keys[job_id] = llm_api_key.strip()
+    _remember_job_key(job_id, llm_api_key)
     task = asyncio.create_task(run_after_resume(job_id))
     _tasks[job_id] = task
     task.add_done_callback(lambda _: _tasks.pop(job_id, None))

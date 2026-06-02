@@ -1,0 +1,28 @@
+# 不要把开发期的字节码 / 虚拟环境 / 本地数据 / 测试缓存打进镜像，也避免开发 compose
+# volume 挂载时把宿主机的这些目录覆盖到容器里造成奇怪冲突。
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# 运行时产物
+data/
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# 配置 / 凭据
+.env
+.env.*
+!.env.example
+
+# 编辑器 / OS
+.DS_Store
+.vscode/
+.idea/

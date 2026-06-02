@@ -11,7 +11,7 @@
 
 ## 60 秒快速开始
 
-需要 Python 3.11+、Node.js 18+、[uv](https://docs.astral.sh/uv/)、`npm`。
+需要 Python 3.11+、Node.js 22+（见 `.nvmrc`）、[uv](https://docs.astral.sh/uv/)、`npm`。
 
 ```bash
 # 1. 拷一份配置 + 填你的 LLM_API_KEY（OpenAI / 通义 / Moonshot 等 OpenAI 兼容接口都行）
@@ -20,11 +20,12 @@ $EDITOR server/.env
 
 # 2. 一键起前后端 dev server（脚本会自动 cp web/.env、装依赖）
 bash scripts/dev.sh
+# Windows PowerShell：powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
 ```
 
 打开 <http://127.0.0.1:5173>，粘贴一个 B 站视频链接即可。
 
-> 想用 Docker？`cp server/.env.example server/.env` 之后 `docker compose up --build`。
+> 想用 Docker？`cp server/.env.example server/.env` 之后 `docker compose up --build`（开发模式带 hot reload：`docker compose -f docker-compose.dev.yml up --build`）。
 
 ---
 
@@ -34,6 +35,25 @@ bash scripts/dev.sh
 - `server/`：后端（FastAPI + SQLite）。
 - `examples/email-worker/`：可选的 Cloudflare Worker 模板，把总结发到邮箱。
 - `scripts/dev.sh`、`docker-compose.yml`：本地一键启动。
+
+## 架构
+
+```mermaid
+flowchart LR
+    user([浏览器]) -->|粘贴 BV 链接| web[Vite + React]
+    web -->|REST + SSE| api[FastAPI]
+    api --> ytdlp[yt-dlp<br/>抓字幕/音频]
+    ytdlp -->|有字幕| llm
+    ytdlp -->|无字幕| asr[本地 ASR<br/>SenseVoice / Parakeet]
+    asr --> llm[LLM<br/>OpenAI 兼容]
+    llm -->|流式 chunk| api
+    api --> db[(SQLite)]
+    api --> fs[/data/summaries<br/>data/audio/]
+    api -. 可选 .-> mail[Cloudflare Worker → Resend]
+```
+
+> 数据全部落在本地（`server/data/`）。除了主动调用的 LLM 接口和 B 站，
+> 项目不向任何第三方上报数据，无遥测、无统计。
 
 ---
 
@@ -50,6 +70,24 @@ bash scripts/dev.sh
 | 本地 ollama / vLLM | `http://localhost:11434/v1` | 模型名按本地实际 |
 
 `LLM_MODEL` 填供应商支持的模型名（`gpt-4o-mini` / `moonshot-v1-32k` / `qwen-plus` 等）。
+
+**成本参考**：用 `gpt-4o-mini` 总结一个 20 分钟视频大约 $0.005（一杯水的钱）。
+长视频按 token 线性增加；想完全免费走下面的本地 ollama 即可。
+
+### 完全本地：ollama（免费 / 离线 / 隐私）
+
+```bash
+# 1. 装 ollama（macOS / Linux 都有官方安装包）：https://ollama.com
+ollama pull qwen2.5:3b   # 3B 模型，4GB 内存可跑；中文摘要够用
+# ollama pull qwen2.5:7b # 内存够建议这个，质量更好
+
+# 2. server/.env
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_MODEL=qwen2.5:3b
+LLM_API_KEY=ollama       # ollama 不校验，但不能为空
+```
+
+跑通后，所有摘要本地推理、不出网。配合下面「本地 ASR 转写」就能做到端到端零联网（B 站抓数据除外）。
 
 ---
 
@@ -141,109 +179,24 @@ EMAIL_DEFAULT_RECIPIENT=you@example.com
 
 ---
 
-## 部署到公网
+## 更多文档
 
-一种常见架构：
+- [`DEPLOY.md`](DEPLOY.md)：公网部署（Vercel + Cloudflare Tunnel）。
+- [`CONFIG.md`](CONFIG.md)：`server/.env` 所有可调项的完整表。
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)：开发流程、测试、commit 规范。
+- [`AGENTS.md`](AGENTS.md)：给 AI 编程助手的代码库导览。
+- [`CHANGELOG.md`](CHANGELOG.md)：版本变更。
 
-- 前端部署到 Vercel；
-- 后端跑在自己的机器（VPS / 树莓派 / 工作站）；
-- 用 Cloudflare Tunnel 暴露后端为 HTTPS 域名；
-- 邮件走 Cloudflare Worker + Resend（见上面）。
+完整 API 列表见 `GET /docs`（FastAPI 自动生成）。常用：
 
-后端 `server/.env`：
-
-```env
-API_TOKEN=用 `openssl rand -hex 32` 生成
-APP_CORS_ORIGINS=https://your-frontend-domain.example.com
 ```
-
-Vercel 前端：
-
-```text
-Framework: Vite
-Root Directory: web
-Build Command: npm run build
-Output Directory: dist
+GET  /healthz                       后端存活
+GET  /v1/version                    后端版本号
+GET  /v1/config/runtime             各能力是否已配置
+POST /v1/jobs                       建任务
+GET  /v1/jobs                       历史列表
+GET  /v1/jobs/{id}/stream           SSE 流式订阅
 ```
-
-Vercel 环境变量：
-
-```env
-VITE_API_BASE_URL=https://your-api-domain.example.com
-VITE_API_TOKEN=与后端 API_TOKEN 一致；若走 Vercel Protection / Cloudflare Access 可留空
-```
-
-> ⚠️ `VITE_API_TOKEN` 会**打进前端 JS bundle**，任何访问页面的人都能在 devtools 看到。
-> 当成「弱口令」用，公网部署最好叠一层 Vercel Protection / Cloudflare Access。
-
-Cloudflare Tunnel：
-
-```text
-your-api-domain.example.com -> http://localhost:17821
-```
-
----
-
-## API
-
-- `GET /healthz`
-- `GET /v1/config/defaults`
-- `GET /v1/config/runtime`（公开，返回各项是否已配置）
-- `GET /v1/usage?range=7d`
-- `POST /v1/llm/models`
-- `POST /v1/jobs`
-- `POST /v1/jobs/preview`
-- `GET /v1/jobs?limit=50&offset=0&cursor=...`
-- `GET /v1/jobs/{id}`
-- `GET /v1/jobs/{id}/stream`（SSE）
-- `POST /v1/jobs/{id}/cancel`
-- `POST /v1/jobs/{id}/resume`
-- `POST /v1/jobs/{id}/retry`
-- `POST /v1/jobs/{id}/transcript`（上传 / 覆盖字幕）
-- `GET /v1/jobs/{id}/audio`
-- `DELETE /v1/jobs`
-- `DELETE /v1/jobs/{id}`
-- `POST /v1/jobs/{id}/email`（重发邮件）
-
----
-
-## 配置参考
-
-`server/.env` 的所有可调项（默认值见 `server/biri_youyaku/config.py`）：
-
-| 类别 | 变量 | 默认 | 说明 |
-| --- | --- | --- | --- |
-| 应用 | `APP_LOG_LEVEL` | `INFO` | uvicorn / 应用日志级别 |
-| 应用 | `APP_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 多个用逗号分隔 |
-| 鉴权 | `API_TOKEN` | 空 | 空 = 不校验 Bearer Token |
-| B 站 | `BILI_SESSDATA / BILI_BUVID3 / BILI_BILI_JCT` | 空 | 仅在需要登录态时填 |
-| ASR | `ASR_MODEL` | `sensevoice` | 或 `faster-whisper` |
-| ASR | `ASR_DEVICE` | `auto` | `cpu` / `cuda` / `auto` |
-| ASR | `ASR_LANGUAGE_DEFAULT` | `auto` | |
-| ASR | `SENSEVOICE_MODEL_DIR` | 空 | 自动下载 / 指定本地路径 |
-| LLM | `LLM_API_KEY` | 空 | **必填** |
-| LLM | `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI 兼容接口 |
-| LLM | `LLM_MODEL` | `gpt-4o-mini` | |
-| LLM | `LLM_TIMEOUT_SECONDS` | `300` | 单请求超时 |
-| LLM | `LLM_MAX_RETRIES` | `2` | SDK 层重试 |
-| LLM | `LLM_TEMPERATURE` | 空 | 留空走代码默认 |
-| LLM | `LLM_CHUNK_TOKEN_THRESHOLD` | `30000` | 长字幕分段阈值 |
-| LLM | `LLM_FORCE_TEMP_ONE_PREFIXES` | `kimi,moonshot` | 命中前缀强制 `temperature=1` |
-| LLM | `LLM_SEGMENT_CONCURRENCY` | `3` | 段级总结并发数 |
-| 摘要 | `SUMMARY_LANGUAGE` | `中文简体` | 输出语言 |
-| 邮件 | `EMAIL_ENABLED` | `false` | |
-| 邮件 | `EMAIL_WEBHOOK_URL / EMAIL_WEBHOOK_TOKEN / EMAIL_DEFAULT_RECIPIENT` | 空 | |
-| 邮件 | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | 支持 `{{title}}` / `{{author}}` |
-| 存储 | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DB_PATH` | `data/...` | |
-| 清理 | `AUDIO_RETENTION_DAYS` | `7` | |
-| 清理 | `JOB_RETENTION_DAYS` | `180` | |
-| 清理 | `ORPHAN_FILE_RETENTION_DAYS` | `3` | DB 不引用的孤儿文件多久后清 |
-| 清理 | `STALE_RUNNING_FAIL_HOURS` | `4` | 非终态任务多久无心跳就置 FAILED |
-| 清理 | `CLEANUP_INTERVAL_SECONDS` | `3600` | 清理循环周期 |
-| 清理 | `WAL_CHECKPOINT_INTERVAL_HOURS` | `24` | WAL 截断周期 |
-| 清理 | `DB_VACUUM_INTERVAL_DAYS` | `30` | VACUUM 周期 |
-| 并发 | `MAX_CONCURRENT_JOBS` | `2` | 重 IO/CPU 段并发上限 |
-| 并发 | `MAX_CONCURRENT_SUMMARIES` | `2` | LLM 总结并发上限 |
 
 ---
 

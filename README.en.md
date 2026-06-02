@@ -13,7 +13,7 @@ result.
 
 ## 60-second quickstart
 
-You need Python 3.11+, Node.js 18+, [uv](https://docs.astral.sh/uv/), and `npm`.
+You need Python 3.11+, Node.js 22+ (see `.nvmrc`), [uv](https://docs.astral.sh/uv/), and `npm`.
 
 ```bash
 # 1. Copy the env template and fill LLM_API_KEY (any OpenAI-compatible endpoint works)
@@ -22,11 +22,12 @@ $EDITOR server/.env
 
 # 2. Spin up backend + frontend dev servers (the script handles web/.env and npm install)
 bash scripts/dev.sh
+# Windows PowerShell: powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
 ```
 
 Open <http://127.0.0.1:5173> and paste any Bilibili video URL.
 
-> Prefer Docker? `cp server/.env.example server/.env` then `docker compose up --build`.
+> Prefer Docker? `cp server/.env.example server/.env` then `docker compose up --build` (for hot-reload dev mode: `docker compose -f docker-compose.dev.yml up --build`).
 
 ---
 
@@ -36,6 +37,25 @@ Open <http://127.0.0.1:5173> and paste any Bilibili video URL.
 - `server/` — FastAPI + SQLite backend.
 - `examples/email-worker/` — optional Cloudflare Worker template for emailing summaries.
 - `scripts/dev.sh`, `docker-compose.yml` — one-command local startup.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    user([Browser]) -->|paste BV link| web[Vite + React]
+    web -->|REST + SSE| api[FastAPI]
+    api --> ytdlp[yt-dlp<br/>subs / audio]
+    ytdlp -->|subs found| llm
+    ytdlp -->|no subs| asr[Local ASR<br/>SenseVoice / Parakeet]
+    asr --> llm[LLM<br/>OpenAI-compatible]
+    llm -->|streamed chunks| api
+    api --> db[(SQLite)]
+    api --> fs[/data/summaries<br/>data/audio/]
+    api -. optional .-> mail[Cloudflare Worker → Resend]
+```
+
+> All data stays in `server/data/` on your machine. No telemetry, no analytics —
+> the only outbound traffic is to the LLM endpoint you configured and Bilibili.
 
 ---
 
@@ -53,6 +73,25 @@ Any OpenAI-compatible endpoint works:
 
 Set `LLM_MODEL` to whatever your provider supports (`gpt-4o-mini`, `moonshot-v1-32k`,
 `qwen-plus`, …).
+
+**Cost ballpark**: a 20-minute video with `gpt-4o-mini` costs about $0.005 — less than a sip of water.
+Longer videos scale linearly with tokens. For fully free / offline, see the ollama recipe below.
+
+### Fully local: ollama (free / offline / private)
+
+```bash
+# 1. Install ollama (https://ollama.com — macOS/Linux installers available).
+ollama pull qwen2.5:3b   # 3B, runs in ~4 GB RAM; OK quality for summaries
+# ollama pull qwen2.5:7b # better quality if you have the RAM
+
+# 2. server/.env
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_MODEL=qwen2.5:3b
+LLM_API_KEY=ollama       # ollama ignores the key but it must be non-empty
+```
+
+All summarization now runs locally, no outbound traffic. Combine with the local ASR
+section below for an end-to-end offline pipeline (except for the Bilibili fetch itself).
 
 ---
 
@@ -145,110 +184,24 @@ a WARN and refuses to create jobs to avoid sending to the wrong address.
 
 ---
 
-## Public deployment
+## More docs
 
-One common setup:
+- [`DEPLOY.md`](DEPLOY.md) — public deployment (Vercel + Cloudflare Tunnel).
+- [`CONFIG.md`](CONFIG.md) — full `server/.env` reference.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — dev flow, tests, commit conventions.
+- [`AGENTS.md`](AGENTS.md) — codebase tour for AI coding tools.
+- [`CHANGELOG.md`](CHANGELOG.md) — release notes.
 
-- Frontend on Vercel;
-- Backend on your own machine (VPS / Raspberry Pi / workstation);
-- Cloudflare Tunnel exposes the backend as an HTTPS domain;
-- Email via Cloudflare Worker + Resend (see above).
+Full API list is at `GET /docs` (FastAPI auto-generated). Most-used:
 
-Backend `server/.env`:
-
-```env
-API_TOKEN=generate with `openssl rand -hex 32`
-APP_CORS_ORIGINS=https://your-frontend-domain.example.com
 ```
-
-Vercel frontend settings:
-
-```text
-Framework: Vite
-Root Directory: web
-Build Command: npm run build
-Output Directory: dist
+GET  /healthz                       liveness
+GET  /v1/version                    backend version
+GET  /v1/config/runtime             which capabilities are configured
+POST /v1/jobs                       create a job
+GET  /v1/jobs                       history
+GET  /v1/jobs/{id}/stream           SSE stream
 ```
-
-Vercel environment variables:
-
-```env
-VITE_API_BASE_URL=https://your-api-domain.example.com
-VITE_API_TOKEN=match backend API_TOKEN, or leave empty if a reverse proxy handles auth
-```
-
-> ⚠️ `VITE_API_TOKEN` is **bundled into the JS at build time**. Any visitor with
-> devtools can read it; treat it as a weak credential and pair with Vercel
-> Protection / Cloudflare Access for real public deployments.
-
-Cloudflare Tunnel:
-
-```text
-your-api-domain.example.com -> http://localhost:17821
-```
-
----
-
-## API
-
-- `GET /healthz`
-- `GET /v1/config/defaults`
-- `GET /v1/config/runtime` (public, reports what is configured)
-- `GET /v1/usage?range=7d`
-- `POST /v1/llm/models`
-- `POST /v1/jobs`
-- `POST /v1/jobs/preview`
-- `GET /v1/jobs?limit=50&offset=0&cursor=...`
-- `GET /v1/jobs/{id}`
-- `GET /v1/jobs/{id}/stream` (SSE)
-- `POST /v1/jobs/{id}/cancel`
-- `POST /v1/jobs/{id}/resume`
-- `POST /v1/jobs/{id}/retry`
-- `POST /v1/jobs/{id}/transcript` (upload / replace subtitles)
-- `GET /v1/jobs/{id}/audio`
-- `DELETE /v1/jobs`
-- `DELETE /v1/jobs/{id}`
-- `POST /v1/jobs/{id}/email` (resend)
-
----
-
-## Config reference
-
-Every tunable in `server/.env` (defaults live in `server/biri_youyaku/config.py`):
-
-| Group | Variable | Default | Notes |
-| --- | --- | --- | --- |
-| App | `APP_LOG_LEVEL` | `INFO` | uvicorn / app log level |
-| App | `APP_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated |
-| Auth | `API_TOKEN` | empty | Empty = no Bearer Token check |
-| Bilibili | `BILI_SESSDATA / BILI_BUVID3 / BILI_BILI_JCT` | empty | Only when login needed |
-| ASR | `ASR_MODEL` | `sensevoice` | Or `faster-whisper` |
-| ASR | `ASR_DEVICE` | `auto` | `cpu` / `cuda` / `auto` |
-| ASR | `ASR_LANGUAGE_DEFAULT` | `auto` | |
-| ASR | `SENSEVOICE_MODEL_DIR` | empty | Auto-download or path to local weights |
-| LLM | `LLM_API_KEY` | empty | **Required** |
-| LLM | `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible base URL |
-| LLM | `LLM_MODEL` | `gpt-4o-mini` | |
-| LLM | `LLM_TIMEOUT_SECONDS` | `300` | Per-request timeout |
-| LLM | `LLM_MAX_RETRIES` | `2` | SDK-level retries |
-| LLM | `LLM_TEMPERATURE` | empty | Empty uses provider-aware default |
-| LLM | `LLM_CHUNK_TOKEN_THRESHOLD` | `30000` | Threshold for chunked summarization |
-| LLM | `LLM_FORCE_TEMP_ONE_PREFIXES` | `kimi,moonshot` | Force `temperature=1` for matching model prefixes |
-| LLM | `LLM_SEGMENT_CONCURRENCY` | `3` | Parallel segment summaries |
-| Summary | `SUMMARY_LANGUAGE` | `中文简体` | Output language |
-| Email | `EMAIL_ENABLED` | `false` | |
-| Email | `EMAIL_WEBHOOK_URL / EMAIL_WEBHOOK_TOKEN / EMAIL_DEFAULT_RECIPIENT` | empty | |
-| Email | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | Supports `{{title}}` / `{{author}}` |
-| Storage | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DB_PATH` | `data/...` | |
-| Cleanup | `AUDIO_RETENTION_DAYS` | `7` | |
-| Cleanup | `JOB_RETENTION_DAYS` | `180` | |
-| Cleanup | `ORPHAN_FILE_RETENTION_DAYS` | `3` | How long an orphan file (no DB ref) lingers before cleanup |
-| Cleanup | `STALE_RUNNING_FAIL_HOURS` | `4` | Non-terminal job is auto-FAILED after no heartbeat for N hours |
-| Cleanup | `CLEANUP_INTERVAL_SECONDS` | `3600` | Cleanup loop period |
-| Cleanup | `WAL_CHECKPOINT_INTERVAL_HOURS` | `24` | WAL truncation period |
-| Cleanup | `DB_VACUUM_INTERVAL_DAYS` | `30` | VACUUM period |
-| Concurrency | `MAX_CONCURRENT_JOBS` | `2` | Heavy IO/CPU cap |
-| Concurrency | `MAX_CONCURRENT_SUMMARIES` | `2` | LLM summarize cap |
 
 ---
 

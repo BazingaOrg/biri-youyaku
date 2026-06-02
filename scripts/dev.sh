@@ -15,7 +15,7 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 if ! command -v npm >/dev/null 2>&1; then
-  echo "需要 npm（Node.js 18+）" >&2
+  echo "需要 npm（Node.js 22+）" >&2
   exit 1
 fi
 if [ ! -f server/.env ]; then

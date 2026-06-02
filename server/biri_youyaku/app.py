@@ -42,6 +42,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         "enabled" if token else "disabled",
         len(token),
     )
+    # LLM key 自检：未配置时启动期就 WARN 一行，省得用户跑到「点了创建任务才失败」
+    # 才发现 .env 没填。开发或纯 ASR demo 场景允许空着启动，所以不抛错只 warn。
+    if not settings.llm_api_key:
+        log.warning(
+            "LLM_API_KEY 未配置 → 创建任务时会失败。"
+            "请在 server/.env 里填 LLM_API_KEY（OpenAI / Moonshot / DeepSeek / 本地 ollama 都行）。"
+        )
     # 邮件配置一致性自检：开关打开却没配 webhook / 收件人时给一条警告，
     # 避免后端启动「看起来正常」但每个 job 走到 EMAILING 都报错。
     if settings.email_enabled:

@@ -1,0 +1,46 @@
+# 开发模式：源码挂载 + hot reload。
+# 用法：
+#   cp server/.env.example server/.env && 填 LLM_API_KEY
+#   docker compose -f docker-compose.dev.yml up --build
+# 前端：http://localhost:5173   后端：http://localhost:17821
+
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    env_file: ./server/.env
+    ports:
+      - "17821:17821"
+    # 挂源码 + data，改 .py 立刻 --reload
+    volumes:
+      - ./server/biri_youyaku:/app/biri_youyaku
+      - ./server/data:/app/data
+    command:
+      - uv
+      - run
+      - --no-dev
+      - uvicorn
+      - biri_youyaku.app:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "17821"
+      - --reload
+    restart: unless-stopped
+
+  web:
+    image: node:20-alpine
+    working_dir: /app
+    environment:
+      VITE_API_BASE_URL: http://localhost:17821
+      VITE_API_TOKEN: ${API_TOKEN:-}
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - server
+    restart: unless-stopped

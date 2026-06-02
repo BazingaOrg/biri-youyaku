@@ -1,0 +1,3 @@
+blank_issues_enabled: false
+# 安全漏洞引导走 SECURITY.md 里描述的 GitHub Security Advisories 流程，
+# 不在 issue 模板里放联系方式。
