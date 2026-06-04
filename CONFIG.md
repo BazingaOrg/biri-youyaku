@@ -43,7 +43,7 @@
 | 清理 | `DB_VACUUM_INTERVAL_DAYS` | `30` | VACUUM 周期 |
 | 并发 | `MAX_CONCURRENT_JOBS` | `2` | 重 IO/CPU 段并发上限 |
 | 并发 | `MAX_CONCURRENT_SUMMARIES` | `2` | LLM 总结并发上限 |
-| 防滥用 | `MAX_VIDEO_DURATION_SECONDS` | `3600` | 视频时长上限；超长直接拒 |
+| 防滥用 | `MAX_VIDEO_DURATION_SECONDS` | `9000` | 视频时长上限；超长直接拒 |
 | 防滥用 | `MAX_INFLIGHT_JOBS` | `20` | 同时在飞任务上限；超出返回 503 |
 
 ---
@@ -87,5 +87,5 @@ All tunable settings live in `server/.env`; defaults are in
 | Cleanup | `DB_VACUUM_INTERVAL_DAYS` | `30` | VACUUM period |
 | Concurrency | `MAX_CONCURRENT_JOBS` | `2` | heavy IO/CPU cap |
 | Concurrency | `MAX_CONCURRENT_SUMMARIES` | `2` | LLM summarize cap |
-| Abuse | `MAX_VIDEO_DURATION_SECONDS` | `3600` | video length cap; too long → reject |
+| Abuse | `MAX_VIDEO_DURATION_SECONDS` | `9000` | video length cap; too long → reject |
 | Abuse | `MAX_INFLIGHT_JOBS` | `20` | total in-flight jobs; overflow → 503 |
