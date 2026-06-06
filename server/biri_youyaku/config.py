@@ -13,6 +13,13 @@ class Settings(BaseSettings):
 
     api_token: str = ""
 
+    # Cloudflare Access JWT 校验（推荐的公网部署方案，比静态 token 强）。
+    # 两个都填了 → 走 Access；任一为空 → 退回 API_TOKEN。
+    # team_domain 形如 `your-team.cloudflareaccess.com`（不带 https://）；
+    # aud 来自 Access 应用配置页 → Application Audience (AUD) Tag。
+    cf_access_team_domain: str = ""
+    cf_access_aud: str = ""
+
     bili_sessdata: str = ""
     bili_buvid3: str = ""
     bili_bili_jct: str = ""

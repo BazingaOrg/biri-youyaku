@@ -11,6 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from biri_youyaku.auth import _expected_token
+from biri_youyaku.cf_access import cf_access_enabled
 from biri_youyaku.config import settings
 from biri_youyaku.db import init_db
 from biri_youyaku.rate_limit import limiter
@@ -36,12 +37,20 @@ from biri_youyaku.routes import (
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     log = logging.getLogger("biri_youyaku.startup")
-    token = _expected_token()
-    log.info(
-        "API_TOKEN auth %s (token length=%d)",
-        "enabled" if token else "disabled",
-        len(token),
-    )
+    # 鉴权模式三种之一：CF Access > API_TOKEN > 无（仅本地 dev）
+    if cf_access_enabled():
+        log.info(
+            "Auth mode: Cloudflare Access (team=%s, aud=%s...)",
+            settings.cf_access_team_domain,
+            settings.cf_access_aud[:8],
+        )
+    else:
+        token = _expected_token()
+        log.info(
+            "Auth mode: %s (token length=%d)",
+            "API_TOKEN" if token else "DISABLED (local dev)",
+            len(token),
+        )
     # LLM key 自检：未配置时启动期就 WARN 一行，省得用户跑到「点了创建任务才失败」
     # 才发现 .env 没填。开发或纯 ASR demo 场景允许空着启动，所以不抛错只 warn。
     if not settings.llm_api_key:

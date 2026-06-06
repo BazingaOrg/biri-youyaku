@@ -168,14 +168,18 @@ export function getConfigDefaults() {
   return request<{ok: true; defaults: ConfigDefaults}>('/v1/config/defaults')
 }
 
+export interface RuntimeConfig {
+  ok: true
+  auth_mode: 'cf_access' | 'api_token' | 'none'
+  /** @deprecated use auth_mode === 'api_token' */
+  api_token_required: boolean
+  llm_configured: boolean
+  email_configured: boolean
+  bilibili_cookie_configured: boolean
+}
+
 export function getRuntimeConfig() {
-  return request<{
-    ok: true
-    api_token_required: boolean
-    llm_configured: boolean
-    email_configured: boolean
-    bilibili_cookie_configured: boolean
-  }>('/v1/config/runtime')
+  return request<RuntimeConfig>('/v1/config/runtime')
 }
 
 export function previewJob(url: string) {

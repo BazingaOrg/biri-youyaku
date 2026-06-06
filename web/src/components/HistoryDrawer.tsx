@@ -1,8 +1,9 @@
-import {useEffect, useState} from 'react'
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import type {MouseEvent as ReactMouseEvent} from 'react'
-import {Trash2, X} from 'lucide-react'
-import {deleteJob, listJobs, type Job} from '../lib/api'
+import {Search, Trash, Trash2, X} from 'lucide-react'
+import {deleteAllJobs, deleteJob, listJobs, type Job} from '../lib/api'
 import {formatDate, formatDuration, formatStatus} from '../lib/format'
+import {useToast} from './ToastProvider'
 
 interface HistoryDrawerProps {
   open: boolean
@@ -23,27 +24,97 @@ const RUNNING = new Set([
   'EMAILING',
 ])
 
+const PAGE_SIZE = 30
+
 export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}: HistoryDrawerProps) {
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [cursor, setCursor] = useState<number | null>(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [query, setQuery] = useState('')
+  const [clearing, setClearing] = useState(false)
+  const toast = useToast()
+  const scrollRef = useRef<HTMLDivElement | null>(null)
 
+  // 首次打开 / refreshKey 变化 → 重新拉第一页
   useEffect(() => {
     if (!open) return
     let canceled = false
     setLoading(true)
-    listJobs({limit: 30})
-      .then((response) => { if (!canceled) setJobs(response.jobs) })
-      .catch(() => { if (!canceled) setJobs([]) })
-      .finally(() => { if (!canceled) setLoading(false) })
-    return () => { canceled = true }
+    setQuery('')
+    listJobs({limit: PAGE_SIZE})
+      .then((response) => {
+        if (canceled) return
+        setJobs(response.jobs)
+        setCursor(response.next_cursor ?? null)
+        setHasMore(Boolean(response.next_cursor))
+      })
+      .catch(() => {
+        if (canceled) return
+        setJobs([])
+        setHasMore(false)
+      })
+      .finally(() => {
+        if (!canceled) setLoading(false)
+      })
+    return () => {
+      canceled = true
+    }
   }, [open, refreshKey])
 
   useEffect(() => {
     if (!open) return
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore || cursor == null) return
+    setLoadingMore(true)
+    try {
+      const response = await listJobs({limit: PAGE_SIZE, cursor})
+      setJobs((current) => [...current, ...response.jobs])
+      setCursor(response.next_cursor ?? null)
+      setHasMore(Boolean(response.next_cursor))
+    } catch {
+      setHasMore(false)
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [cursor, hasMore, loadingMore])
+
+  // 滑到底自动加载下一页
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !open) return
+    const onScroll = () => {
+      const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 80
+      if (nearBottom) void loadMore()
+    }
+    el.addEventListener('scroll', onScroll, {passive: true})
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [open, loadMore])
+
+  // 客户端模糊搜索（标题 / UP / BVID 任一命中即可）
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return jobs
+    return jobs.filter((job) => {
+      const haystack = [
+        job.title ?? '',
+        job.author ?? '',
+        job.bvid ?? '',
+        job.url ?? '',
+      ]
+        .join(' ')
+        .toLowerCase()
+      return haystack.includes(q)
+    })
+  }, [jobs, query])
 
   const handleOpen = (jobId: string) => {
     onClose()
@@ -61,6 +132,30 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
     }
   }
 
+  const handleClearCompleted = async () => {
+    // 简单确认，避免误点。原生 confirm 在 mobile 也能 work。
+    if (!window.confirm('删除所有已完成 / 已失败 / 已取消的任务？进行中任务不受影响。')) return
+    setClearing(true)
+    try {
+      const response = await deleteAllJobs()
+      const total = response.deleted_count + response.skipped_count
+      const detail = response.skipped_count > 0
+        ? `已删除 ${response.deleted_count} 个，跳过 ${response.skipped_count} 个进行中任务`
+        : `已删除 ${response.deleted_count} 个`
+      toast.success('已清理', detail)
+      // 重新拉首页
+      const fresh = await listJobs({limit: PAGE_SIZE})
+      setJobs(fresh.jobs)
+      setCursor(fresh.next_cursor ?? null)
+      setHasMore(Boolean(fresh.next_cursor))
+      void total // 让 ts 别报 unused
+    } catch (err) {
+      toast.error('清理失败', err instanceof Error ? err.message : '请重试')
+    } finally {
+      setClearing(false)
+    }
+  }
+
   return (
     <div
       className={`fixed inset-0 z-40 transition-opacity duration-[320ms] ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
@@ -70,7 +165,6 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
       aria-hidden={!open}
     >
       <div className="absolute inset-0 bg-ink/30 backdrop-blur-sm" />
-      {/* 底部弹层：居中、最大 xl，70vh 高，圆角只在顶部 */}
       <aside
         onClick={(e) => e.stopPropagation()}
         className={`absolute inset-x-0 bottom-0 mx-auto flex h-[70vh] w-full max-w-xl flex-col rounded-t-3xl border-t border-line bg-canvas shadow-card transition-transform duration-[320ms] ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
@@ -82,22 +176,55 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
         </div>
         <header className="flex items-center justify-between gap-3 px-5 py-3">
           <h2 className="text-base font-semibold">历史</h2>
-          <button
-            type="button"
-            aria-label="关闭"
-            onClick={onClose}
-            className="grid h-9 w-9 place-items-center rounded-xl text-muted transition hover:bg-lift active:scale-95"
-          >
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              aria-label="清空已完成"
+              onClick={() => void handleClearCompleted()}
+              disabled={clearing || jobs.length === 0}
+              className="grid h-9 w-9 place-items-center rounded-xl text-muted transition hover:bg-lift hover:text-danger disabled:opacity-40"
+              title="清空已完成 / 失败 / 取消的任务"
+            >
+              <Trash size={16} />
+            </button>
+            <button
+              type="button"
+              aria-label="关闭"
+              onClick={onClose}
+              className="grid h-9 w-9 place-items-center rounded-xl text-muted transition hover:bg-lift active:scale-95"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </header>
-        <div className="flex-1 overflow-y-auto px-3 pb-4">
+
+        {/* 搜索框 */}
+        <div className="px-5 pb-2">
+          <div className="relative">
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+            />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜标题 / UP 主 / BVID"
+              className="min-h-9 w-full rounded-xl bg-lift py-1 pl-9 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30"
+            />
+          </div>
+        </div>
+
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 pb-4">
           {loading && <p className="py-6 text-center text-sm text-muted">加载中</p>}
           {!loading && jobs.length === 0 && (
             <p className="py-6 text-center text-sm text-muted">还没有任务记录</p>
           )}
+          {!loading && jobs.length > 0 && filtered.length === 0 && (
+            <p className="py-6 text-center text-sm text-muted">没有匹配「{query}」的记录</p>
+          )}
           <ul className="grid gap-2">
-            {jobs.map((job) => {
+            {filtered.map((job) => {
               const isRunning = RUNNING.has(job.status)
               return (
                 <li key={job.id}>
@@ -143,6 +270,18 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
               )
             })}
           </ul>
+          {loadingMore && (
+            <p className="py-3 text-center text-xs text-muted">加载更多…</p>
+          )}
+          {!loadingMore && hasMore && !query && (
+            <button
+              type="button"
+              onClick={() => void loadMore()}
+              className="mt-2 w-full rounded-xl bg-lift py-2 text-xs text-muted transition hover:text-ink"
+            >
+              加载更多
+            </button>
+          )}
         </div>
       </aside>
     </div>
