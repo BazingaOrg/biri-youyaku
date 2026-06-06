@@ -1,9 +1,9 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import type {ReactNode} from 'react'
-import {ArrowLeft, ChevronDown, Copy, ExternalLink, FileDown, History, Mail, Music, Plus, RotateCw, Sparkles, XCircle} from 'lucide-react'
+import {ChevronDown, Copy, ExternalLink, FileDown, History, Mail, Music, Plus, RotateCw, Sparkles, XCircle} from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import {useLocation} from 'wouter'
-import {cancelJob, createJob, downloadJobAudio, getJob, previewJob, resendEmail, resumeJob, retryJob} from '../lib/api'
+import {cancelJob, createJob, downloadJobAudio, getJob, resendEmail, resumeJob, retryJob} from '../lib/api'
 import type {Job, JobOptionOverrides, JobStatus} from '../lib/api'
 import {isValidBiliUrl, sanitizeBiliInput} from '../lib/url'
 import {formatDuration} from '../lib/format'
@@ -15,24 +15,8 @@ import {useToast} from '../components/ToastProvider'
 import {UrlInput} from '../components/UrlInput'
 import {StepCarousel, type StepDef, type StepState} from '../components/StepCarousel'
 import {HistoryDrawer} from '../components/HistoryDrawer'
-import {AdvancedOptions} from '../components/AdvancedOptions'
 import {IconButton} from '../components/IconButton'
 import {clearActive, readActive, subscribeActive, writeActive} from '../lib/activeJob'
-
-interface PreviewMeta {
-  url: string
-  bvid: string
-  cid?: number
-  title: string
-  author: string
-  duration: number
-  has_subtitle: boolean
-}
-
-interface PreviewResult {
-  meta: PreviewMeta
-  dedupJobId?: string
-}
 
 interface WorkspaceProps {
   jobId: string | null
@@ -84,68 +68,45 @@ function pickStepState(idx: number, currentIdx: number, status: JobStatus): Step
   return 'pending'
 }
 
-// ---------- A. Idle（两步式：输入 → preview 确认） ----------
+// ---------- A. Idle ----------
 
 function IdleView({
-  onConfirm,
+  onSubmit,
   onOpenHistory,
-  onJumpToJob,
 }: {
-  onConfirm: (url: string, options: Partial<JobOptionOverrides>) => Promise<void>
+  onSubmit: (url: string) => Promise<void>
   onOpenHistory: () => void
-  onJumpToJob: (jobId: string) => void
 }) {
   const [url, setUrl] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [preview, setPreview] = useState<PreviewResult | null>(null)
 
-  // runtime config：决定 email 复选框默认值与 disabled 状态
-  const runtime = useRuntimeConfig()
-  const emailAvailable = runtime?.email_configured ?? false
-
-  const showPreview = async () => {
+  const submit = async () => {
     // 提交时再 sanitize 一次：handle 直接键入 / 历史回填等不走 paste 的入口。
     const cleaned = sanitizeBiliInput(url)
     if (!isValidBiliUrl(cleaned)) {
       setError('请输入有效的 B 站视频链接')
       return
     }
-    if (cleaned !== url) setUrl(cleaned)
+    if (cleaned !== url) {
+      setUrl(cleaned)
+    }
     setBusy(true)
     setError(null)
     try {
-      const response = await previewJob(cleaned)
-      setPreview({meta: response.meta, dedupJobId: response.dedup_job_id})
+      await onSubmit(cleaned)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '识别失败，换个链接试试')
+      setError(err instanceof Error ? err.message : '没能开始，换个链接试试')
     } finally {
       setBusy(false)
     }
-  }
-
-  const backToInput = () => {
-    setPreview(null)
-    setError(null)
-  }
-
-  if (preview) {
-    return (
-      <PreviewConfirm
-        preview={preview}
-        emailAvailable={emailAvailable}
-        onBack={backToInput}
-        onConfirm={onConfirm}
-        onJumpToJob={onJumpToJob}
-      />
-    )
   }
 
   return (
     <div className="grid min-h-[70vh] place-items-center">
       <div className="grid w-full max-w-xl gap-5">
         <p className="text-center text-sm leading-6 text-muted sm:text-base">
-          粘贴 B 站链接，自动识别并总结{emailAvailable ? '，可选择发到邮箱' : ''}
+          粘贴 B 站链接，自动总结
         </p>
         <UrlInput
           value={url}
@@ -155,135 +116,18 @@ function IdleView({
             setUrl(next)
             setError(null)
           }}
-          onSubmit={showPreview}
+          onSubmit={submit}
         />
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <IconButton
-            icon={busy ? <RotateCw size={20} className="animate-spin" /> : <Sparkles size={22} />}
-            label={busy ? '识别中…' : '下一步'}
-            onClick={() => void showPreview()}
-            disabled={busy || url.trim().length === 0}
-            variant="primary"
-            size="lg"
-          />
-          <IconButton icon={<History size={20} />} label="历史" onClick={onOpenHistory} size="lg" />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ---------- Preview 确认卡 ----------
-//
-// 拿到 /v1/jobs/preview 的元数据后展示给用户确认：标题对不对、时长在不在预期、
-// 字幕来源是不是想要的。如果后端发现 dedup_job_id（相同 bvid+cid 最近一条任务），
-// 这里直接给「打开旧任务」入口，省一次 LLM 调用。
-
-function PreviewConfirm({
-  preview,
-  emailAvailable,
-  onBack,
-  onConfirm,
-  onJumpToJob,
-}: {
-  preview: PreviewResult
-  emailAvailable: boolean
-  onBack: () => void
-  onConfirm: (url: string, options: Partial<JobOptionOverrides>) => Promise<void>
-  onJumpToJob: (jobId: string) => void
-}) {
-  // 邮件能配就默认勾上；没配的实例直接禁用避免被后端 400 拒。
-  const [emailEnabled, setEmailEnabled] = useState(emailAvailable)
-  const [advanced, setAdvanced] = useState<Partial<JobOptionOverrides>>({})
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const submit = async () => {
-    setBusy(true)
-    setError(null)
-    try {
-      await onConfirm(preview.meta.url, {...advanced, email_enabled: emailEnabled})
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '没能开始，请重试')
-      setBusy(false)
-    }
-  }
-
-  const {meta, dedupJobId} = preview
-  return (
-    <div className="grid min-h-[70vh] place-items-center">
-      <div className="grid w-full max-w-xl gap-5">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex items-center gap-1 self-start text-sm text-muted transition hover:text-ink"
-        >
-          <ArrowLeft size={14} /> 换一条
-        </button>
-
-        <section className="grid gap-3 rounded-3xl bg-panel p-5 shadow-card">
-          <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted">
-            <span className="rounded-full bg-brandSoft px-2.5 py-1 text-brand">{meta.bvid}</span>
-            <span>{formatDuration(meta.duration)}</span>
-            <span>{meta.has_subtitle ? '官方字幕' : '需语音转写'}</span>
-            <a
-              href={meta.url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-muted hover:text-ink"
-            >
-              视频源 <ExternalLink size={12} />
-            </a>
-          </div>
-          <p className="break-words text-lg font-semibold leading-snug text-ink">{meta.title}</p>
-          <p className="truncate text-xs text-muted">{meta.author || '未知 UP'}</p>
-        </section>
-
-        {dedupJobId && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-brand/30 bg-brandSoft/40 p-3 text-sm">
-            <p className="break-words leading-6 text-ink">这个视频之前总结过</p>
-            <button
-              type="button"
-              onClick={() => onJumpToJob(dedupJobId)}
-              className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-1 text-xs text-white transition hover:opacity-90"
-            >
-              打开旧总结
-            </button>
-          </div>
-        )}
-
-        <label
-          className={`flex items-center gap-2 rounded-2xl bg-lift px-4 py-3 text-sm ${
-            emailAvailable ? 'cursor-pointer text-ink' : 'cursor-not-allowed text-muted'
-          }`}
-        >
-          <input
-            type="checkbox"
-            checked={emailEnabled && emailAvailable}
-            disabled={!emailAvailable}
-            onChange={(e) => setEmailEnabled(e.target.checked)}
-            className="h-4 w-4 accent-[var(--color-brand)]"
-          />
-          <Mail size={15} />
-          <span>
-            完成后发到邮箱
-            {!emailAvailable && '（未配置）'}
-          </span>
-        </label>
-
-        <AdvancedOptions value={advanced} onChange={setAdvanced} />
-
-        {error && <p className="text-sm text-danger">{error}</p>}
-
         <div className="flex flex-wrap items-center justify-center gap-3">
           <IconButton
             icon={busy ? <RotateCw size={20} className="animate-spin" /> : <Sparkles size={22} />}
             label={busy ? '处理中…' : '开始总结'}
             onClick={() => void submit()}
-            disabled={busy}
+            disabled={busy || url.trim().length === 0}
             variant="primary"
             size="lg"
           />
+          <IconButton icon={<History size={20} />} label="历史" onClick={onOpenHistory} size="lg" />
         </div>
       </div>
     </div>
@@ -709,9 +553,18 @@ export function Workspace({jobId}: WorkspaceProps) {
   }, [jobId])
 
   // TRANSCRIPT_READY 自动 resume —— 不再二次确认
+  //
+  // 注意：只在 status === TRANSCRIPT_READY 这一刻锁；一旦离开（不论是进 SUMMARIZING
+  // 还是 retry 回到 PENDING）就清锁。否则同一 jobId 的 retry 会因为「之前 resume 过」
+  // 而被跳过，整条 pipeline 卡在 TRANSCRIPT_READY 永远不再向前走。
   useEffect(() => {
     if (!job || !jobId) return
-    if (job.status !== 'TRANSCRIPT_READY') return
+    if (job.status !== 'TRANSCRIPT_READY') {
+      if (autoResumedRef.current === jobId) {
+        autoResumedRef.current = null
+      }
+      return
+    }
     if (autoResumedRef.current === jobId) return
     autoResumedRef.current = jobId
     void resumeJob(jobId)
@@ -792,8 +645,13 @@ export function Workspace({jobId}: WorkspaceProps) {
 
   // ---------- actions ----------
 
-  const submitNew = async (url: string, options: Partial<JobOptionOverrides>) => {
-    const response = await createJob(url, {task_type: 'summary', ...options})
+  // 默认行为：邮件能用就发，不能用就别传 email_enabled=true，
+  // 否则后端会因为 EMAIL_DEFAULT_RECIPIENT 没配直接 400 拒。
+  const runtime = useRuntimeConfig()
+  const submitNew = async (url: string) => {
+    const options: Partial<JobOptionOverrides> = {task_type: 'summary'}
+    if (runtime?.email_configured) options.email_enabled = true
+    const response = await createJob(url, options)
     writeActive({jobId: response.job_id, url})
     toast.success('已开始')
     navigate(`/jobs/${response.job_id}`)
@@ -916,11 +774,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     }
     return (
       <>
-        <IdleView
-          onConfirm={submitNew}
-          onOpenHistory={openHistory}
-          onJumpToJob={(id) => navigate(`/jobs/${id}`)}
-        />
+        <IdleView onSubmit={submitNew} onOpenHistory={openHistory} />
         {drawer}
       </>
     )
