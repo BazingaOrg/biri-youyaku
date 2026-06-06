@@ -220,6 +220,7 @@ function renderSubtitle(job: Job) {
     )
   }
   if (job.status === 'DOWNLOADING_AUDIO') {
+    if (job.queued) return <p>排队中…（等下载槽位）</p>
     const pct = Math.round(job.download_progress?.percent ?? 0)
     return (
       <div className="grid gap-2">
@@ -234,6 +235,7 @@ function renderSubtitle(job: Job) {
     )
   }
   if (job.status === 'TRANSCRIBING') {
+    if (job.queued) return <p>排队中…（等转写槽位）</p>
     const pct = Math.round((job.transcribe_progress?.percent ?? 0))
     const itemsCount = job.transcribe_progress?.items_count ?? job.transcript.length
     const preview = job.transcribe_progress?.preview
@@ -272,12 +274,14 @@ function renderSummary(job: Job) {
       </div>
     )
   }
-  if (job.status === 'SUMMARIZING')
+  if (job.status === 'SUMMARIZING') {
+    if (job.queued) return <p>排队中…（等总结槽位）</p>
     return (
       <p>
         正在生成总结… 模型 <span className="break-all text-ink">{job.options.llm_model}</span>
       </p>
     )
+  }
   return <p>等待生成总结</p>
 }
 
@@ -544,7 +548,13 @@ export function Workspace({jobId}: WorkspaceProps) {
   const reconnectedRefresh = useCallback(() => {
     void refresh()
   }, [refresh])
-  useJobStream(jobId, patchJob, {onReconnected: reconnectedRefresh})
+  // streamReconnectKey：retry 后 bump 一下强制 SSE 重新订阅。FAILED 期间后端
+  // stream 路由立刻 return，前端 terminalRef 会锁死自动重连——retry 必须显式 kick。
+  const [streamReconnectKey, setStreamReconnectKey] = useState(0)
+  useJobStream(jobId, patchJob, {
+    onReconnected: reconnectedRefresh,
+    reconnectKey: streamReconnectKey,
+  })
 
   // 切换任务时重置一次性 flag
   useEffect(() => {
@@ -576,8 +586,17 @@ export function Workspace({jobId}: WorkspaceProps) {
   }, [job, jobId, refresh, toast])
 
   // 终态 toast 与 localStorage 清理（每个 status 只触发一次）
+  //
+  // notifiedRef 必须在「离开终态」时清掉，否则 retry 让任务从 FAILED 重跑，再次进入
+  // FAILED 时会因为 key 还是 `<id>:FAILED` 而被静默跳过 toast。同 autoResumedRef 套路。
   useEffect(() => {
     if (!job || !jobId) return
+    const isTerminal =
+      job.status === 'COMPLETED' || job.status === 'FAILED' || job.status === 'CANCELED'
+    if (!isTerminal) {
+      notifiedRef.current = null
+      return
+    }
     const key = `${jobId}:${job.status}`
     if (notifiedRef.current === key) return
     if (job.status === 'COMPLETED') {
@@ -663,11 +682,15 @@ export function Workspace({jobId}: WorkspaceProps) {
     // cancelPending 立即生效，按钮即刻变「取消中…」；后端真正切到 CANCELED 时
     // 由上面那个 useEffect 把它清掉，避免「点了没反应」的错觉。
     setCancelPending(true)
+    // 安全超时：如果 SSE 通路异常导致 CANCELED 状态没送达，15s 后强制解除 pending
+    // 避免按钮永远转。已收到终态时上面的 useEffect 会先清掉，timeout 是 no-op。
+    const safetyTimeout = window.setTimeout(() => setCancelPending(false), 15000)
     try {
       await cancelJob(jobId)
       await refresh()
       toast.info('已请求取消')
     } catch (err) {
+      window.clearTimeout(safetyTimeout)
       setCancelPending(false)
       toast.error('取消失败', err instanceof Error ? err.message : '请重试')
     } finally {
@@ -694,6 +717,9 @@ export function Workspace({jobId}: WorkspaceProps) {
     setActionBusy(true)
     try {
       await retryJob(jobId)
+      // 必须先 kick SSE 再 refresh：从 FAILED 走出来后旧 SSE 已死，不重连就拿不到
+      // 后续 progress / status 事件，页面会卡在某个中间状态。
+      setStreamReconnectKey((k) => k + 1)
       await refresh()
       toast.info('已重试')
     } catch (err) {
@@ -759,7 +785,13 @@ export function Workspace({jobId}: WorkspaceProps) {
         if (id === jobId) clearActive(id)
         toast.success('已删除')
       }}
-      refreshKey={jobId ?? job?.status ?? null}
+      refreshKey={
+        // 只在「进入终态」时刷新历史列表，避免运行中每个 status 变化都拉一次
+        jobId ??
+        (job?.status === 'COMPLETED' || job?.status === 'FAILED' || job?.status === 'CANCELED'
+          ? job.status
+          : null)
+      }
     />
   )
 

@@ -207,7 +207,8 @@ async def stream_job(job_id: str):
 
     async def generator():
         job = repo.get_job(job_id)
-        if job is not None:
+        # 终态直接发 snapshot 走人，不订阅（节省 subscriber 槽位）
+        if job is not None and job.status in {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED}:
             yield {
                 "event": "status",
                 "data": json.dumps(
@@ -222,12 +223,28 @@ async def stream_job(job_id: str):
                     ensure_ascii=False,
                 ),
             }
-            if job.status in {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED}:
-                return
-        async with event_bus.subscribe(job_id) as queue:
+            return
+
+        # 非终态：先订阅再 yield snapshot，避免「yield 与 subscribe 之间 publish 的事件丢失」
+        async with event_bus.subscribe(job_id) as subscriber:
+            if job is not None:
+                yield {
+                    "event": "status",
+                    "data": json.dumps(
+                        {
+                            "status": job.status.value,
+                            "summary": repo.read_summary(job),
+                            "stage": job.error_stage,
+                            "message": job.error_message,
+                            "error_code": job.error_code,
+                            "email_error": job.email_error,
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
             while True:
                 try:
-                    message = await asyncio.wait_for(queue.get(), timeout=25)
+                    message = await asyncio.wait_for(subscriber.pop(), timeout=25)
                 except asyncio.TimeoutError:
                     yield {"comment": "keepalive"}
                     continue

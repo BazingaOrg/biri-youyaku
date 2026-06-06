@@ -52,11 +52,24 @@ interface StatusPayload {
   stage?: string
   error_code?: string
   email_error?: string | null
+  /** TRANSCRIPT_READY 时后端会带前 3 行字幕预览，让 UI 立刻能渲染 */
+  transcript_preview?: Job['transcript']
+  subtitle_source?: string
+  /** 排队等并发槽位（_io_semaphore / _summary_semaphore）的提示 */
+  queued?: boolean
 }
 
 interface UseJobStreamOptions {
   /** SSE 重新建立连接（不是首次连接）后触发；调 refresh 拉一次 snapshot 修正漂移 */
   onReconnected?: () => void
+  /**
+   * 强制重连标记。改变这个值（任意类型，浅比较）会触发完全断开 + 重建 SSE。
+   *
+   * 场景：任务从 FAILED 进入 RUNNING（用户点 retry）。FAILED 期间后端 stream 路由
+   * 立刻 return，前端 terminalRef 锁死再也不重连——所以 retry 之后 caller 必须显式
+   * bump 一下 reconnectKey，把死连接踢起来。
+   */
+  reconnectKey?: unknown
 }
 
 export function useJobStream(
@@ -105,6 +118,17 @@ export function useJobStream(
         }
         if (payload.email_error !== undefined) {
           patch.email_error = payload.email_error
+        }
+        // TRANSCRIPT_READY 带的 preview：只在前端当前 transcript 为空时填，
+        // 避免覆盖 refresh() 拿到的完整 transcript。
+        if (payload.transcript_preview && payload.transcript_preview.length > 0) {
+          patch.transcript = payload.transcript_preview
+        }
+        if (payload.subtitle_source !== undefined) {
+          patch.subtitle_source = payload.subtitle_source
+        }
+        if (payload.queued !== undefined) {
+          patch.queued = payload.queued
         }
         onPatch(patch)
         return
@@ -176,5 +200,6 @@ export function useJobStream(
       // 取消未 flush 的 rAF / setTimeout，避免对 unmounted / 切换后的 jobId 派发
       throttler.cancel()
     }
-  }, [jobId, onPatch])
+    // reconnectKey 变化 → effect 重跑 → SSE 完全重建
+  }, [jobId, onPatch, options.reconnectKey])
 }

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from biri_youyaku.config import settings
 from biri_youyaku.events import event_bus
@@ -43,6 +44,30 @@ def _remember_job_key(job_id: str, llm_api_key: str | None) -> None:
 
 class StageTimeoutError(RuntimeError):
     pass
+
+
+@asynccontextmanager
+async def _semaphore_with_queue_notice(
+    job_id: str,
+    stage: JobStatus,
+    semaphore: asyncio.Semaphore,
+):
+    """获取并发槽位；如果立刻拿不到就先通知前端「排队中」，拿到后再通知一次解除。
+
+    这样第 3+ 个任务在等待 `_io_semaphore` / `_summary_semaphore` 时 UI 不会显示
+    一动不动的「下载音频 0%」/「正在生成总结」状态而摸不到头脑。
+    """
+    notified = False
+    if semaphore.locked():
+        await event_bus.publish(job_id, "status", {"status": stage.value, "queued": True})
+        notified = True
+    await semaphore.acquire()
+    try:
+        if notified:
+            await event_bus.publish(job_id, "status", {"status": stage.value, "queued": False})
+        yield
+    finally:
+        semaphore.release()
 
 
 async def _with_timeout(stage: JobStatus, timeout_seconds: float, awaitable):
@@ -173,7 +198,20 @@ async def run_until_transcript(job_id: str) -> None:
             duration=video_meta.duration,
         )
         repo.set_chapters(job_id, video_meta.chapters)
-        await event_bus.publish(job_id, "meta", {"title": video_meta.title, "author": video_meta.author})
+        # 顺手把 chapters 一起推到 meta event，前端不用再 refresh 就能拿到
+        await event_bus.publish(
+            job_id,
+            "meta",
+            {
+                "title": video_meta.title,
+                "author": video_meta.author,
+                "duration": video_meta.duration,
+                "chapters": [
+                    {"start": ch.start, "end": ch.end, "title": ch.title}
+                    for ch in (video_meta.chapters or [])
+                ],
+            },
+        )
         _raise_if_canceled(job_id)
 
         fresh_job = repo.get_job(job_id)
@@ -183,7 +221,7 @@ async def run_until_transcript(job_id: str) -> None:
         if fresh_job.options.task_type == "audio":
             current_stage = JobStatus.DOWNLOADING_AUDIO.value
             await transition(job_id, JobStatus.DOWNLOADING_AUDIO)
-            async with _io_semaphore:
+            async with _semaphore_with_queue_notice(job_id, JobStatus.DOWNLOADING_AUDIO, _io_semaphore):
                 await _with_timeout(
                     JobStatus.DOWNLOADING_AUDIO,
                     1800,
@@ -202,7 +240,7 @@ async def run_until_transcript(job_id: str) -> None:
         else:
             current_stage = JobStatus.DOWNLOADING_AUDIO.value
             await transition(job_id, JobStatus.DOWNLOADING_AUDIO)
-            async with _io_semaphore:
+            async with _semaphore_with_queue_notice(job_id, JobStatus.DOWNLOADING_AUDIO, _io_semaphore):
                 audio_path = await _with_timeout(
                     JobStatus.DOWNLOADING_AUDIO,
                     1800,
@@ -227,7 +265,7 @@ async def run_until_transcript(job_id: str) -> None:
                     },
                 )
 
-            async with _io_semaphore:
+            async with _semaphore_with_queue_notice(job_id, JobStatus.TRANSCRIBING, _io_semaphore):
                 # 1h+ 视频也要给余量，SenseVoice CPU 推理 1h 音频可能要 20-40min
                 items = await _with_timeout(
                     JobStatus.TRANSCRIBING,
@@ -236,7 +274,17 @@ async def run_until_transcript(job_id: str) -> None:
                 )
         _raise_if_canceled(job_id)
         repo.set_transcript(job_id, items)
-        await transition(job_id, JobStatus.TRANSCRIPT_READY)
+        # 带前 3 行 preview 一起发出去，前端不用等 refresh 就能渲染「字幕已就绪」预览
+        transcript_preview = [
+            {"start": float(item.start), "end": float(item.end), "text": item.text}
+            for item in items[:3]
+        ]
+        await transition(
+            job_id,
+            JobStatus.TRANSCRIPT_READY,
+            transcript_preview=transcript_preview,
+            subtitle_source="platform" if (video_meta.has_subtitle and not fresh_job.options.force_asr) else "asr",
+        )
     except (asyncio.CancelledError, CanceledError):
         await transition(job_id, JobStatus.CANCELED)
         _job_llm_api_keys.pop(job_id, None)
@@ -265,7 +313,7 @@ async def run_after_resume(job_id: str) -> None:
         video_meta = _meta_from_job(fresh_job)
         current_stage = JobStatus.SUMMARIZING.value
         await transition(job_id, JobStatus.SUMMARIZING)
-        async with _summary_semaphore:
+        async with _semaphore_with_queue_notice(job_id, JobStatus.SUMMARIZING, _summary_semaphore):
             # 长视频字幕一次喂给 LLM 流式输出，5 分钟常常超；放宽到 20 分钟兜底
             summary_md = await _with_timeout(
                 JobStatus.SUMMARIZING,

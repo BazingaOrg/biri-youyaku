@@ -36,6 +36,9 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
   const [clearing, setClearing] = useState(false)
   const toast = useToast()
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  // 同步锁：scroll 事件可能在 loadingMore state 真正生效之前连续触发多次
+  // （React state 异步），用 ref 直接做闸口避免重复请求。
+  const loadingMoreRef = useRef(false)
 
   // 首次打开 / refreshKey 变化 → 重新拉第一页
   useEffect(() => {
@@ -73,7 +76,8 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
   }, [open, onClose])
 
   const loadMore = useCallback(async () => {
-    if (loadingMore || !hasMore || cursor == null) return
+    if (loadingMoreRef.current || !hasMore || cursor == null) return
+    loadingMoreRef.current = true
     setLoadingMore(true)
     try {
       const response = await listJobs({limit: PAGE_SIZE, cursor})
@@ -83,9 +87,10 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
     } catch {
       setHasMore(false)
     } finally {
+      loadingMoreRef.current = false
       setLoadingMore(false)
     }
-  }, [cursor, hasMore, loadingMore])
+  }, [cursor, hasMore])
 
   // 滑到底自动加载下一页
   useEffect(() => {
