@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from biri_youyaku.auth import require_token
-from biri_youyaku.cf_access import cf_access_enabled
 from biri_youyaku.config import settings
 from biri_youyaku.jobs import repo
 from biri_youyaku.jobs.model import JobOptions
@@ -81,18 +80,12 @@ async def get_config_defaults() -> dict:
 
 @public_router.get("/config/runtime")
 async def get_runtime_config() -> dict:
-    # auth_mode 给前端用：cf_access 模式下前端不需要再设 Authorization header；
-    # api_token 模式下前端需要带 Bearer；none 模式（仅本地）什么都不需要。
-    if cf_access_enabled():
-        auth_mode = "cf_access"
-    elif settings.api_token:
-        auth_mode = "api_token"
-    else:
-        auth_mode = "none"
+    # auth_mode 给前端用：api_token 模式前端需要带 Bearer；none 模式（仅本地）不需要。
+    auth_mode = "api_token" if settings.api_token else "none"
     return {
         "ok": True,
         "auth_mode": auth_mode,
-        # 兼容旧字段：旧前端代码可能仍在读 api_token_required；保留 1-2 个版本再删。
+        # 兼容旧字段：保留 1-2 个版本再删。
         "api_token_required": auth_mode == "api_token",
         "llm_configured": bool(settings.llm_api_key),
         "email_configured": bool(settings.email_enabled and settings.email_webhook_url),
