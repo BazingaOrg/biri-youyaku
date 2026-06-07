@@ -45,17 +45,17 @@ export function StepCarousel({steps, currentIndex}: StepCarouselProps) {
   }
 
   return (
-    <section className="rounded-3xl bg-panel p-4 shadow-card sm:p-5">
+    <section className="min-w-0 w-full rounded-3xl bg-panel p-4 shadow-card sm:p-5">
       <div className="overflow-hidden">
         <div
-          className="flex transition-transform duration-[220ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
+          className="flex min-w-0 transition-transform duration-[220ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
           style={{transform: `translateX(-${displayIndex * 100}%)`}}
         >
           {steps.map((step) => {
             const isFailed = step.state === 'failed'
             return (
-              <div key={step.key} className="w-full shrink-0 pr-1">
-                <div className={`grid gap-3 rounded-2xl border p-4 sm:p-5 ${
+              <div key={step.key} className="min-w-0 w-full shrink-0 pr-1">
+                <div className={`grid min-w-0 gap-3 rounded-2xl border p-4 sm:p-5 ${
                   isFailed
                     ? 'border-danger/40 bg-danger/10'
                     : step.state === 'active'
@@ -76,7 +76,7 @@ export function StepCarousel({steps, currentIndex}: StepCarouselProps) {
                     </span>
                     <span className="text-base font-semibold text-ink">{step.label}</span>
                   </div>
-                  <div className="h-[220px] overflow-y-auto text-sm leading-6 text-muted">
+                  <div className="min-w-0 h-[220px] overflow-y-auto text-sm leading-6 text-muted">
                     {step.render()}
                   </div>
                 </div>

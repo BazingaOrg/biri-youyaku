@@ -138,7 +138,7 @@ function IdleView({
 
 function MetaBar({job}: {job: Job}) {
   return (
-    <div className="grid gap-2 rounded-2xl bg-lift px-4 py-3 sm:px-5 sm:py-4">
+    <div className="grid min-w-0 w-full gap-2 rounded-2xl bg-lift px-4 py-3 sm:px-5 sm:py-4">
       <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted">
         <span className="rounded-full bg-brandSoft px-2.5 py-1 text-brand">{job.bvid || '识别中'}</span>
         <span>
@@ -334,7 +334,7 @@ function RunningView({
   }
 
   return (
-    <div className="grid gap-4 py-4">
+    <div className="grid min-w-0 gap-4 py-4">
       <div className="flex flex-wrap items-center justify-center gap-2">
         <IconButton icon={<Plus size={18} />} label="新建" onClick={onNew} />
         <IconButton icon={<History size={18} />} label="历史" onClick={onOpenHistory} />
@@ -404,7 +404,7 @@ function DoneView({
   emailBusy: boolean
 }) {
   return (
-    <div className="grid gap-4 py-4">
+    <div className="grid min-w-0 gap-4 py-4">
       <div className="flex flex-wrap items-center justify-center gap-2">
         <IconButton icon={<Plus size={18} />} label="新建" onClick={onNew} />
         <IconButton
@@ -444,7 +444,7 @@ function DoneView({
           </button>
         </div>
       )}
-      <section className="rounded-3xl bg-panel p-4 shadow-card sm:p-5">
+      <section className="min-w-0 w-full rounded-3xl bg-panel p-4 shadow-card sm:p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold tracking-[-0.012em]">视频总结</h2>
           <span className="truncate text-xs text-muted">{job.options.llm_model}</span>
