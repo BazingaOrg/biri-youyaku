@@ -14,7 +14,7 @@
 需要 Python 3.11+、Node.js 22+（见 `.nvmrc`）、[uv](https://docs.astral.sh/uv/)、`npm`。
 
 ```bash
-# 1. 拷一份配置 + 填你的 LLM_API_KEY（OpenAI / 通义 / Moonshot 等 OpenAI 兼容接口都行）
+# 1. 拷一份配置 + 填你的 LLM_API_KEY（默认 DeepSeek；OpenAI / 通义 / Gemini 等 OpenAI 兼容接口都行）
 cp server/.env.example server/.env
 $EDITOR server/.env
 
@@ -63,15 +63,18 @@ flowchart LR
 
 | 供应商 | `LLM_BASE_URL` 示例 | 备注 |
 | --- | --- | --- |
-| OpenAI | `https://api.openai.com/v1` | 标准接口 |
-| Moonshot / Kimi | `https://api.moonshot.cn/v1` | 后端会强制 `temperature=1` |
-| 通义千问 DashScope | `https://dashscope.aliyuncs.com/compatible-mode/v1` | |
-| DeepSeek | `https://api.deepseek.com` | |
+| **DeepSeek**（默认） | `https://api.deepseek.com/v1` | 模型 `deepseek-v4-flash`；思考模式见 `LLM_THINKING_ENABLED` |
+| Moonshot / Kimi | `https://api.moonshot.cn/v1` | |
+| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | OpenAI 兼容端点 |
+| OpenAI | `https://api.openai.com/v1` | |
+| Anthropic Claude | `https://api.anthropic.com/v1` | |
+| xAI Grok | `https://api.x.ai/v1` | |
 | 本地 ollama / vLLM | `http://localhost:11434/v1` | 模型名按本地实际 |
 
-`LLM_MODEL` 填供应商支持的模型名（`gpt-4o-mini` / `moonshot-v1-32k` / `qwen-plus` 等）。
+`LLM_MODEL` 填供应商支持的模型名（默认 `deepseek-v4-flash`）。
 
-**成本参考**：用 `gpt-4o-mini` 总结一个 20 分钟视频大约 $0.005（一杯水的钱）。
+**成本参考**：用默认 `deepseek-v4-flash` 总结一个 20 分钟视频大约 ¥0.02（输入 1 元/M、输出 2 元/M）。
 长视频按 token 线性增加；想完全免费走下面的本地 ollama 即可。
 
 ### 完全本地：ollama（免费 / 离线 / 隐私）

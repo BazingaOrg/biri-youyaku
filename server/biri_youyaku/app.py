@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if not settings.llm_api_key:
         log.warning(
             "LLM_API_KEY 未配置 → 创建任务时会失败。"
-            "请在 server/.env 里填 LLM_API_KEY（OpenAI / Moonshot / DeepSeek / 本地 ollama 都行）。"
+            "请在 server/.env 里填 LLM_API_KEY（默认 DeepSeek；OpenAI / 本地 ollama 等 OpenAI 兼容接口也行）。"
         )
     # 邮件配置一致性自检：开关打开却没配 webhook / 收件人时给一条警告，
     # 避免后端启动「看起来正常」但每个 job 走到 EMAILING 都报错。

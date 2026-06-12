@@ -26,19 +26,9 @@ SummaryChunkCallback = Callable[[str], Awaitable[None]]
 TokenUsageCallback = Callable[[dict], Awaitable[None]]
 
 
-def _force_temp_one_prefixes() -> tuple[str, ...]:
-    """从 settings 里解析「必须 temperature=1」的前缀列表（逗号分隔，小写）。"""
-    raw = settings.llm_force_temp_one_prefixes or ""
-    return tuple(p.strip().lower() for p in raw.split(",") if p.strip())
-
-
 def resolve_temperature(model: str) -> float:
     if settings.llm_temperature is not None:
         return settings.llm_temperature
-    # 命中前缀直接给 1，省掉一次 400→retry 的往返。
-    lowered = (model or "").lower()
-    if lowered.startswith(_force_temp_one_prefixes()):
-        return 1
     return 0.2
 
 
@@ -79,9 +69,21 @@ def _extract_summary_json(content: str) -> str:
     return payload["summary"]
 
 
-def _is_temperature_rejected_error(exc: Exception) -> bool:
-    message = str(exc).lower()
-    return "temperature" in message and "only 1" in message
+def _thinking_kwargs(model: str) -> dict:
+    """DeepSeek-v4 系列的思考模式开关。其他模型/厂商一律不传 extra_body。
+
+    返回:
+      - {} 表示不附加任何参数（其他厂商；或本就走默认行为）
+      - {"extra_body": {"thinking": {"type": "enabled"}}, "temperature": None}
+        表示开启思考模式 + temperature 不传（思考模式会静默忽略，避免误导）
+      - {"extra_body": {"thinking": {"type": "disabled"}}} 显式关闭
+    """
+    lowered = (model or "").lower()
+    if not lowered.startswith("deepseek-v4"):
+        return {}
+    if settings.llm_thinking_enabled:
+        return {"extra_body": {"thinking": {"type": "enabled"}}, "skip_temperature": True}
+    return {"extra_body": {"thinking": {"type": "disabled"}}}
 
 
 def _format_llm_error(exc: Exception) -> str:
@@ -119,6 +121,21 @@ def _usage_to_dict(usage) -> dict | None:
     }
 
 
+def _build_create_kwargs(model: str, temperature: float, **base) -> dict:
+    """组装 chat.completions.create 的 kwargs，统一处理思考模式与 temperature。"""
+    kwargs = dict(base)
+    kwargs["model"] = model
+    thinking = _thinking_kwargs(model)
+    if thinking.pop("skip_temperature", False):
+        # 思考模式静默忽略 temperature/top_p，不传更干净，也方便日志识别。
+        pass
+    else:
+        kwargs["temperature"] = temperature
+    if "extra_body" in thinking:
+        kwargs["extra_body"] = thinking["extra_body"]
+    return kwargs
+
+
 async def _complete(
     client: AsyncOpenAI,
     *,
@@ -127,23 +144,12 @@ async def _complete(
     temperature: float,
     on_usage: TokenUsageCallback | None = None,
 ) -> str:
+    base_kwargs = _build_create_kwargs(model, temperature, messages=messages)
     try:
-        response = await client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-        )
+        response = await client.chat.completions.create(**base_kwargs)
     except Exception as exc:
-        if temperature != 1 and _is_temperature_rejected_error(exc):
-            logger.warning("LLM 拒收 temperature=%s，自动切到 1 重试（model=%s）", temperature, model)
-            response = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=1,
-            )
-        else:
-            logger.error("LLM 调用失败 model=%s: %s", model, _format_llm_error(exc))
-            raise
+        logger.error("LLM 调用失败 model=%s: %s", model, _format_llm_error(exc))
+        raise
     usage = _usage_to_dict(getattr(response, "usage", None))
     if usage is not None and on_usage is not None:
         await on_usage(usage)
@@ -159,27 +165,18 @@ async def _complete_stream(
     on_chunk: SummaryChunkCallback,
     on_usage: TokenUsageCallback | None = None,
 ) -> str:
+    base_kwargs = _build_create_kwargs(
+        model,
+        temperature,
+        messages=messages,
+        stream=True,
+        stream_options={"include_usage": True},
+    )
     try:
-        stream = await client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            stream=True,
-            stream_options={"include_usage": True},
-        )
+        stream = await client.chat.completions.create(**base_kwargs)
     except Exception as exc:
-        if temperature != 1 and _is_temperature_rejected_error(exc):
-            logger.warning("LLM 流式拒收 temperature=%s，自动切到 1 重试（model=%s）", temperature, model)
-            stream = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=1,
-                stream=True,
-                stream_options={"include_usage": True},
-            )
-        else:
-            logger.error("LLM 流式调用失败 model=%s: %s", model, _format_llm_error(exc))
-            raise
+        logger.error("LLM 流式调用失败 model=%s: %s", model, _format_llm_error(exc))
+        raise
 
     content = ""
     async for chunk in stream:

@@ -27,8 +27,8 @@ class JobOptions:
     email_enabled: bool = True
     email_recipient: str | None = None
     email_subject_template: str = "[Biri-Youyaku] {{title}}"
-    llm_base_url: str = "https://api.openai.com/v1"
-    llm_model: str = "gpt-4o-mini"
+    llm_base_url: str = "https://api.deepseek.com/v1"
+    llm_model: str = "deepseek-v4-flash"
     prompt_template: str | None = None
 
     @classmethod

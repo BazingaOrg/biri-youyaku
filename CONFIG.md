@@ -20,13 +20,13 @@
 | ASR | `ASR_LANGUAGE_DEFAULT` | `auto` | |
 | ASR | `SENSEVOICE_MODEL_DIR` | 空 | 自动下载 / 指定本地路径 |
 | LLM | `LLM_API_KEY` | 空 | **必填** |
-| LLM | `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI 兼容接口 |
-| LLM | `LLM_MODEL` | `gpt-4o-mini` | |
+| LLM | `LLM_BASE_URL` | `https://api.deepseek.com/v1` | OpenAI 兼容接口（默认 DeepSeek） |
+| LLM | `LLM_MODEL` | `deepseek-v4-flash` | DeepSeek 最新基础款 |
+| LLM | `LLM_THINKING_ENABLED` | `false` | 仅 deepseek-v4-* 有效；开启质量略升，但流式变慢且 token 增加 |
 | LLM | `LLM_TIMEOUT_SECONDS` | `300` | 单请求超时 |
 | LLM | `LLM_MAX_RETRIES` | `2` | SDK 层重试 |
 | LLM | `LLM_TEMPERATURE` | 空 | 留空走代码默认 |
 | LLM | `LLM_CHUNK_TOKEN_THRESHOLD` | `30000` | 长字幕分段阈值 |
-| LLM | `LLM_FORCE_TEMP_ONE_PREFIXES` | `kimi,moonshot` | 命中前缀强制 `temperature=1` |
 | LLM | `LLM_SEGMENT_CONCURRENCY` | `3` | 段级总结并发数 |
 | LLM | `LLM_BASE_URL_ALLOWED_HOSTS` | 内置常见供应商列表 | SSRF 白名单；空 = 不限制（仅本地） |
 | 摘要 | `SUMMARY_LANGUAGE` | `中文简体` | 输出语言 |
@@ -64,13 +64,13 @@ All tunable settings live in `server/.env`; defaults are in
 | ASR | `ASR_LANGUAGE_DEFAULT` | `auto` | |
 | ASR | `SENSEVOICE_MODEL_DIR` | empty | auto-download / local path |
 | LLM | `LLM_API_KEY` | empty | **required** |
-| LLM | `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible |
-| LLM | `LLM_MODEL` | `gpt-4o-mini` | |
+| LLM | `LLM_BASE_URL` | `https://api.deepseek.com/v1` | OpenAI-compatible (default DeepSeek) |
+| LLM | `LLM_MODEL` | `deepseek-v4-flash` | DeepSeek latest base model |
+| LLM | `LLM_THINKING_ENABLED` | `false` | DeepSeek-v4 only; slightly higher quality but slower stream and more tokens |
 | LLM | `LLM_TIMEOUT_SECONDS` | `300` | per-request timeout |
 | LLM | `LLM_MAX_RETRIES` | `2` | SDK-level retry |
 | LLM | `LLM_TEMPERATURE` | empty | empty = code default |
 | LLM | `LLM_CHUNK_TOKEN_THRESHOLD` | `30000` | long-transcript split threshold |
-| LLM | `LLM_FORCE_TEMP_ONE_PREFIXES` | `kimi,moonshot` | prefixes that force `temperature=1` |
 | LLM | `LLM_SEGMENT_CONCURRENCY` | `3` | per-segment summarize concurrency |
 | LLM | `LLM_BASE_URL_ALLOWED_HOSTS` | built-in providers | SSRF allowlist; empty = no limit (local only) |
 | Summary | `SUMMARY_LANGUAGE` | `中文简体` | output language |

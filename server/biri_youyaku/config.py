@@ -23,17 +23,23 @@ class Settings(BaseSettings):
     sensevoice_model_dir: str = ""
 
     llm_api_key: str = ""
-    llm_base_url: str = "https://api.openai.com/v1"
-    llm_model: str = "gpt-4o-mini"
+    llm_base_url: str = "https://api.deepseek.com/v1"
+    # DeepSeek 最新基础款（替代已弃用的 deepseek-chat/deepseek-reasoner）。
+    # 旗舰 deepseek-v4-pro 也可换用，但贵 3 倍、并发上限低，本场景不必。
+    llm_model: str = "deepseek-v4-flash"
     llm_timeout_seconds: int = 300
     llm_max_retries: int = 2
     llm_temperature: float | None = None
     llm_chunk_token_threshold: int = 30000
-    # 哪些模型前缀必须强制 temperature=1（Moonshot/Kimi 系列对非 1 会返 400）。
-    # 逗号分隔，前缀匹配（大小写不敏感）。
-    llm_force_temp_one_prefixes: str = "kimi,moonshot"
     # 段级总结并发上限，>1 时长视频分段总结走 asyncio.gather。
     llm_segment_concurrency: int = 3
+    # DeepSeek 思考模式开关（仅 deepseek-v4-* 系列有效，其他厂商忽略）。
+    # 默认 False：
+    #   1. 流式输出体验更好（思考模式下 reasoning_content 不在 content 流，用户要等很久）；
+    #   2. 字幕总结是结构化笔记整理，不是复杂推理，flash 非思考模式足够；
+    #   3. 思考模式静默忽略 temperature/top_p，与本项目温度配置冲突。
+    # 想要更高总结质量可设为 True，代价是流式更慢、token 更多。
+    llm_thinking_enabled: bool = False
 
     summary_language: str = "中文简体"
 
@@ -54,14 +60,13 @@ class Settings(BaseSettings):
     # 公网部署防 SSRF：/v1/llm/models 接受的 base_url 必须以这些 host 结尾。
     # 留空 = 允许任意（仅适合本地）。生产环境务必配齐。
     llm_base_url_allowed_hosts: str = (
-        "api.openai.com,"
-        "api.moonshot.cn,"
-        "api.anthropic.com,"
-        "dashscope.aliyuncs.com,"
         "api.deepseek.com,"
-        "generativelanguage.googleapis.com,"
+        "api.moonshot.cn,"
         "open.bigmodel.cn,"
-        "api.siliconflow.cn"
+        "generativelanguage.googleapis.com,"
+        "api.openai.com,"
+        "api.anthropic.com,"
+        "api.x.ai"
     )
 
     audio_storage_dir: Path = Path("data/audio")

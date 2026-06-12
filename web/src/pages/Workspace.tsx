@@ -276,11 +276,7 @@ function renderSummary(job: Job) {
   }
   if (job.status === 'SUMMARIZING') {
     if (job.queued) return <p>排队中…（等总结槽位）</p>
-    return (
-      <p>
-        正在生成总结… 模型 <span className="break-all text-ink">{job.options.llm_model}</span>
-      </p>
-    )
+    return <p>正在生成总结…</p>
   }
   return <p>等待生成总结</p>
 }
@@ -447,7 +443,6 @@ function DoneView({
       <section className="min-w-0 w-full rounded-3xl bg-panel p-4 shadow-card sm:p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold tracking-[-0.012em]">视频总结</h2>
-          <span className="truncate text-xs text-muted">{job.options.llm_model}</span>
         </div>
         {job.summary ? (
           <div className="prose prose-sm max-w-none break-words text-ink dark:prose-invert prose-headings:tracking-[-0.012em] prose-a:text-brand [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto [&_code]:break-all">

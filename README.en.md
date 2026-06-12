@@ -65,16 +65,19 @@ Any OpenAI-compatible endpoint works:
 
 | Provider | Sample `LLM_BASE_URL` | Notes |
 | --- | --- | --- |
-| OpenAI | `https://api.openai.com/v1` | Standard |
-| Moonshot / Kimi | `https://api.moonshot.cn/v1` | Backend auto-forces `temperature=1` |
-| Tongyi Qianwen DashScope | `https://dashscope.aliyuncs.com/compatible-mode/v1` | |
-| DeepSeek | `https://api.deepseek.com` | |
+| **DeepSeek** (default) | `https://api.deepseek.com/v1` | Model `deepseek-v4-flash`; thinking mode via `LLM_THINKING_ENABLED` |
+| Moonshot / Kimi | `https://api.moonshot.cn/v1` | |
+| Zhipu GLM | `https://open.bigmodel.cn/api/paas/v4` | |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | OpenAI-compatible endpoint |
+| OpenAI | `https://api.openai.com/v1` | |
+| Anthropic Claude | `https://api.anthropic.com/v1` | |
+| xAI Grok | `https://api.x.ai/v1` | |
 | Local ollama / vLLM | `http://localhost:11434/v1` | |
 
-Set `LLM_MODEL` to whatever your provider supports (`gpt-4o-mini`, `moonshot-v1-32k`,
-`qwen-plus`, …).
+Set `LLM_MODEL` to whatever your provider supports (default `deepseek-v4-flash`).
 
-**Cost ballpark**: a 20-minute video with `gpt-4o-mini` costs about $0.005 — less than a sip of water.
+**Cost ballpark**: a 20-minute video with the default `deepseek-v4-flash` costs about ¥0.02
+(input ¥1/M tokens, output ¥2/M).
 Longer videos scale linearly with tokens. For fully free / offline, see the ollama recipe below.
 
 ### Fully local: ollama (free / offline / private)

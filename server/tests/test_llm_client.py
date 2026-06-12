@@ -38,7 +38,29 @@ def test_resolve_temperature_defaults_to_zero_point_two(monkeypatch):
     monkeypatch.setattr(client.settings, "llm_temperature", None)
 
     assert client.resolve_temperature("gpt-4o-mini") == 0.2
-    assert client.resolve_temperature("kimi-k2.5") == 1
+    assert client.resolve_temperature("deepseek-v4-flash") == 0.2
+
+
+def test_build_create_kwargs_non_deepseek_passes_temperature(monkeypatch):
+    monkeypatch.setattr(client.settings, "llm_thinking_enabled", False)
+    kw = client._build_create_kwargs("gpt-4o-mini", 0.2, messages=[])
+    assert kw["temperature"] == 0.2
+    assert "extra_body" not in kw
+
+
+def test_build_create_kwargs_deepseek_v4_thinking_disabled(monkeypatch):
+    monkeypatch.setattr(client.settings, "llm_thinking_enabled", False)
+    kw = client._build_create_kwargs("deepseek-v4-flash", 0.2, messages=[])
+    assert kw["temperature"] == 0.2
+    assert kw["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
+def test_build_create_kwargs_deepseek_v4_thinking_enabled_drops_temperature(monkeypatch):
+    monkeypatch.setattr(client.settings, "llm_thinking_enabled", True)
+    kw = client._build_create_kwargs("deepseek-v4-pro", 0.2, messages=[])
+    # 思考模式会静默忽略 temperature，索性不传更干净
+    assert "temperature" not in kw
+    assert kw["extra_body"] == {"thinking": {"type": "enabled"}}
 
 
 def test_usage_to_dict_normalizes_openai_usage():
@@ -98,51 +120,6 @@ async def test_summarize_chunked_summarizes_segments_then_merges(monkeypatch):
     assert "分段 2" in calls[1]
     assert "segment-1" in calls[2]
     assert "segment-2" in calls[2]
-
-
-@pytest.mark.asyncio
-async def test_complete_retries_with_temperature_one_when_provider_requires_it():
-    calls = []
-    usages = []
-
-    class FakeCompletions:
-        async def create(self, **kwargs):
-            calls.append(kwargs)
-            if kwargs["temperature"] != 1:
-                raise RuntimeError("invalid temperature: only 1 is allowed for this model")
-
-            class Message:
-                content = '{"summary":"ok"}'
-
-            class Choice:
-                message = Message()
-
-            class Response:
-                choices = [Choice()]
-                usage = None
-
-            return Response()
-
-    async def on_usage(usage):
-        usages.append(usage)
-
-    class FakeChat:
-        completions = FakeCompletions()
-
-    class FakeClient:
-        chat = FakeChat()
-
-    result = await client._complete(
-        FakeClient(),
-        model="provider-model",
-        messages=[{"role": "user", "content": "hello"}],
-        temperature=0.2,
-        on_usage=on_usage,
-    )
-
-    assert result == '{"summary":"ok"}'
-    assert [call["temperature"] for call in calls] == [0.2, 1]
-    assert usages == []
 
 
 @pytest.mark.asyncio
