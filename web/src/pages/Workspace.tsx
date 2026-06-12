@@ -3,8 +3,8 @@ import type {ReactNode} from 'react'
 import {ChevronDown, Copy, ExternalLink, FileDown, History, Mail, Music, Plus, RotateCw, Sparkles, XCircle} from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import {useLocation} from 'wouter'
-import {cancelJob, createJob, downloadJobAudio, getJob, resendEmail, resumeJob, retryJob} from '../lib/api'
-import type {Job, JobOptionOverrides, JobStatus} from '../lib/api'
+import {cancelJob, createJob, downloadJobAudio, getConfigDefaults, getJob, resendEmail, resumeJob, retryJob} from '../lib/api'
+import type {ConfigDefaults, Job, JobOptionOverrides, JobStatus} from '../lib/api'
 import {isValidBiliUrl, sanitizeBiliInput} from '../lib/url'
 import {formatDuration} from '../lib/format'
 import {friendlyError} from '../lib/errorMap'
@@ -516,6 +516,26 @@ export function Workspace({jobId}: WorkspaceProps) {
   const [historyOpen, setHistoryOpen] = useState(false)
   const autoResumedRef = useRef<string | null>(null)
   const notifiedRef = useRef<string | null>(null)
+  // 拉一次当前后端默认值；retry/resume 时把 llm_model + llm_base_url 作为 overrides
+  // 传过去，避免历史 job 里残留的旧供应商快照（比如老 Kimi job）继续使用过期配置。
+  const [defaults, setDefaults] = useState<ConfigDefaults | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void getConfigDefaults()
+      .then((res) => {
+        if (!cancelled) setDefaults(res.defaults)
+      })
+      .catch(() => {
+        // 拉失败不致命：退化为不传 overrides（即沿用 job 自身快照）。
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  const currentLlmOverrides = useCallback((): JobOptionOverrides => {
+    if (!defaults) return {}
+    return {llm_model: defaults.llm_model, llm_base_url: defaults.llm_base_url}
+  }, [defaults])
 
   // 流式总结期间的跳底浮标：用户不主动向上看就自动跟随新内容。
   const streaming = job?.status === 'SUMMARIZING'
@@ -570,15 +590,18 @@ export function Workspace({jobId}: WorkspaceProps) {
       }
       return
     }
+    // 等 defaults 拉到再 auto-resume：否则旧 job 的 kimi 快照会被原样回放，
+    // defaults 拉到后 useEffect 会因 currentLlmOverrides 变化而重跑。
+    if (!defaults) return
     if (autoResumedRef.current === jobId) return
     autoResumedRef.current = jobId
-    void resumeJob(jobId)
+    void resumeJob(jobId, currentLlmOverrides())
       .then(() => refresh())
       .catch((err) => {
         const message = err instanceof Error ? err.message : '继续处理失败'
         toast.error('继续处理失败', message)
       })
-  }, [job, jobId, refresh, toast])
+  }, [job, jobId, refresh, toast, defaults, currentLlmOverrides])
 
   // 终态 toast 与 localStorage 清理（每个 status 只触发一次）
   //
@@ -711,7 +734,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     if (!jobId) return
     setActionBusy(true)
     try {
-      await retryJob(jobId)
+      await retryJob(jobId, currentLlmOverrides())
       // 必须先 kick SSE 再 refresh：从 FAILED 走出来后旧 SSE 已死，不重连就拿不到
       // 后续 progress / status 事件，页面会卡在某个中间状态。
       setStreamReconnectKey((k) => k + 1)
