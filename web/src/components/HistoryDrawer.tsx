@@ -9,7 +9,8 @@ interface HistoryDrawerProps {
   open: boolean
   onClose: () => void
   onOpenJob: (jobId: string) => void
-  onDeleted?: (jobId: string) => void
+  // 第二个参数为被删除任务的标题（缺失时回退为 undefined），方便上层 toast 显示「已删除 · 视频标题」。
+  onDeleted?: (jobId: string, title?: string) => void
   /** 用于触发列表刷新（jobId 或状态变化时拉新数据）。 */
   refreshKey?: string | null
 }
@@ -128,10 +129,12 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
 
   const handleDelete = async (jobId: string, event: ReactMouseEvent) => {
     event.stopPropagation()
+    // 先在本地列表里查 title：删除完成后该 job 会从 jobs 里被移除，再去拿就拿不到了。
+    const target = jobs.find((j) => j.id === jobId)
     try {
       await deleteJob(jobId)
       setJobs((current) => current.filter((j) => j.id !== jobId))
-      onDeleted?.(jobId)
+      onDeleted?.(jobId, target?.title ?? undefined)
     } catch {
       // 静默：下次开抽屉会刷新
     }

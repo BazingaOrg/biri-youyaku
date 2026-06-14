@@ -11,4 +11,6 @@ RUN npm run build
 
 FROM nginx:1.27-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
+# SPA fallback：/jobs/:id 直接刷新会落到这里，由 try_files 转到 index.html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

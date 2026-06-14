@@ -9,10 +9,14 @@ interface Toast {
   type: ToastType
   title: string
   message?: string
+  taskName?: string
 }
 
 interface ToastOptions {
   autoClose?: boolean
+  // 绑定到具体任务的提示（如「总结完成」「下载音频」），传入后会作为副标题展示，
+  // 过长以省略号截断。不传则只显示 title / message。
+  taskName?: string
 }
 
 interface ToastContextValue {
@@ -34,7 +38,7 @@ export function ToastProvider({children}: {children: ReactNode}) {
   const remove = (id: number) => setToasts((current) => current.filter((toast) => toast.id !== id))
   const push = (type: ToastType, title: string, message?: string, options?: ToastOptions) => {
     const id = Date.now() + Math.random()
-    setToasts((current) => [...current, {id, type, title, message}])
+    setToasts((current) => [...current, {id, type, title, message, taskName: options?.taskName}])
     // 提示默认常驻，等用户主动关闭；如显式传 autoClose: true 才走定时关闭。
     if (options?.autoClose === true) {
       const duration = type === 'success' ? 6000 : 4000
@@ -82,13 +86,23 @@ export function ToastProvider({children}: {children: ReactNode}) {
             <div key={toast.id} className={`animate-pop overflow-hidden rounded-2xl border bg-panel/85 p-4 shadow-card backdrop-blur-md ${
               toast.type === 'error' ? 'border-danger/40' : toast.type === 'success' ? 'border-success/40' : 'border-line'
             }`}>
-              <div className="flex gap-3">
-                <Icon size={20} className={`shrink-0 ${toast.type === 'error' ? 'text-danger' : toast.type === 'success' ? 'text-success' : 'text-brand'}`} />
+              {/*
+                items-start + icon/按钮分别配 mt-0.5 / -mt-1：
+                让 20px 图标的视觉中线对齐 title 首行文字中线，关闭按钮也不再"漂"在右上方。
+              */}
+              <div className="flex items-start gap-3">
+                <Icon size={20} className={`mt-0.5 shrink-0 ${toast.type === 'error' ? 'text-danger' : toast.type === 'success' ? 'text-success' : 'text-brand'}`} />
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-ink">{toast.title}</p>
+                  <p className="font-semibold leading-6 text-ink">{toast.title}</p>
+                  {toast.taskName && (
+                    // 任务名做副标题：单行截断，hover 时 title attribute 给出完整名
+                    <p className="mt-0.5 truncate text-xs leading-5 text-muted/80" title={toast.taskName}>
+                      {toast.taskName}
+                    </p>
+                  )}
                   {toast.message && <p className="mt-1 break-words text-sm leading-5 text-muted">{toast.message}</p>}
                 </div>
-                <button type="button" aria-label="关闭提示" onClick={() => remove(toast.id)} className="grid h-8 w-8 shrink-0 place-items-center rounded-xl text-muted transition hover:bg-lift active:scale-95">
+                <button type="button" aria-label="关闭提示" onClick={() => remove(toast.id)} className="-mr-1 -mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-xl text-muted transition hover:bg-lift active:scale-95">
                   <X size={16} />
                 </button>
               </div>

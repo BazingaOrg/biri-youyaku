@@ -321,11 +321,12 @@ function RunningView({
       `Error code: ${job.error_code || '-'}`,
       `Message: ${job.error_message || '-'}`,
     ].join('\n')
+    const taskName = job.title || undefined
     try {
       await navigator.clipboard.writeText(detail)
-      toast.success('错误详情已复制')
+      toast.success('错误详情已复制', undefined, {taskName})
     } catch {
-      toast.error('复制失败', '请手动选中复制')
+      toast.error('复制失败', '请手动选中复制', {taskName})
     }
   }
 
@@ -516,6 +517,10 @@ export function Workspace({jobId}: WorkspaceProps) {
   const [historyOpen, setHistoryOpen] = useState(false)
   const autoResumedRef = useRef<string | null>(null)
   const notifiedRef = useRef<string | null>(null)
+  // 记录「本会话里见过 running 状态」的 jobId。直接打开已完成 / 失败 / 取消的历史任务时，
+  // 这个 ref 仍是 null，对应的终态 toast 就不弹——避免「每次重开同一个老任务都被
+  // 提示一遍总结完成」。状态本身在 MetaBar / StepCarousel / 失败卡片上已经能看到。
+  const sawRunningRef = useRef<string | null>(null)
   // 拉一次当前后端默认值；retry/resume 时把 llm_model + llm_base_url 作为 overrides
   // 传过去，避免历史 job 里残留的旧供应商快照（比如老 Kimi job）继续使用过期配置。
   const [defaults, setDefaults] = useState<ConfigDefaults | null>(null)
@@ -575,6 +580,7 @@ export function Workspace({jobId}: WorkspaceProps) {
   useEffect(() => {
     autoResumedRef.current = null
     notifiedRef.current = null
+    sawRunningRef.current = null
   }, [jobId])
 
   // TRANSCRIPT_READY 自动 resume —— 不再二次确认
@@ -599,7 +605,7 @@ export function Workspace({jobId}: WorkspaceProps) {
       .then(() => refresh())
       .catch((err) => {
         const message = err instanceof Error ? err.message : '继续处理失败'
-        toast.error('继续处理失败', message)
+        toast.error('继续处理失败', message, {taskName: job?.title || undefined})
       })
   }, [job, jobId, refresh, toast, defaults, currentLlmOverrides])
 
@@ -607,36 +613,39 @@ export function Workspace({jobId}: WorkspaceProps) {
   //
   // notifiedRef 必须在「离开终态」时清掉，否则 retry 让任务从 FAILED 重跑，再次进入
   // FAILED 时会因为 key 还是 `<id>:FAILED` 而被静默跳过 toast。同 autoResumedRef 套路。
+  //
+  // sawRunningRef：只在「本会话里见过 running 状态」的转移上弹 toast。
+  // 直接打开历史 COMPLETED/FAILED/CANCELED 任务时跳过 toast，但仍做 clearActive 兜底
+  // （clearActive 带 jobId 参数会自动跳过不匹配的 active 指针，安全）。
   useEffect(() => {
     if (!job || !jobId) return
     const isTerminal =
       job.status === 'COMPLETED' || job.status === 'FAILED' || job.status === 'CANCELED'
     if (!isTerminal) {
+      sawRunningRef.current = jobId
       notifiedRef.current = null
       return
     }
     const key = `${jobId}:${job.status}`
     if (notifiedRef.current === key) return
+    notifiedRef.current = key
+    clearActive(jobId)
+    // 没在本会话里见过 running 状态 → 是「直接打开历史任务」，不弹 toast
+    if (sawRunningRef.current !== jobId) return
+    const taskName = job.title || undefined
     if (job.status === 'COMPLETED') {
-      notifiedRef.current = key
-      clearActive(jobId)
       const detail = !job.options.email_enabled
         ? '已生成'
         : job.email_error
           ? '总结已生成，邮件未送达'
           : '已发送到邮箱'
-      toast.success('总结完成', detail)
+      toast.success('总结完成', detail, {taskName})
     }
     if (job.status === 'FAILED' && job.error_message) {
-      notifiedRef.current = key
-      clearActive(jobId)
       const fe = friendlyError(job.error_code, job.error_message, job.error_stage)
-      toast.error(fe.title, fe.message)
+      toast.error(fe.title, fe.message, {taskName})
     }
-    if (job.status === 'CANCELED') {
-      notifiedRef.current = key
-      clearActive(jobId)
-    }
+    // CANCELED 不弹 toast：按钮即时反馈已经在 cancel() 里以 info 形式发过
   }, [job, jobId, toast])
 
   // 状态恢复：进入 / 路由时若有未完成 active，直接 redirect
@@ -703,14 +712,15 @@ export function Workspace({jobId}: WorkspaceProps) {
     // 安全超时：如果 SSE 通路异常导致 CANCELED 状态没送达，15s 后强制解除 pending
     // 避免按钮永远转。已收到终态时上面的 useEffect 会先清掉，timeout 是 no-op。
     const safetyTimeout = window.setTimeout(() => setCancelPending(false), 15000)
+    const taskName = job?.title || undefined
     try {
       await cancelJob(jobId)
       await refresh()
-      toast.info('已请求取消')
+      toast.info('已请求取消', undefined, {taskName})
     } catch (err) {
       window.clearTimeout(safetyTimeout)
       setCancelPending(false)
-      toast.error('取消失败', err instanceof Error ? err.message : '请重试')
+      toast.error('取消失败', err instanceof Error ? err.message : '请重试', {taskName})
     } finally {
       setActionBusy(false)
     }
@@ -719,12 +729,13 @@ export function Workspace({jobId}: WorkspaceProps) {
   const resendCurrentEmail = async () => {
     if (!jobId) return
     setEmailBusy(true)
+    const taskName = job?.title || undefined
     try {
       await resendEmail(jobId)
       await refresh()
-      toast.success('已重发邮件')
+      toast.success('已重发邮件', undefined, {taskName})
     } catch (err) {
-      toast.error('重发失败', err instanceof Error ? err.message : '请重试')
+      toast.error('重发失败', err instanceof Error ? err.message : '请重试', {taskName})
     } finally {
       setEmailBusy(false)
     }
@@ -733,15 +744,16 @@ export function Workspace({jobId}: WorkspaceProps) {
   const retry = async () => {
     if (!jobId) return
     setActionBusy(true)
+    const taskName = job?.title || undefined
     try {
       await retryJob(jobId, currentLlmOverrides())
       // 必须先 kick SSE 再 refresh：从 FAILED 走出来后旧 SSE 已死，不重连就拿不到
       // 后续 progress / status 事件，页面会卡在某个中间状态。
       setStreamReconnectKey((k) => k + 1)
       await refresh()
-      toast.info('已重试')
+      toast.info('已重试', undefined, {taskName})
     } catch (err) {
-      toast.error('重试失败', err instanceof Error ? err.message : '请重试')
+      toast.error('重试失败', err instanceof Error ? err.message : '请重试', {taskName})
     } finally {
       setActionBusy(false)
     }
@@ -749,6 +761,7 @@ export function Workspace({jobId}: WorkspaceProps) {
 
   const downloadAudio = async () => {
     if (!jobId) return
+    const taskName = job?.title || undefined
     try {
       const {blob, filename} = await downloadJobAudio(jobId)
       const url = URL.createObjectURL(blob)
@@ -757,19 +770,20 @@ export function Workspace({jobId}: WorkspaceProps) {
       anchor.download = filename || `${job?.title || jobId}.wav`
       anchor.click()
       URL.revokeObjectURL(url)
-      toast.success('音频已下载')
+      toast.success('音频已下载', undefined, {taskName})
     } catch (err) {
-      toast.error('下载音频失败', err instanceof Error ? err.message : '请重试')
+      toast.error('下载音频失败', err instanceof Error ? err.message : '请重试', {taskName})
     }
   }
 
   const copySummary = async () => {
     if (!job?.summary) return
+    const taskName = job.title || undefined
     try {
       await navigator.clipboard.writeText(job.summary)
-      toast.success('已复制')
+      toast.success('已复制', undefined, {taskName})
     } catch {
-      toast.error('复制失败', '请手动选中复制')
+      toast.error('复制失败', '请手动选中复制', {taskName})
     }
   }
 
@@ -782,7 +796,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     anchor.download = `${job.title || 'summary'}.md`
     anchor.click()
     URL.revokeObjectURL(url)
-    toast.success('Markdown 已下载')
+    toast.success('Markdown 已下载', undefined, {taskName: job.title || undefined})
   }
 
   const goNew = () => {
@@ -799,9 +813,9 @@ export function Workspace({jobId}: WorkspaceProps) {
       open={historyOpen}
       onClose={closeHistory}
       onOpenJob={(id) => navigate(`/jobs/${id}`)}
-      onDeleted={(id) => {
+      onDeleted={(id, title) => {
         if (id === jobId) clearActive(id)
-        toast.success('已删除')
+        toast.success('已删除', undefined, {taskName: title || undefined})
       }}
       refreshKey={
         // 只在「进入终态」时刷新历史列表，避免运行中每个 status 变化都拉一次
