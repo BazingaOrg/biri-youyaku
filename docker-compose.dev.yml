@@ -12,9 +12,10 @@ services:
     env_file: ./server/.env
     ports:
       - "17821:17821"
-    # 挂源码 + data，改 .py 立刻 --reload
+    # 挂源码 + data，改 .py 立刻 --reload。
+    # `:cached` 在 macOS Docker Desktop 上减少跨 VM 同步开销；Linux 上忽略此标记。
     volumes:
-      - ./server/biri_youyaku:/app/biri_youyaku
+      - ./server/biri_youyaku:/app/biri_youyaku:cached
       - ./server/data:/app/data
     command:
       - uv
@@ -33,12 +34,15 @@ services:
     image: node:20-alpine
     working_dir: /app
     environment:
-      VITE_API_BASE_URL: http://localhost:17821
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:17821}
       VITE_API_TOKEN: ${API_TOKEN:-}
     ports:
       - "5173:5173"
+    # `:cached` 让宿主写入到容器读取有少量延迟，对 macOS Docker 大幅减少 fs 监听开销。
+    # 匿名卷 `/app/node_modules` 把 host 的（可能不存在 / 平台不兼容的）node_modules
+    # 挡住，让容器内 `npm install` 出来的版本接管。
     volumes:
-      - ./web:/app
+      - ./web:/app:cached
       - /app/node_modules
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     depends_on:

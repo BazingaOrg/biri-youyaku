@@ -18,7 +18,7 @@
 cp server/.env.example server/.env
 $EDITOR server/.env
 
-# 2. 一键起前后端 dev server（脚本会自动 cp web/.env、装依赖）
+# 2. 一键起前后端 dev server（脚本会自动 cp server/.env + web/.env、装依赖）
 bash scripts/dev.sh
 # Windows PowerShell：powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
 ```

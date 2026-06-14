@@ -15,41 +15,6 @@ def now_ms() -> int:
     return int(time.time() * 1000)
 
 
-def _row_to_job(row: Any) -> Job:
-    option_overrides = json.loads(row["options_json"])
-    effective_options = json.loads(row["effective_options_json"] or row["options_json"])
-    chapters = json.loads(row["chapters_json"]) if row["chapters_json"] else None
-    transcript = json.loads(row["transcript_json"]) if row["transcript_json"] else None
-    return Job(
-        id=row["id"],
-        url=row["url"],
-        bvid=row["bvid"],
-        cid=row["cid"],
-        title=row["title"],
-        author=row["author"],
-        duration=row["duration"],
-        status=JobStatus(row["status"]),
-        error_stage=row["error_stage"],
-        error_message=row["error_message"],
-        error_code=row["error_code"] if "error_code" in row.keys() else None,
-        audio_path=row["audio_path"],
-        subtitle_source=row["subtitle_source"],
-        chapters=chapters,
-        transcript=transcript,
-        summary_path=row["summary_path"],
-        options=JobOptions.from_dict(effective_options),
-        option_overrides=option_overrides,
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-        completed_at=row["completed_at"],
-        stream_finished_at=row["stream_finished_at"] if "stream_finished_at" in row.keys() else None,
-        token_usage=json.loads(row["token_usage_json"]) if "token_usage_json" in row.keys() and row["token_usage_json"] else None,
-        content_hash=row["content_hash"] if "content_hash" in row.keys() else None,
-        stage_timings=json.loads(row["stage_timings_json"]) if "stage_timings_json" in row.keys() and row["stage_timings_json"] else None,
-        email_error=row["email_error"] if "email_error" in row.keys() else None,
-    )
-
-
 # 列表 / 抽屉 / 清理用的 lite 投影：不拉 `chapters_json` / `transcript_json` /
 # `stage_timings_json` 这种长 JSON 字段，30 条一拉从十几兆降到几十 KB。
 _LITE_COLUMNS = (
@@ -61,9 +26,22 @@ _LITE_COLUMNS = (
 )
 
 
-def _row_to_job_lite(row: Any) -> Job:
-    """与 `_row_to_job` 行为一致，但把长 JSON 字段（chapters/transcript/stage_timings）
-    视为 None，避免在列表页拉巨型 payload。详情接口仍走 get_job → _row_to_job 拿全量。
+def _opt_col(row: Any, key: str) -> Any:
+    """旧库可能缺新增列（如 error_code / token_usage_json）。lite 投影里没投也走这里。"""
+    return row[key] if key in row.keys() else None
+
+
+def _opt_json(row: Any, key: str) -> Any:
+    raw = _opt_col(row, key)
+    return json.loads(raw) if raw else None
+
+
+def _row_to_job(row: Any, *, lite: bool = False) -> Job:
+    """把 SQLite Row 拼成 Job。
+
+    - lite=True：列表 / 抽屉用，把 chapters / transcript / stage_timings 三个大 JSON 当 None。
+      与 `_LITE_COLUMNS` 配套——SQL 都没拉这几列，这里也不要尝试解析。
+    - lite=False：详情接口用，全量字段。
     """
     option_overrides = json.loads(row["options_json"])
     effective_options = json.loads(row["effective_options_json"] or row["options_json"])
@@ -78,23 +56,27 @@ def _row_to_job_lite(row: Any) -> Job:
         status=JobStatus(row["status"]),
         error_stage=row["error_stage"],
         error_message=row["error_message"],
-        error_code=row["error_code"] if "error_code" in row.keys() else None,
+        error_code=_opt_col(row, "error_code"),
         audio_path=row["audio_path"],
         subtitle_source=row["subtitle_source"],
-        chapters=None,
-        transcript=None,
+        chapters=None if lite else _opt_json(row, "chapters_json"),
+        transcript=None if lite else _opt_json(row, "transcript_json"),
         summary_path=row["summary_path"],
         options=JobOptions.from_dict(effective_options),
         option_overrides=option_overrides,
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         completed_at=row["completed_at"],
-        stream_finished_at=row["stream_finished_at"] if "stream_finished_at" in row.keys() else None,
-        token_usage=json.loads(row["token_usage_json"]) if "token_usage_json" in row.keys() and row["token_usage_json"] else None,
-        content_hash=row["content_hash"] if "content_hash" in row.keys() else None,
-        stage_timings=None,
-        email_error=row["email_error"] if "email_error" in row.keys() else None,
+        stream_finished_at=_opt_col(row, "stream_finished_at"),
+        token_usage=_opt_json(row, "token_usage_json"),
+        content_hash=_opt_col(row, "content_hash"),
+        stage_timings=None if lite else _opt_json(row, "stage_timings_json"),
+        email_error=_opt_col(row, "email_error"),
     )
+
+
+def _row_to_job_lite(row: Any) -> Job:
+    return _row_to_job(row, lite=True)
 
 
 def content_hash_for(bvid: str, cid: int | None) -> str:
@@ -259,97 +241,68 @@ def update_status(job_id: str, status: JobStatus) -> None:
         )
 
 
-def clear_error(job_id: str) -> None:
+def _set(job_id: str, **fields: Any) -> None:
+    """通用 single-row 更新：拼 `SET col = ?, ..., updated_at = ? WHERE id = ?`。
+
+    None 走原生绑定 → SQLite 写入 NULL。需要 NULL 的列直接传 `None` 即可。
+    带 read-modify-write（add_stage_timing / add_token_usage）或多列协调（update_status）
+    的 setter 不走这里，自己拼 SQL。
+    """
+    if not fields:
+        return
+    assignments = ", ".join(f"{key} = ?" for key in fields)
+    values = list(fields.values())
     with connect() as connection:
         connection.execute(
-            """
-            UPDATE jobs
-            SET error_stage = NULL, error_message = NULL, error_code = NULL, updated_at = ?
-            WHERE id = ?
-            """,
-            (now_ms(), job_id),
+            f"UPDATE jobs SET {assignments}, updated_at = ? WHERE id = ?",
+            (*values, now_ms(), job_id),
         )
+
+
+def clear_error(job_id: str) -> None:
+    _set(job_id, error_stage=None, error_message=None, error_code=None)
 
 
 def update_meta(job_id: str, *, bvid: str, cid: int | None, title: str, author: str, duration: float) -> None:
-    with connect() as connection:
-        connection.execute(
-            """
-            UPDATE jobs
-            SET bvid = ?, cid = ?, title = ?, author = ?, duration = ?, content_hash = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (bvid, cid, title, author, duration, content_hash_for(bvid, cid), now_ms(), job_id),
-        )
+    _set(
+        job_id,
+        bvid=bvid,
+        cid=cid,
+        title=title,
+        author=author,
+        duration=duration,
+        content_hash=content_hash_for(bvid, cid),
+    )
 
 
 def set_chapters(job_id: str, chapters: list[Chapter] | None) -> None:
     payload = [
-        {
-            "start": chapter.start,
-            "end": chapter.end,
-            "title": chapter.title,
-        }
+        {"start": chapter.start, "end": chapter.end, "title": chapter.title}
         for chapter in chapters or []
     ]
-    with connect() as connection:
-        connection.execute(
-            "UPDATE jobs SET chapters_json = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(payload, ensure_ascii=False), now_ms(), job_id),
-        )
+    _set(job_id, chapters_json=json.dumps(payload, ensure_ascii=False))
 
 
 def set_audio_path(job_id: str, audio_path: Path) -> None:
-    with connect() as connection:
-        connection.execute(
-            "UPDATE jobs SET audio_path = ?, updated_at = ? WHERE id = ?",
-            (str(audio_path), now_ms(), job_id),
-        )
+    _set(job_id, audio_path=str(audio_path))
 
 
 def clear_audio_path(job_id: str) -> None:
-    with connect() as connection:
-        connection.execute(
-            "UPDATE jobs SET audio_path = NULL, updated_at = ? WHERE id = ?",
-            (now_ms(), job_id),
-        )
+    _set(job_id, audio_path=None)
 
 
 def set_subtitle_source(job_id: str, subtitle_source: str) -> None:
-    with connect() as connection:
-        connection.execute(
-            "UPDATE jobs SET subtitle_source = ?, updated_at = ? WHERE id = ?",
-            (subtitle_source, now_ms(), job_id),
-        )
+    _set(job_id, subtitle_source=subtitle_source)
 
 
 def set_transcript(job_id: str, items: list[TranscriptItem]) -> None:
-    payload = [
-        {
-            "start": item.start,
-            "end": item.end,
-            "text": item.text,
-        }
-        for item in items
-    ]
-    with connect() as connection:
-        connection.execute(
-            "UPDATE jobs SET transcript_json = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(payload, ensure_ascii=False), now_ms(), job_id),
-        )
+    payload = [{"start": item.start, "end": item.end, "text": item.text} for item in items]
+    _set(job_id, transcript_json=json.dumps(payload, ensure_ascii=False))
 
 
 def clear_transcript(job_id: str) -> None:
     """Clear transcript, subtitle source, and summary so the job can re-run ASR."""
-    with connect() as connection:
-        connection.execute(
-            """
-            UPDATE jobs
-            SET transcript_json = NULL, subtitle_source = NULL, summary_path = NULL, updated_at = ?
-            WHERE id = ?
-            """,
-            (now_ms(), job_id),
-        )
+    _set(job_id, transcript_json=None, subtitle_source=None, summary_path=None)
 
 
 def update_options(
@@ -357,28 +310,15 @@ def update_options(
     options: JobOptions,
     option_overrides: dict[str, Any] | None = None,
 ) -> None:
-    with connect() as connection:
-        connection.execute(
-            """
-            UPDATE jobs
-            SET options_json = ?, effective_options_json = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (
-                json.dumps(option_overrides or {}, ensure_ascii=False),
-                json.dumps(options.as_dict(), ensure_ascii=False),
-                now_ms(),
-                job_id,
-            ),
-        )
+    _set(
+        job_id,
+        options_json=json.dumps(option_overrides or {}, ensure_ascii=False),
+        effective_options_json=json.dumps(options.as_dict(), ensure_ascii=False),
+    )
 
 
 def set_summary_path(job_id: str, summary_path: Path) -> None:
-    with connect() as connection:
-        connection.execute(
-            "UPDATE jobs SET summary_path = ?, updated_at = ? WHERE id = ?",
-            (str(summary_path), now_ms(), job_id),
-        )
+    _set(job_id, summary_path=str(summary_path))
 
 
 def add_stage_timing(job_id: str, stage: str, started_at: int, ended_at: int) -> None:
@@ -434,32 +374,17 @@ def usage_since(since_ms: int) -> dict[str, Any]:
 
 
 def clear_summary_path(job_id: str) -> None:
-    with connect() as connection:
-        connection.execute(
-            "UPDATE jobs SET summary_path = NULL, completed_at = NULL, updated_at = ? WHERE id = ?",
-            (now_ms(), job_id),
-        )
+    # summary 重做时 completed_at 也得清，否则 usage_since 会把它误算成「已完成」。
+    _set(job_id, summary_path=None, completed_at=None)
 
 
 def set_email_error(job_id: str, message: str | None) -> None:
     """`COMPLETED + email_error` 表示总结成功但邮件失败，前端展示「邮件未送达 ↻ 重发」。"""
-    with connect() as connection:
-        connection.execute(
-            "UPDATE jobs SET email_error = ?, updated_at = ? WHERE id = ?",
-            (message, now_ms(), job_id),
-        )
+    _set(job_id, email_error=message)
 
 
 def set_error(job_id: str, stage: str, message: str, code: str | None = None) -> None:
-    with connect() as connection:
-        connection.execute(
-            """
-            UPDATE jobs
-            SET error_stage = ?, error_message = ?, error_code = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (stage, message, code, now_ms(), job_id),
-        )
+    _set(job_id, error_stage=stage, error_message=message, error_code=code)
 
 
 def find_latest_by_video(bvid: str, cid: int | None) -> Job | None:

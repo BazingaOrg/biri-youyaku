@@ -20,26 +20,63 @@ from biri_youyaku.modules.bilibili.meta import VideoMeta
 from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
 
 logger = logging.getLogger(__name__)
-_tasks: dict[str, asyncio.Task[None]] = {}
-_cancel_requested: set[str] = set()
-_job_llm_api_keys: dict[str, str] = {}
-_stage_started_at: dict[str, tuple[str, int]] = {}
+
+
+# ---------------------------------------------------------------------------
+# 单进程内的 job 运行时态。
+#
+# 历史包袱：原来散在 4 个模块级 dict 里（_tasks / _cancel_requested /
+# _job_llm_api_keys / _stage_started_at），每加一个状态都得在 5 处 pop 维护，
+# 极易踩到「忘清一个就内存常驻」的坑。统一收成 _JobRegistry 之后，job 结束的
+# 一次性清理走 `_registry.forget(job_id)`；外部公开 API（clear_job_state /
+# cancel_job / start_job 等）保持向后兼容。
+# ---------------------------------------------------------------------------
+
+
+class _JobRegistry:
+    JOB_KEY_LIMIT = 1024
+
+    def __init__(self) -> None:
+        self.tasks: dict[str, asyncio.Task[None]] = {}
+        self.cancel_requested: set[str] = set()
+        self.llm_api_keys: dict[str, str] = {}
+        self.stage_started_at: dict[str, tuple[str, int]] = {}
+
+    def remember_key(self, job_id: str, llm_api_key: str | None) -> None:
+        if llm_api_key is None or not llm_api_key.strip():
+            return
+        self.llm_api_keys[job_id] = llm_api_key.strip()
+        # 防御性上限：极端场景下 dict 不应该无限增长。每条 entry 在 job 结束时会
+        # pop；这里做兜底，超过就丢最早的。
+        while len(self.llm_api_keys) > self.JOB_KEY_LIMIT:
+            oldest = next(iter(self.llm_api_keys))
+            self.llm_api_keys.pop(oldest, None)
+            logger.warning(
+                "_job_llm_api_keys 超出上限 %d，丢弃最早 entry: %s",
+                self.JOB_KEY_LIMIT,
+                oldest,
+            )
+
+    def forget(self, job_id: str) -> None:
+        """job 完成 / 失败 / 取消时一次性清掉所有状态。tasks 不在这里清——由
+        `Task.add_done_callback` 自动 pop，避免重复管理。"""
+        self.cancel_requested.discard(job_id)
+        self.llm_api_keys.pop(job_id, None)
+        self.stage_started_at.pop(job_id, None)
+
+    def reset_for_tests(self) -> None:
+        """测试 fixture 用：清空所有状态，但不取消已有 task。"""
+        self.tasks.clear()
+        self.cancel_requested.clear()
+        self.llm_api_keys.clear()
+        self.stage_started_at.clear()
+
+
+_registry = _JobRegistry()
+
+
 _io_semaphore = asyncio.Semaphore(settings.max_concurrent_jobs)
 _summary_semaphore = asyncio.Semaphore(settings.max_concurrent_summaries)
-
-# 防御性上限：极端场景（前端疯狂建任务但全部失败、collect 钩子被 bug 跳过等）下
-# 这个 dict 不应该无限增长。每条 entry 在 job 结束时会 pop；这里做个兜底，超过就丢最早的。
-_JOB_KEY_LIMIT = 1024
-
-
-def _remember_job_key(job_id: str, llm_api_key: str | None) -> None:
-    if llm_api_key is None or not llm_api_key.strip():
-        return
-    _job_llm_api_keys[job_id] = llm_api_key.strip()
-    while len(_job_llm_api_keys) > _JOB_KEY_LIMIT:
-        oldest = next(iter(_job_llm_api_keys))
-        _job_llm_api_keys.pop(oldest, None)
-        logger.warning("_job_llm_api_keys 超出上限 %d，丢弃最早 entry: %s", _JOB_KEY_LIMIT, oldest)
 
 
 class StageTimeoutError(RuntimeError):
@@ -79,14 +116,19 @@ async def _with_timeout(stage: JobStatus, timeout_seconds: float, awaitable):
 
 async def transition(job_id: str, status: JobStatus, **data) -> None:
     now = repo.now_ms()
-    previous = _stage_started_at.get(job_id)
+    previous = _registry.stage_started_at.get(job_id)
     if previous is not None and previous[0] != status.value:
         repo.add_stage_timing(job_id, previous[0], previous[1], now)
-        _stage_started_at.pop(job_id, None)
+        _registry.stage_started_at.pop(job_id, None)
     if status not in {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED, JobStatus.TRANSCRIPT_READY}:
-        _stage_started_at[job_id] = (status.value, now)
+        _registry.stage_started_at[job_id] = (status.value, now)
     repo.update_status(job_id, status)
     await event_bus.publish(job_id, "status", {"status": status.value, **data})
+
+
+# ---------------------------------------------------------------------------
+# 公开 API：start_job / resume_job / retry_job / cancel_job / clear_job_state
+# ---------------------------------------------------------------------------
 
 
 def retry_job(job_id: str, *, llm_api_key: str | None = None) -> None:
@@ -104,39 +146,43 @@ def retry_job(job_id: str, *, llm_api_key: str | None = None) -> None:
     start_job(job_id, llm_api_key=llm_api_key)
 
 
-def start_job(job_id: str, *, llm_api_key: str | None = None) -> None:
-    if job_id in _tasks:
+def _spawn(job_id: str, coro_factory) -> None:
+    """共用「注册 task + done_callback 自清」的模板。"""
+    if job_id in _registry.tasks:
         return
-    _remember_job_key(job_id, llm_api_key)
-    task = asyncio.create_task(run_until_transcript(job_id))
-    _tasks[job_id] = task
-    task.add_done_callback(lambda _: _tasks.pop(job_id, None))
+    task = asyncio.create_task(coro_factory())
+    _registry.tasks[job_id] = task
+    task.add_done_callback(lambda _: _registry.tasks.pop(job_id, None))
+
+
+def start_job(job_id: str, *, llm_api_key: str | None = None) -> None:
+    if job_id in _registry.tasks:
+        return
+    _registry.remember_key(job_id, llm_api_key)
+    _spawn(job_id, lambda: run_until_transcript(job_id))
 
 
 def resume_job(job_id: str, *, llm_api_key: str | None = None) -> None:
-    if job_id in _tasks:
+    if job_id in _registry.tasks:
         return
-    _remember_job_key(job_id, llm_api_key)
-    task = asyncio.create_task(run_after_resume(job_id))
-    _tasks[job_id] = task
-    task.add_done_callback(lambda _: _tasks.pop(job_id, None))
+    _registry.remember_key(job_id, llm_api_key)
+    _spawn(job_id, lambda: run_after_resume(job_id))
 
 
 def cancel_job(job_id: str) -> None:
-    _cancel_requested.add(job_id)
-    task = _tasks.get(job_id)
+    _registry.cancel_requested.add(job_id)
+    task = _registry.tasks.get(job_id)
     if task is not None:
         task.cancel()
 
 
 def clear_job_state(job_id: str) -> None:
-    _cancel_requested.discard(job_id)
-    _job_llm_api_keys.pop(job_id, None)
-    _stage_started_at.pop(job_id, None)
+    """对外暴露的一次性清理 hook（routes 删除 / 取消时调）。等价 `_registry.forget`。"""
+    _registry.forget(job_id)
 
 
 def _raise_if_canceled(job_id: str) -> None:
-    if job_id in _cancel_requested:
+    if job_id in _registry.cancel_requested:
         raise CanceledError()
 
 
@@ -173,14 +219,64 @@ def _transcript_from_job(job) -> list[TranscriptItem]:
     ]
 
 
-async def run_until_transcript(job_id: str) -> None:
-    current_stage = JobStatus.PENDING.value
+# ---------------------------------------------------------------------------
+# Lifecycle：收敛 run_until_transcript / run_after_resume 共享的 try/except/finally。
+# ---------------------------------------------------------------------------
+
+
+class _RunStage:
+    """`async with _job_lifecycle(...) as stage:` 里可变的「当前阶段」标记。
+    异常分支会读它写错误的 stage 字段，所以必须是可变对象（不能用裸字符串）。"""
+
+    __slots__ = ("value",)
+
+    def __init__(self, initial: JobStatus) -> None:
+        self.value: str = initial.value
+
+
+@asynccontextmanager
+async def _job_lifecycle(job_id: str, initial_stage: JobStatus):
+    """统一 run_* 主体的收尾：
+
+    - 取消（`CancelledError` / `CanceledError`）→ 状态 CANCELED + 清 key；
+    - 其它异常 → 写 error + 状态 FAILED（识别 StageTimeoutError 给 error_code）+ 清 key；
+    - 无论成功 / 失败：finally 清 `cancel_requested` 与 `stage_started_at`。
+    """
+    stage = _RunStage(initial_stage)
     try:
+        yield stage
+    except (asyncio.CancelledError, CanceledError):
+        await transition(job_id, JobStatus.CANCELED)
+        _registry.llm_api_keys.pop(job_id, None)
+    except Exception as exc:
+        logger.exception("Job %s failed at %s", job_id, stage.value)
+        error_code = "STAGE_TIMEOUT" if isinstance(exc, StageTimeoutError) else None
+        repo.set_error(job_id, stage.value, str(exc), error_code)
+        await transition(
+            job_id,
+            JobStatus.FAILED,
+            stage=stage.value,
+            message=str(exc),
+            error_code=error_code,
+        )
+        _registry.llm_api_keys.pop(job_id, None)
+    finally:
+        _registry.cancel_requested.discard(job_id)
+        _registry.stage_started_at.pop(job_id, None)
+
+
+# ---------------------------------------------------------------------------
+# 主体：抓 meta → 下音频/字幕 → 转写 → （pause）→ 总结 → 邮件
+# ---------------------------------------------------------------------------
+
+
+async def run_until_transcript(job_id: str) -> None:
+    async with _job_lifecycle(job_id, JobStatus.PENDING) as stage:
         job = repo.get_job(job_id)
         if job is None:
             raise RuntimeError("Job not found")
 
-        current_stage = JobStatus.FETCHING_META.value
+        stage.value = JobStatus.FETCHING_META.value
         await transition(job_id, JobStatus.FETCHING_META)
         video_meta = await _with_timeout(JobStatus.FETCHING_META, 30, fetch_meta(job.url))
         # 防滥用：preview 阶段已经拦了一次，这里兜底（用户绕过 preview 直接 POST /v1/jobs 也能挡）
@@ -219,7 +315,7 @@ async def run_until_transcript(job_id: str) -> None:
             raise RuntimeError("Job not found")
 
         if fresh_job.options.task_type == "audio":
-            current_stage = JobStatus.DOWNLOADING_AUDIO.value
+            stage.value = JobStatus.DOWNLOADING_AUDIO.value
             await transition(job_id, JobStatus.DOWNLOADING_AUDIO)
             async with _semaphore_with_queue_notice(job_id, JobStatus.DOWNLOADING_AUDIO, _io_semaphore):
                 await _with_timeout(
@@ -238,7 +334,7 @@ async def run_until_transcript(job_id: str) -> None:
         if video_meta.has_subtitle and not fresh_job.options.force_asr:
             items = await _with_timeout(JobStatus.DOWNLOADING_AUDIO, 120, fetch_platform_transcript(fresh_job, video_meta))
         else:
-            current_stage = JobStatus.DOWNLOADING_AUDIO.value
+            stage.value = JobStatus.DOWNLOADING_AUDIO.value
             await transition(job_id, JobStatus.DOWNLOADING_AUDIO)
             async with _semaphore_with_queue_notice(job_id, JobStatus.DOWNLOADING_AUDIO, _io_semaphore):
                 audio_path = await _with_timeout(
@@ -252,8 +348,9 @@ async def run_until_transcript(job_id: str) -> None:
                 )
             _raise_if_canceled(job_id)
 
-            current_stage = JobStatus.TRANSCRIBING.value
+            stage.value = JobStatus.TRANSCRIBING.value
             await transition(job_id, JobStatus.TRANSCRIBING)
+
             async def _on_transcribe_progress(progress: TranscribeProgress) -> None:
                 await event_bus.publish(
                     job_id,
@@ -285,23 +382,10 @@ async def run_until_transcript(job_id: str) -> None:
             transcript_preview=transcript_preview,
             subtitle_source="platform" if (video_meta.has_subtitle and not fresh_job.options.force_asr) else "asr",
         )
-    except (asyncio.CancelledError, CanceledError):
-        await transition(job_id, JobStatus.CANCELED)
-        _job_llm_api_keys.pop(job_id, None)
-    except Exception as exc:
-        logger.exception("Job %s failed at %s", job_id, current_stage)
-        error_code = "STAGE_TIMEOUT" if isinstance(exc, StageTimeoutError) else None
-        repo.set_error(job_id, current_stage, str(exc), error_code)
-        await transition(job_id, JobStatus.FAILED, stage=current_stage, message=str(exc), error_code=error_code)
-        _job_llm_api_keys.pop(job_id, None)
-    finally:
-        _cancel_requested.discard(job_id)
-        _stage_started_at.pop(job_id, None)
 
 
 async def run_after_resume(job_id: str) -> None:
-    current_stage = JobStatus.SUMMARIZING.value
-    try:
+    async with _job_lifecycle(job_id, JobStatus.SUMMARIZING) as stage:
         fresh_job = repo.get_job(job_id)
         if fresh_job is None:
             raise RuntimeError("Job not found")
@@ -311,7 +395,7 @@ async def run_after_resume(job_id: str) -> None:
         if not items:
             raise RuntimeError("任务没有可总结的字幕")
         video_meta = _meta_from_job(fresh_job)
-        current_stage = JobStatus.SUMMARIZING.value
+        stage.value = JobStatus.SUMMARIZING.value
         await transition(job_id, JobStatus.SUMMARIZING)
         async with _semaphore_with_queue_notice(job_id, JobStatus.SUMMARIZING, _summary_semaphore):
             # 长视频字幕一次喂给 LLM 流式输出，5 分钟常常超；放宽到 20 分钟兜底
@@ -322,7 +406,7 @@ async def run_after_resume(job_id: str) -> None:
                     fresh_job,
                     video_meta,
                     items,
-                    llm_api_key=_job_llm_api_keys.get(job_id),
+                    llm_api_key=_registry.llm_api_keys.get(job_id),
                     on_chunk=lambda text: event_bus.publish(job_id, "summary_chunk", {"text": text}),
                     on_usage=lambda usage: _record_token_usage(job_id, usage),
                 ),
@@ -333,11 +417,11 @@ async def run_after_resume(job_id: str) -> None:
         # 不阻断 COMPLETED：summary 已经落盘，用户可手动 ↻ 重发。
         # - 与旧契约不同：之前任何邮件异常会把整个 job 置 FAILED。新契约把失败原因
         #   存到 email_error 字段，前端展示「邮件未送达 ↻ 重发邮件」提示。
-        # - 取消（CancelledError / CanceledError）必须 re-raise，让外层 except 走
+        # - 取消（CancelledError / CanceledError）必须 re-raise，让外层 lifecycle 走
         #   CANCELED 分支；否则会被静默吞掉变成「completed + email_error=取消」。
         email_error: str | None = None
         if fresh_job.options.email_enabled:
-            current_stage = JobStatus.EMAILING.value
+            stage.value = JobStatus.EMAILING.value
             await transition(job_id, JobStatus.EMAILING)
             try:
                 await _with_timeout(JobStatus.EMAILING, 120, send_email(video_meta, summary_md, fresh_job.options))
@@ -354,17 +438,6 @@ async def run_after_resume(job_id: str) -> None:
             summary=summary_md,
             email_error=email_error,
         )
-    except (asyncio.CancelledError, CanceledError):
-        await transition(job_id, JobStatus.CANCELED)
-    except Exception as exc:
-        logger.exception("Job %s failed at %s", job_id, current_stage)
-        error_code = "STAGE_TIMEOUT" if isinstance(exc, StageTimeoutError) else None
-        repo.set_error(job_id, current_stage, str(exc), error_code)
-        await transition(job_id, JobStatus.FAILED, stage=current_stage, message=str(exc), error_code=error_code)
-    finally:
-        _cancel_requested.discard(job_id)
-        _job_llm_api_keys.pop(job_id, None)
-        _stage_started_at.pop(job_id, None)
 
 
 async def _record_token_usage(job_id: str, usage: dict) -> None:

@@ -1,8 +1,19 @@
-# biri-youyaku 改进计划（单人版）
+# biri-youyaku 改进计划（单人版）— **已归档 2026-06-14**
 
+> ⚠️ **本文档已归档**。下方条目按 2026-06-14 实际仓库状态做了完成 / 过期标记，
+> 不再作为后续开发依据。最新评审请看 [`code-review-2026-06-14.md`](./code-review-2026-06-14.md)。
+>
+> 完成情况速览：
+> - ✅ A2（`email_enabled` 硬写死）：`Workspace.tsx` 已根据 `runtime?.email_configured` 判断
+> - ✅ A4（HistoryDrawer 搜索 / 分页 / 批删）：均已实现
+> - ⚠️ C（Prompt 重写）：**方案已偏离**。当前 prompt 走「TL;DR + 时间脉络 + 收束」结构，
+>   不是本文档里的「原文金句 + 提到的具体内容」方案。详见 `code-review` C 章节。
+> - ⏳ A1 / A3 / A5–A10：未做
+> - ⏳ B1（Cloudflare Access）：未做，DEPLOY 仍走 VITE_API_TOKEN 模式
+>
 > 范围：UI/交互优化、公网部署的访问控制、Prompt 重写。
 > 前提：**只有你自己用**。任何「per-user 限流 / Turnstile / BYOK / 配额」之类的设计都不需要——只要确保陌生人进不来即可。
-> 写作日期：2026-06-06。审计基准：当前 `main` 分支代码。
+> 写作日期：2026-06-06。审计基准：当时 `main` 分支代码。
 > 优先级：P0=立刻、P1=近期、P2=有空再做。
 
 ---

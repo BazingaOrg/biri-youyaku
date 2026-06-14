@@ -3,6 +3,7 @@ import type {MouseEvent as ReactMouseEvent} from 'react'
 import {Search, Trash, Trash2, X} from 'lucide-react'
 import {deleteAllJobs, deleteJob, listJobs, type Job} from '../lib/api'
 import {formatDate, formatDuration, formatStatus} from '../lib/format'
+import {isRunning} from '../lib/jobStatus'
 import {useToast} from './ToastProvider'
 
 interface HistoryDrawerProps {
@@ -14,16 +15,6 @@ interface HistoryDrawerProps {
   /** 用于触发列表刷新（jobId 或状态变化时拉新数据）。 */
   refreshKey?: string | null
 }
-
-const RUNNING = new Set([
-  'PENDING',
-  'FETCHING_META',
-  'DOWNLOADING_AUDIO',
-  'TRANSCRIBING',
-  'TRANSCRIPT_READY',
-  'SUMMARIZING',
-  'EMAILING',
-])
 
 const PAGE_SIZE = 30
 
@@ -146,7 +137,6 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
     setClearing(true)
     try {
       const response = await deleteAllJobs()
-      const total = response.deleted_count + response.skipped_count
       const detail = response.skipped_count > 0
         ? `已删除 ${response.deleted_count} 个，跳过 ${response.skipped_count} 个进行中任务`
         : `已删除 ${response.deleted_count} 个`
@@ -156,7 +146,6 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
       setJobs(fresh.jobs)
       setCursor(fresh.next_cursor ?? null)
       setHasMore(Boolean(fresh.next_cursor))
-      void total // 让 ts 别报 unused
     } catch (err) {
       toast.error('清理失败', err instanceof Error ? err.message : '请重试')
     } finally {
@@ -233,7 +222,7 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
           )}
           <ul className="grid gap-2">
             {filtered.map((job) => {
-              const isRunning = RUNNING.has(job.status)
+              const running = isRunning(job.status)
               return (
                 <li key={job.id}>
                   <button
@@ -255,7 +244,7 @@ export function HistoryDrawer({open, onClose, onOpenJob, onDeleted, refreshKey}:
                               ? 'bg-brandSoft text-brand'
                               : job.status === 'FAILED'
                                 ? 'bg-danger/15 text-danger'
-                                : isRunning
+                                : running
                                   ? 'bg-warning/15 text-warning'
                                   : 'bg-lift text-muted'
                           }`}

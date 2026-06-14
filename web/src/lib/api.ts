@@ -184,25 +184,6 @@ export function getRuntimeConfig() {
   return request<RuntimeConfig>('/v1/config/runtime')
 }
 
-export function previewJob(url: string) {
-  return request<{
-    ok: true
-    meta: {
-      url: string
-      bvid: string
-      cid?: number
-      title: string
-      author: string
-      duration: number
-      has_subtitle: boolean
-    }
-    dedup_job_id?: string
-  }>('/v1/jobs/preview', {
-    method: 'POST',
-    body: JSON.stringify({url}),
-  })
-}
-
 export function createJob(url: string, options: JobOptionOverrides) {
   return request<{ok: true; job_id: string}>('/v1/jobs', {
     method: 'POST',
@@ -210,15 +191,14 @@ export function createJob(url: string, options: JobOptionOverrides) {
   })
 }
 
-export function discoverLlmModels(params: {llm_base_url?: string; llm_api_key?: string}) {
-  return request<{ok: true; models: string[]}>('/v1/llm/models', {
-    method: 'POST',
-    body: JSON.stringify(params),
-  })
-}
+// 注：后端还有 POST /v1/jobs/preview、POST /v1/llm/models、POST /v1/jobs/{id}/transcript
+// 三个 endpoint，对应的 client 函数已删（前端零调用，留着会被当成「半成品 API」误用）。
+// 真要接入时去 routes/jobs.py / routes/config.py 看签名重新加。
 
-export function getJob(jobId: string) {
-  return request<{ok: true; job: Job}>(`/v1/jobs/${jobId}`)
+export function getJob(jobId: string, init?: RequestInit) {
+  // init 主要是为了 useJob 透传 AbortController.signal：jobId 切换时取消上一个请求，
+  // 避免旧 jobId 的响应晚到覆盖新 jobId 的数据。
+  return request<{ok: true; job: Job}>(`/v1/jobs/${jobId}`, init)
 }
 
 export function resumeJob(jobId: string, options: JobOptionOverrides = {}) {
@@ -232,13 +212,6 @@ export function retryJob(jobId: string, options: JobOptionOverrides = {}) {
   return request<{ok: true}>(`/v1/jobs/${jobId}/retry`, {
     method: 'POST',
     body: JSON.stringify({options}),
-  })
-}
-
-export function replaceTranscript(jobId: string, transcript: Job['transcript']) {
-  return request<{ok: true}>(`/v1/jobs/${jobId}/transcript`, {
-    method: 'POST',
-    body: JSON.stringify({transcript, source: 'upload'}),
   })
 }
 

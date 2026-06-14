@@ -51,7 +51,7 @@ web/
 
 1. `POST /v1/jobs`（`routes/jobs.py`）→ `jobs/repo.create_job` 入库 → `jobs/runner.start_job`。
 2. `runner.run_until_transcript`：调 `modules/bilibili` 取元信息 + 字幕；没字幕则下音频 + 调 `modules/asr` 转写。
-3. 拿到 transcript → `pipeline.summarize_transcript` → `modules/llm/client` 分段并流式输出。
+3. 拿到 transcript → `pipeline.summarize` → `modules/llm/client` 分段并流式输出。
 4. 流过程中通过 `events.publish` 推 SSE chunk → 前端订阅 `GET /v1/jobs/{id}/stream`。
 5. 完成后写 `data/summaries/<id>.md`，可选触发 `modules/email`。
 6. `jobs/cleanup` 后台循环：清孤儿文件、checkpoint WAL、置僵尸任务。

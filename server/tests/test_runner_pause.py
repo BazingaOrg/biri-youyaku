@@ -12,9 +12,7 @@ from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
 @pytest.mark.asyncio
 async def test_runner_pauses_at_transcript_ready_then_resumes(monkeypatch, tmp_path):
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
-    monkeypatch.setattr(runner, "_tasks", {})
-    monkeypatch.setattr(runner, "_cancel_requested", set())
-    monkeypatch.setattr(runner, "_job_llm_api_keys", {})
+    runner._registry.reset_for_tests()
     db.init_db()
     job = repo.create_job(
         "https://www.bilibili.com/video/BV123",
@@ -57,16 +55,16 @@ async def test_runner_pauses_at_transcript_ready_then_resumes(monkeypatch, tmp_p
     monkeypatch.setattr(runner, "summarize", fake_summarize)
 
     runner.start_job(job.id, llm_api_key="task-key")
-    await runner._tasks[job.id]
+    await runner._registry.tasks[job.id]
     await asyncio.sleep(0)
 
     paused = repo.get_job(job.id)
     assert paused is not None
     assert paused.status == JobStatus.TRANSCRIPT_READY
-    assert job.id not in runner._tasks
+    assert job.id not in runner._registry.tasks
 
     runner.resume_job(job.id)
-    await runner._tasks[job.id]
+    await runner._registry.tasks[job.id]
 
     completed = repo.get_job(job.id)
     assert completed is not None
@@ -77,9 +75,7 @@ async def test_runner_pauses_at_transcript_ready_then_resumes(monkeypatch, tmp_p
 @pytest.mark.asyncio
 async def test_audio_only_job_clears_cached_llm_key(monkeypatch, tmp_path):
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
-    monkeypatch.setattr(runner, "_tasks", {})
-    monkeypatch.setattr(runner, "_cancel_requested", set())
-    monkeypatch.setattr(runner, "_job_llm_api_keys", {})
+    runner._registry.reset_for_tests()
     db.init_db()
     job = repo.create_job(
         "https://www.bilibili.com/video/BV123",
@@ -112,9 +108,9 @@ async def test_audio_only_job_clears_cached_llm_key(monkeypatch, tmp_path):
     monkeypatch.setattr(runner, "download_audio", fake_download_audio)
 
     runner.start_job(job.id, llm_api_key="task-key")
-    await runner._tasks[job.id]
+    await runner._registry.tasks[job.id]
 
     completed = repo.get_job(job.id)
     assert completed is not None
     assert completed.status == JobStatus.COMPLETED
-    assert job.id not in runner._job_llm_api_keys
+    assert job.id not in runner._registry.llm_api_keys

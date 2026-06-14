@@ -1,512 +1,39 @@
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
-import type {ReactNode} from 'react'
-import {ChevronDown, Copy, ExternalLink, FileDown, History, Mail, Music, Plus, RotateCw, Sparkles, XCircle} from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
+import {useCallback, useEffect, useState} from 'react'
+import {ChevronDown, History, Plus} from 'lucide-react'
 import {useLocation} from 'wouter'
-import {cancelJob, createJob, downloadJobAudio, getConfigDefaults, getJob, resendEmail, resumeJob, retryJob} from '../lib/api'
-import type {ConfigDefaults, Job, JobOptionOverrides, JobStatus} from '../lib/api'
-import {isValidBiliUrl, sanitizeBiliInput} from '../lib/url'
-import {formatDuration} from '../lib/format'
-import {friendlyError} from '../lib/errorMap'
+import {
+  cancelJob,
+  createJob,
+  downloadJobAudio,
+  getConfigDefaults,
+  getJob,
+  resendEmail,
+  retryJob,
+} from '../lib/api'
+import type {ConfigDefaults, Job, JobOptionOverrides} from '../lib/api'
+import {isRunning} from '../lib/jobStatus'
+import {clearActive, readActive, subscribeActive, writeActive} from '../lib/activeJob'
 import {useJob} from '../hooks/useJob'
 import {useJobStream} from '../hooks/useJobStream'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
+import {useStickToBottom} from '../hooks/useStickToBottom'
+import {useTerminalToast} from '../hooks/useTerminalToast'
+import {useAutoResume} from '../hooks/useAutoResume'
 import {useToast} from '../components/ToastProvider'
-import {UrlInput} from '../components/UrlInput'
-import {StepCarousel, type StepDef, type StepState} from '../components/StepCarousel'
 import {HistoryDrawer} from '../components/HistoryDrawer'
 import {IconButton} from '../components/IconButton'
-import {clearActive, readActive, subscribeActive, writeActive} from '../lib/activeJob'
+import {IdleView} from './workspace/IdleView'
+import {RunningView} from './workspace/RunningView'
+import {DoneView} from './workspace/DoneView'
 
 interface WorkspaceProps {
   jobId: string | null
 }
 
-const RUNNING_STATUSES: JobStatus[] = [
-  'PENDING',
-  'FETCHING_META',
-  'DOWNLOADING_AUDIO',
-  'TRANSCRIBING',
-  'TRANSCRIPT_READY',
-  'SUMMARIZING',
-  'EMAILING',
-]
-
-// ---------- 工具 ----------
-
-function statusToStepIndex(status: JobStatus): number {
-  switch (status) {
-    case 'PENDING':
-    case 'FETCHING_META':
-      return 0
-    case 'DOWNLOADING_AUDIO':
-    case 'TRANSCRIBING':
-    case 'TRANSCRIPT_READY':
-      return 1
-    case 'SUMMARIZING':
-      return 2
-    case 'EMAILING':
-      return 3
-    case 'COMPLETED':
-      return 4
-    case 'FAILED':
-    case 'CANCELED':
-      return 0
-    default:
-      return 0
-  }
-}
-
-function pickStepState(idx: number, currentIdx: number, status: JobStatus): StepState {
-  if (status === 'FAILED' || status === 'CANCELED') {
-    if (idx === currentIdx) return 'failed'
-    if (idx < currentIdx) return 'done'
-    return 'pending'
-  }
-  if (idx < currentIdx) return 'done'
-  if (idx === currentIdx) return 'active'
-  return 'pending'
-}
-
-// ---------- A. Idle ----------
-
-function IdleView({
-  onSubmit,
-  onOpenHistory,
-}: {
-  onSubmit: (url: string) => Promise<void>
-  onOpenHistory: () => void
-}) {
-  const [url, setUrl] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  const submit = async () => {
-    // 提交时再 sanitize 一次：handle 直接键入 / 历史回填等不走 paste 的入口。
-    const cleaned = sanitizeBiliInput(url)
-    if (!isValidBiliUrl(cleaned)) {
-      setError('请输入有效的 B 站视频链接')
-      return
-    }
-    if (cleaned !== url) {
-      setUrl(cleaned)
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      await onSubmit(cleaned)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '没能开始，换个链接试试')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="grid min-h-[70vh] place-items-center">
-      <div className="grid w-full max-w-xl gap-5">
-        <p className="text-center text-sm leading-6 text-muted sm:text-base">
-          粘贴 B 站链接，自动总结
-        </p>
-        <UrlInput
-          value={url}
-          loading={busy}
-          error={error}
-          onChange={(next) => {
-            setUrl(next)
-            setError(null)
-          }}
-          onSubmit={submit}
-        />
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <IconButton
-            icon={busy ? <RotateCw size={20} className="animate-spin" /> : <Sparkles size={22} />}
-            label={busy ? '处理中…' : '开始总结'}
-            onClick={() => void submit()}
-            disabled={busy || url.trim().length === 0}
-            variant="primary"
-            size="lg"
-          />
-          <IconButton icon={<History size={20} />} label="历史" onClick={onOpenHistory} size="lg" />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ---------- Meta & 步骤卡内容 ----------
-
-function MetaBar({job}: {job: Job}) {
-  return (
-    <div className="grid min-w-0 w-full gap-2 rounded-2xl bg-lift px-4 py-3 sm:px-5 sm:py-4">
-      <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted">
-        <span className="rounded-full bg-brandSoft px-2.5 py-1 text-brand">{job.bvid || '识别中'}</span>
-        <span>
-          {job.subtitle_source === 'platform'
-            ? '官方字幕'
-            : job.subtitle_source === 'asr'
-              ? '语音转写'
-              : '字幕未定'}
-        </span>
-        <span>{formatDuration(job.duration)}</span>
-        <a
-          href={job.url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 text-muted hover:text-ink"
-        >
-          视频源 <ExternalLink size={12} />
-        </a>
-      </div>
-      <p className="line-clamp-2 break-words text-base font-semibold leading-snug text-ink">
-        {job.title || '识别中…'}
-      </p>
-      <p className="truncate text-xs text-muted">{job.author || '未知 UP'}</p>
-    </div>
-  )
-}
-
-function buildSteps(job: Job): StepDef[] {
-  const status = job.status
-  const currentIdx = statusToStepIndex(status)
-  const emailEnabled = job.options.email_enabled
-  const indices = emailEnabled ? [0, 1, 2, 3] : [0, 1, 2]
-  const labels: Record<number, string> = {
-    0: '识别视频',
-    1: job.subtitle_source === 'platform' ? '字幕' : '字幕 / 转写',
-    2: '总结',
-    3: '邮件',
-  }
-  return indices.map((idx) => ({
-    key: String(idx),
-    label: labels[idx],
-    state: pickStepState(idx, currentIdx, status),
-    render: () => renderStep(idx, job),
-  }))
-}
-
-function renderStep(idx: number, job: Job): ReactNode {
-  if (idx === 0) return renderMeta(job)
-  if (idx === 1) return renderSubtitle(job)
-  if (idx === 2) return renderSummary(job)
-  if (idx === 3) return renderEmail(job)
-  return null
-}
-
-function renderMeta(job: Job) {
-  if (job.bvid) {
-    return (
-      <div className="grid gap-1">
-        <p className="break-words text-ink">{job.title || '已识别'}</p>
-        <p className="text-xs">
-          {job.author || '未知 UP'} · {formatDuration(job.duration)}
-        </p>
-      </div>
-    )
-  }
-  if (job.status === 'FETCHING_META') return <p>识别中…</p>
-  return <p>等待识别视频</p>
-}
-
-function renderSubtitle(job: Job) {
-  if (job.subtitle_source === 'platform') {
-    return (
-      <div className="grid gap-2">
-        <p className="text-ink">找到官方字幕</p>
-        {job.transcript.slice(0, 3).map((line, i) => (
-          <p key={i} className="text-xs break-words">· {line.text}</p>
-        ))}
-      </div>
-    )
-  }
-  if (job.status === 'DOWNLOADING_AUDIO') {
-    if (job.queued) return <p>排队中…（等下载槽位）</p>
-    const pct = Math.round(job.download_progress?.percent ?? 0)
-    return (
-      <div className="grid gap-2">
-        <p>下载音频 {pct}%</p>
-        <div className="h-2 overflow-hidden rounded-full bg-panel">
-          <div
-            className="h-full rounded-full bg-brand transition-[width] duration-200"
-            style={{width: `${pct}%`}}
-          />
-        </div>
-      </div>
-    )
-  }
-  if (job.status === 'TRANSCRIBING') {
-    if (job.queued) return <p>排队中…（等转写槽位）</p>
-    const pct = Math.round((job.transcribe_progress?.percent ?? 0))
-    const itemsCount = job.transcribe_progress?.items_count ?? job.transcript.length
-    const preview = job.transcribe_progress?.preview
-    return (
-      <div className="grid gap-2">
-        <p>语音转写中 {pct}%</p>
-        <div className="h-2 overflow-hidden rounded-full bg-panel">
-          <div
-            className="h-full rounded-full bg-brand transition-[width] duration-200"
-            style={{width: `${pct}%`}}
-          />
-        </div>
-        {itemsCount > 0 && <p className="text-xs">已识别 {itemsCount} 段</p>}
-        {preview && <p className="break-words text-xs text-ink/80">…{preview}</p>}
-      </div>
-    )
-  }
-  if (job.status === 'TRANSCRIPT_READY' || job.transcript.length > 0) {
-    return (
-      <div className="grid gap-2">
-        <p className="text-ink">字幕已就绪</p>
-        {job.transcript.slice(0, 3).map((line, i) => (
-          <p key={i} className="text-xs break-words">· {line.text}</p>
-        ))}
-      </div>
-    )
-  }
-  return <p>等待字幕</p>
-}
-
-function renderSummary(job: Job) {
-  if (job.summary) {
-    return (
-      <div className="prose prose-sm max-h-48 max-w-none overflow-y-auto break-words text-ink dark:prose-invert prose-a:text-brand [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto [&_code]:break-all">
-        <ReactMarkdown>{job.summary}</ReactMarkdown>
-      </div>
-    )
-  }
-  if (job.status === 'SUMMARIZING') {
-    if (job.queued) return <p>排队中…（等总结槽位）</p>
-    return <p>正在生成总结…</p>
-  }
-  return <p>等待生成总结</p>
-}
-
-function renderEmail(job: Job) {
-  if (job.status === 'COMPLETED') return <p className="text-ink">已发送到邮箱</p>
-  if (job.status === 'EMAILING') return <p>发送中…</p>
-  return <p>完成后自动发送</p>
-}
-
-// ---------- B. Running ----------
-
-function RunningView({
-  job,
-  onCancel,
-  onRetry,
-  onNew,
-  onOpenHistory,
-  busy,
-  cancelPending,
-}: {
-  job: Job
-  onCancel: () => void
-  onRetry: () => void
-  onNew: () => void
-  onOpenHistory: () => void
-  busy: boolean
-  cancelPending: boolean
-}) {
-  const steps = useMemo(() => buildSteps(job), [job])
-  const currentIdx = statusToStepIndex(job.status)
-  const failure = job.error_message ? friendlyError(job.error_code, job.error_message, job.error_stage) : null
-  const canCancel = RUNNING_STATUSES.includes(job.status)
-  const canRetry = job.status === 'FAILED'
-  const toast = useToast()
-
-  const copyErrorDetail = async () => {
-    if (!failure) return
-    const detail = [
-      `Job ID: ${job.id}`,
-      `Stage: ${job.error_stage || '-'}`,
-      `Error code: ${job.error_code || '-'}`,
-      `Message: ${job.error_message || '-'}`,
-    ].join('\n')
-    const taskName = job.title || undefined
-    try {
-      await navigator.clipboard.writeText(detail)
-      toast.success('错误详情已复制', undefined, {taskName})
-    } catch {
-      toast.error('复制失败', '请手动选中复制', {taskName})
-    }
-  }
-
-  return (
-    <div className="grid min-w-0 gap-4 py-4">
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        <IconButton icon={<Plus size={18} />} label="新建" onClick={onNew} />
-        <IconButton icon={<History size={18} />} label="历史" onClick={onOpenHistory} />
-      </div>
-      <MetaBar job={job} />
-      <StepCarousel steps={steps} currentIndex={currentIdx} />
-      {failure && (
-        <div className="rounded-2xl border border-danger/50 bg-danger/20 p-4 text-sm text-danger shadow-card">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <p className="text-base font-semibold">{failure.title}</p>
-            <button
-              type="button"
-              onClick={copyErrorDetail}
-              className="inline-flex items-center gap-1 rounded-lg border border-danger/40 bg-panel/40 px-2 py-1 text-xs text-danger transition hover:bg-danger/30"
-            >
-              <Copy size={12} /> 复制
-            </button>
-          </div>
-          <p className="mt-1.5 break-words leading-6 text-danger/90">{failure.message}</p>
-        </div>
-      )}
-      {(canCancel || canRetry) && (
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          {canCancel && (
-            <IconButton
-              icon={cancelPending ? <RotateCw size={18} className="animate-spin" /> : <XCircle size={18} />}
-              label={cancelPending ? '取消中…' : '取消'}
-              onClick={onCancel}
-              disabled={cancelPending}
-              variant="danger"
-            />
-          )}
-          {canRetry && (
-            <IconButton
-              icon={<RotateCw size={18} />}
-              label={failure?.actionLabel || '重试'}
-              onClick={onRetry}
-              disabled={busy}
-              variant="primary"
-            />
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ---------- C. Done ----------
-
-function DoneView({
-  job,
-  onNew,
-  onOpenHistory,
-  onDownloadAudio,
-  onCopy,
-  onDownloadMarkdown,
-  onResendEmail,
-  emailBusy,
-}: {
-  job: Job
-  onNew: () => void
-  onOpenHistory: () => void
-  onDownloadAudio: () => void
-  onCopy: () => void
-  onDownloadMarkdown: () => void
-  onResendEmail: () => void
-  emailBusy: boolean
-}) {
-  return (
-    <div className="grid min-w-0 gap-4 py-4">
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        <IconButton icon={<Plus size={18} />} label="新建" onClick={onNew} />
-        <IconButton
-          icon={<Music size={18} />}
-          label="下载音频"
-          onClick={onDownloadAudio}
-          disabled={!job.audio_available}
-        />
-        <IconButton
-          icon={<Copy size={18} />}
-          label="复制总结"
-          onClick={onCopy}
-          disabled={!job.summary}
-        />
-        <IconButton
-          icon={<FileDown size={18} />}
-          label="下载 Markdown"
-          onClick={onDownloadMarkdown}
-          disabled={!job.summary}
-        />
-        <IconButton icon={<History size={18} />} label="历史" onClick={onOpenHistory} />
-      </div>
-      <MetaBar job={job} />
-      {job.email_error && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
-          <p className="break-words leading-6">
-            总结已完成，邮件未送达：{job.email_error}
-          </p>
-          <button
-            type="button"
-            onClick={onResendEmail}
-            disabled={emailBusy}
-            className="inline-flex items-center gap-1 rounded-lg border border-warning/30 px-2 py-1 text-xs text-warning transition hover:bg-warning/20 disabled:opacity-60"
-          >
-            {emailBusy ? <RotateCw size={12} className="animate-spin" /> : <Mail size={12} />}
-            重发邮件
-          </button>
-        </div>
-      )}
-      <section className="min-w-0 w-full rounded-3xl bg-panel p-4 shadow-card sm:p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold tracking-[-0.012em]">视频总结</h2>
-        </div>
-        {job.summary ? (
-          <div className="prose prose-sm max-w-none break-words text-ink dark:prose-invert prose-headings:tracking-[-0.012em] prose-a:text-brand [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto [&_code]:break-all">
-            <ReactMarkdown>{job.summary}</ReactMarkdown>
-          </div>
-        ) : (
-          <p className="text-sm text-muted">没有总结内容</p>
-        )}
-      </section>
-    </div>
-  )
-}
-
-// 跳到底浮标：流式总结时若用户已滚到接近底部，自动跟随；用户向上看时不打扰。
-//
-// `awayFromBottomRef` 默认 true（视为「不在底部」），mount 后第一次 scroll 事件
-// 或第一次内容增长会同步真实位置。这避免了用户进入 SUMMARIZING 时即使在页面中段
-// 阅读也被强制顶到底的体验问题。
-function useStickToBottom(active: boolean, deps: unknown[]) {
-  const awayFromBottomRef = useRef(true)
-  const [showJump, setShowJump] = useState(false)
-
-  // 工具：基于当前 viewport 判断是否「足够靠近底部」（容差 64px）
-  const computeNearBottom = () => {
-    if (typeof window === 'undefined') return true
-    const doc = document.documentElement
-    return window.innerHeight + window.scrollY >= doc.scrollHeight - 64
-  }
-
-  useEffect(() => {
-    if (!active) {
-      awayFromBottomRef.current = true
-      setShowJump(false)
-      return
-    }
-    // 进入 active 时立刻同步一次真实位置；用户已经在底部才会开启「自动跟随」
-    awayFromBottomRef.current = !computeNearBottom()
-    setShowJump(awayFromBottomRef.current)
-    const onScroll = () => {
-      const away = !computeNearBottom()
-      awayFromBottomRef.current = away
-      setShowJump(away)
-    }
-    window.addEventListener('scroll', onScroll, {passive: true})
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [active])
-
-  useEffect(() => {
-    if (!active || awayFromBottomRef.current) return
-    // 用户处于底部时才自动跟随新内容
-    window.scrollTo({top: document.documentElement.scrollHeight, behavior: 'auto'})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, ...deps])
-
-  const jumpToBottom = () => {
-    if (typeof window === 'undefined') return
-    window.scrollTo({top: document.documentElement.scrollHeight, behavior: 'smooth'})
-  }
-  return {showJump, jumpToBottom}
-}
-
-// ---------- Workspace shell ----------
-
+/**
+ * Workspace shell：仅负责状态编排（jobId、defaults、actions、SSE 订阅）和路由分支
+ * （Idle / Running / Done / Recovery / Error）。具体视图与副作用全在子组件 / hook 里。
+ */
 export function Workspace({jobId}: WorkspaceProps) {
   const [, navigate] = useLocation()
   const toast = useToast()
@@ -515,13 +42,8 @@ export function Workspace({jobId}: WorkspaceProps) {
   const [cancelPending, setCancelPending] = useState(false)
   const [emailBusy, setEmailBusy] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const autoResumedRef = useRef<string | null>(null)
-  const notifiedRef = useRef<string | null>(null)
-  // 记录「本会话里见过 running 状态」的 jobId。直接打开已完成 / 失败 / 取消的历史任务时，
-  // 这个 ref 仍是 null，对应的终态 toast 就不弹——避免「每次重开同一个老任务都被
-  // 提示一遍总结完成」。状态本身在 MetaBar / StepCarousel / 失败卡片上已经能看到。
-  const sawRunningRef = useRef<string | null>(null)
-  // 拉一次当前后端默认值；retry/resume 时把 llm_model + llm_base_url 作为 overrides
+
+  // 拉一次后端默认值；retry/resume 时把 llm_model + llm_base_url 作为 overrides
   // 传过去，避免历史 job 里残留的旧供应商快照（比如老 Kimi job）继续使用过期配置。
   const [defaults, setDefaults] = useState<ConfigDefaults | null>(null)
   useEffect(() => {
@@ -541,6 +63,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     if (!defaults) return {}
     return {llm_model: defaults.llm_model, llm_base_url: defaults.llm_base_url}
   }, [defaults])
+  const autoResumeOverrides = currentLlmOverrides()
 
   // 流式总结期间的跳底浮标：用户不主动向上看就自动跟随新内容。
   const streaming = job?.status === 'SUMMARIZING'
@@ -552,11 +75,12 @@ export function Workspace({jobId}: WorkspaceProps) {
   const jobStatus = job?.status
   useEffect(() => {
     if (!jobStatus) return
-    if (!RUNNING_STATUSES.includes(jobStatus)) {
+    if (!isRunning(jobStatus)) {
       setCancelPending(false)
     }
   }, [jobStatus])
 
+  // SSE patch：流式更新 status / summary / progress / 等等。
   const patchJob = useCallback(
     (partial: Partial<Job>) => {
       setJob((current) => (current ? {...current, ...partial} : current))
@@ -576,79 +100,11 @@ export function Workspace({jobId}: WorkspaceProps) {
     reconnectKey: streamReconnectKey,
   })
 
-  // 切换任务时重置一次性 flag
-  useEffect(() => {
-    autoResumedRef.current = null
-    notifiedRef.current = null
-    sawRunningRef.current = null
-  }, [jobId])
+  useAutoResume(job, jobId, defaults, autoResumeOverrides, refresh)
+  useTerminalToast(job, jobId)
 
-  // TRANSCRIPT_READY 自动 resume —— 不再二次确认
-  //
-  // 注意：只在 status === TRANSCRIPT_READY 这一刻锁；一旦离开（不论是进 SUMMARIZING
-  // 还是 retry 回到 PENDING）就清锁。否则同一 jobId 的 retry 会因为「之前 resume 过」
-  // 而被跳过，整条 pipeline 卡在 TRANSCRIPT_READY 永远不再向前走。
-  useEffect(() => {
-    if (!job || !jobId) return
-    if (job.status !== 'TRANSCRIPT_READY') {
-      if (autoResumedRef.current === jobId) {
-        autoResumedRef.current = null
-      }
-      return
-    }
-    // 等 defaults 拉到再 auto-resume：否则旧 job 的 kimi 快照会被原样回放，
-    // defaults 拉到后 useEffect 会因 currentLlmOverrides 变化而重跑。
-    if (!defaults) return
-    if (autoResumedRef.current === jobId) return
-    autoResumedRef.current = jobId
-    void resumeJob(jobId, currentLlmOverrides())
-      .then(() => refresh())
-      .catch((err) => {
-        const message = err instanceof Error ? err.message : '继续处理失败'
-        toast.error('继续处理失败', message, {taskName: job?.title || undefined})
-      })
-  }, [job, jobId, refresh, toast, defaults, currentLlmOverrides])
+  // ---- 状态恢复 / 跨标签同步 ----
 
-  // 终态 toast 与 localStorage 清理（每个 status 只触发一次）
-  //
-  // notifiedRef 必须在「离开终态」时清掉，否则 retry 让任务从 FAILED 重跑，再次进入
-  // FAILED 时会因为 key 还是 `<id>:FAILED` 而被静默跳过 toast。同 autoResumedRef 套路。
-  //
-  // sawRunningRef：只在「本会话里见过 running 状态」的转移上弹 toast。
-  // 直接打开历史 COMPLETED/FAILED/CANCELED 任务时跳过 toast，但仍做 clearActive 兜底
-  // （clearActive 带 jobId 参数会自动跳过不匹配的 active 指针，安全）。
-  useEffect(() => {
-    if (!job || !jobId) return
-    const isTerminal =
-      job.status === 'COMPLETED' || job.status === 'FAILED' || job.status === 'CANCELED'
-    if (!isTerminal) {
-      sawRunningRef.current = jobId
-      notifiedRef.current = null
-      return
-    }
-    const key = `${jobId}:${job.status}`
-    if (notifiedRef.current === key) return
-    notifiedRef.current = key
-    clearActive(jobId)
-    // 没在本会话里见过 running 状态 → 是「直接打开历史任务」，不弹 toast
-    if (sawRunningRef.current !== jobId) return
-    const taskName = job.title || undefined
-    if (job.status === 'COMPLETED') {
-      const detail = !job.options.email_enabled
-        ? '已生成'
-        : job.email_error
-          ? '总结已生成，邮件未送达'
-          : '已发送到邮箱'
-      toast.success('总结完成', detail, {taskName})
-    }
-    if (job.status === 'FAILED' && job.error_message) {
-      const fe = friendlyError(job.error_code, job.error_message, job.error_stage)
-      toast.error(fe.title, fe.message, {taskName})
-    }
-    // CANCELED 不弹 toast：按钮即时反馈已经在 cancel() 里以 info 形式发过
-  }, [job, jobId, toast])
-
-  // 状态恢复：进入 / 路由时若有未完成 active，直接 redirect
   const [recovering, setRecovering] = useState(jobId == null && readActive() != null)
   useEffect(() => {
     if (jobId != null) return
@@ -662,8 +118,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     getJob(pointer.jobId)
       .then((response) => {
         if (canceled) return
-        const status = response.job.status
-        if (RUNNING_STATUSES.includes(status)) {
+        if (isRunning(response.job.status)) {
           navigate(`/jobs/${pointer.jobId}`)
         } else {
           clearActive(pointer.jobId)
@@ -680,7 +135,6 @@ export function Workspace({jobId}: WorkspaceProps) {
     }
   }, [jobId, navigate])
 
-  // 跨标签同步
   useEffect(() => {
     return subscribeActive((pointer) => {
       if (pointer && jobId == null) {
@@ -689,7 +143,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     })
   }, [jobId, navigate])
 
-  // ---------- actions ----------
+  // ---- actions ----
 
   // 默认行为：邮件能用就发，不能用就别传 email_enabled=true，
   // 否则后端会因为 EMAIL_DEFAULT_RECIPIENT 没配直接 400 拒。
@@ -806,7 +260,7 @@ export function Workspace({jobId}: WorkspaceProps) {
   const openHistory = () => setHistoryOpen(true)
   const closeHistory = () => setHistoryOpen(false)
 
-  // ---------- render ----------
+  // ---- render ----
 
   const drawer = (
     <HistoryDrawer

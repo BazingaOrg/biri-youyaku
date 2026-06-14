@@ -1,5 +1,6 @@
 import json
 import asyncio
+import logging
 import re
 from pathlib import Path
 
@@ -21,6 +22,8 @@ from biri_youyaku.modules.bilibili import meta as bili_meta
 from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
 from biri_youyaku.rate_limit import limiter
 from biri_youyaku.routes.config import _validate_llm_base_url
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_token)])
 
@@ -205,43 +208,37 @@ async def stream_job(job_id: str):
     if repo.get_job(job_id) is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    async def generator():
-        job = repo.get_job(job_id)
-        # 终态直接发 snapshot 走人，不订阅（节省 subscriber 槽位）
-        if job is not None and job.status in {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED}:
-            yield {
-                "event": "status",
-                "data": json.dumps(
-                    {
-                        "status": job.status.value,
-                        "summary": repo.read_summary(job),
-                        "stage": job.error_stage,
-                        "message": job.error_message,
-                        "error_code": job.error_code,
-                        "email_error": job.email_error,
-                    },
-                    ensure_ascii=False,
-                ),
-            }
-            return
+    terminal_set = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED}
 
-        # 非终态：先订阅再 yield snapshot，避免「yield 与 subscribe 之间 publish 的事件丢失」
+    def _snapshot_payload(job: Job) -> str:
+        return json.dumps(
+            {
+                "status": job.status.value,
+                "summary": repo.read_summary(job),
+                "stage": job.error_stage,
+                "message": job.error_message,
+                "error_code": job.error_code,
+                "email_error": job.email_error,
+            },
+            ensure_ascii=False,
+        )
+
+    async def generator():
+        # 关键时序：必须先 subscribe，再读 snapshot。
+        # 反过来（先读 snapshot 再 subscribe）会留出一个窗口：snapshot 是非终态，
+        # 但在 subscribe 之前任务已经完成、事件也已经 publish 了——订阅者收不到
+        # 任何后续事件，前端会永远停在中间态。
         async with event_bus.subscribe(job_id) as subscriber:
-            if job is not None:
-                yield {
-                    "event": "status",
-                    "data": json.dumps(
-                        {
-                            "status": job.status.value,
-                            "summary": repo.read_summary(job),
-                            "stage": job.error_stage,
-                            "message": job.error_message,
-                            "error_code": job.error_code,
-                            "email_error": job.email_error,
-                        },
-                        ensure_ascii=False,
-                    ),
-                }
+            job = repo.get_job(job_id)
+            if job is None:
+                # 极端情况：从外层 get_job 到这里之间任务被删了。直接结束流。
+                logger.info("stream_job: job %s vanished after handler entry", job_id)
+                return
+            yield {"event": "status", "data": _snapshot_payload(job)}
+            # snapshot 已是终态：发完直接结束，不进 while loop 浪费连接。
+            if job.status in terminal_set:
+                return
+
             while True:
                 try:
                     message = await asyncio.wait_for(subscriber.pop(), timeout=25)

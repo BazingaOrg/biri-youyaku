@@ -59,12 +59,9 @@ jobs:
 
       - run: npm ci --no-audit --no-fund
 
-      # 注：暂未在 web/package.json 配 lint script。想要的话：
-      #   1) 把 eslint / @typescript-eslint 加进 devDependencies
-      #   2) 在 package.json scripts 里加 "lint": "eslint . --ext .ts,.tsx"
-      #   3) 在这里加一个 `- run: npm run lint` step
-      # 类型检查由下面 `npm run build` 里的 `tsc` 兜底。
-
+      # 暂未配 ESLint：类型检查由 `npm run build` 里的 `tsc` 兜底。
+      # 真要补：往 devDependencies 加 eslint / @typescript-eslint，package.json
+      # scripts 加 `"lint": "eslint . --ext .ts,.tsx"`，这里再加一个 lint step。
       - name: Typecheck + build
         env:
           VITE_API_BASE_URL: http://localhost:17821

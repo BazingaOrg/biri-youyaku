@@ -20,7 +20,7 @@ You need Python 3.11+, Node.js 22+ (see `.nvmrc`), [uv](https://docs.astral.sh/u
 cp server/.env.example server/.env
 $EDITOR server/.env
 
-# 2. Spin up backend + frontend dev servers (the script handles web/.env and npm install)
+# 2. Spin up backend + frontend dev servers (the script handles server/.env + web/.env + deps)
 bash scripts/dev.sh
 # Windows PowerShell: powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
 ```

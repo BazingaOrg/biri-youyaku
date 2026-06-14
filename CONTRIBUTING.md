@@ -42,7 +42,7 @@ CI（`.github/workflows/ci.yml`）会在 PR 上跑同一套，挂红就别 merge
 ## 风格
 
 - Python：`ruff format`、`ruff check`，行宽 100，目标 py311。
-- TypeScript：跟现有 `.eslintrc.cjs`，2 空格缩进。
+- TypeScript：2 空格缩进。目前未配 ESLint，类型检查由 `npm run build` 里的 `tsc` 兜底；提交前请确保 `tsc` 不报错。
 - 注释写「为什么」而不是「做了什么」，能从代码看出来的就别注释。
 
 ## 不要做的事

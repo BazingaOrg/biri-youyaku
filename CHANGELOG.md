@@ -14,12 +14,34 @@
 - GitHub Actions CI：server lint + pytest、web typecheck + build、docker build 烟囱测试。
 - `.pre-commit-config.yaml`：server 端 ruff format/check + trailing-whitespace / EOF / gitleaks 等通用钩子。
 - `AGENTS.md`：给 LLM 编程辅助工具的代码库导览。
+- `web/vercel.json` + `web/nginx.conf`：SPA fallback，刷 `/jobs/<id>` 不再 404。
+- `web/nginx.conf` 开 gzip：仅压缩文本类资源。
+- `docker-compose.yml` `VITE_API_BASE_URL` 支持环境变量覆盖（跨机部署用）；dev 文件挂载加 `:cached` 提升 macOS 性能。
+- **后端 clean code**：
+  - `jobs/runner.py` 4 个模块级 dict（`_tasks` / `_cancel_requested` / `_job_llm_api_keys` / `_stage_started_at`）收成 `_JobRegistry`；`forget(job_id)` 一次清理。
+  - 抽 `_job_lifecycle` async context manager，收敛 `run_until_transcript` / `run_after_resume` 两份近乎一致的 `try/except (CancelledError) / except Exception / finally` 收尾。
+  - `jobs/repo.py` `_row_to_job` / `_row_to_job_lite` 合并为同一函数（`lite=True` 参数），缺列读 helper 提取；setter 全过 `_set(job_id, **fields)` 通用辅助，删 90% UPDATE 模板。
+  - 行数：`runner.py` 函数粒度更细、`repo.py` 519 → 444。
+- 后端测试 `test_runner_pause.py` 改用 `runner._registry.reset_for_tests()` 替代直接 monkeypatch 4 个模块 dict。
+- Toast 支持任务名副标题（终态相关提示带上视频标题，过长省略号截断）。
+- `docs/code-review-2026-06-14.md`：全量评审报告（clean code / UI / UX / 样式 / 文档对齐）。
 
 ### Changed
 - README 拆分：主 README 只保留 Quickstart + 架构 + 主要特性；公网部署移到
   `DEPLOY.md`，完整配置参考表移到 `CONFIG.md`。
 - 启动期未配 `LLM_API_KEY` 时打 WARN，job 失败时错误信息直接指向 `server/.env`。
 - 「名字 / 灵感」放到 README 顶部。
+- **Prompt 重写**：单段 / 合并 prompt 全改为「TL;DR + 时间脉络笔记 + 收束」结构，砍掉
+  原「核心要点」「详细笔记」「结论」三层重复段。
+- **Toast 触发条件收紧**：终态 toast 只在「本会话里见过 running 状态」的转移上弹；
+  直接打开历史已完成 / 失败任务不再弹（状态已在 MetaBar 上展示）。
+- **修复 race**：
+  - `useJob` 切换 jobId 时清空旧 state + AbortController 取消上一个挂着的请求；
+  - `routes/jobs.py:stream_job` 把 snapshot 移到 subscribe 之后，避免「snapshot
+    与订阅之间状态跳转」导致前端永远停在中间态。
+- Toast 图标 / 关闭按钮垂直对齐修正。
+- `HistoryDrawer.onDeleted` 回调签名扩成 `(jobId, title?)`，让上层 toast 显示「已删除 · 视频标题」。
+- `docs/improvement-plan.md` 归档：按 2026-06-14 实际状态标记完成 / 过期项。
 
 ### Removed
 - 早期 `makunabe` 重命名残留（`server/data/makunabe.db` / `server/makunabe_server.egg-info/`）。

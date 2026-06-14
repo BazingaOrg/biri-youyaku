@@ -13,9 +13,6 @@ module.exports = {
         lift: 'var(--color-bg-sunken)',
         brand: 'var(--color-brand)',
         brandSoft: 'var(--color-brand-soft)',
-        accent: 'var(--color-brand)',
-        accentSoft: 'var(--color-brand-soft)',
-        pink: 'var(--color-brand)',
         success: 'var(--color-success)',
         warning: 'var(--color-warning)',
         danger: 'var(--color-danger)',
@@ -40,7 +37,6 @@ module.exports = {
         ],
       },
       boxShadow: {
-        surface: 'var(--shadow-card)',
         card: 'var(--shadow-card)',
         cardHover: 'var(--shadow-card-hover)',
       },

@@ -1,6 +1,6 @@
 import {Clipboard, X} from 'lucide-react'
 import type React from 'react'
-import {sanitizeBiliInput} from '../lib/url'
+import {sanitizeBiliInput} from '../lib/biliUrl'
 
 interface UrlInputProps {
   value: string
