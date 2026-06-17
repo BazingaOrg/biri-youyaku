@@ -1,5 +1,6 @@
 import {Route, Switch} from 'wouter'
 import {AppShell} from './components/AppShell'
+import {HistoryPage} from './pages/HistoryPage'
 import {Workspace} from './pages/Workspace'
 import {ToastProvider} from './components/ToastProvider'
 
@@ -10,6 +11,9 @@ export default function App() {
     <ToastProvider>
       <AppShell>
         <Switch>
+          <Route path="/history">
+            <HistoryPage />
+          </Route>
           <Route path="/jobs/:jobId">
             {(params) => <Workspace jobId={params.jobId} />}
           </Route>

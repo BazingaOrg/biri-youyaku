@@ -20,7 +20,6 @@ import {useStickToBottom} from '../hooks/useStickToBottom'
 import {useTerminalToast} from '../hooks/useTerminalToast'
 import {useAutoResume} from '../hooks/useAutoResume'
 import {useToast} from '../components/ToastProvider'
-import {HistoryDrawer} from '../components/HistoryDrawer'
 import {IconButton} from '../components/IconButton'
 import {IdleView} from './workspace/IdleView'
 import {RunningView} from './workspace/RunningView'
@@ -41,7 +40,6 @@ export function Workspace({jobId}: WorkspaceProps) {
   const [actionBusy, setActionBusy] = useState(false)
   const [cancelPending, setCancelPending] = useState(false)
   const [emailBusy, setEmailBusy] = useState(false)
-  const [historyOpen, setHistoryOpen] = useState(false)
 
   // 拉一次后端默认值；retry/resume 时把 llm_model + llm_base_url 作为 overrides
   // 传过去，避免历史 job 里残留的旧供应商快照（比如老 Kimi job）继续使用过期配置。
@@ -257,69 +255,31 @@ export function Workspace({jobId}: WorkspaceProps) {
     clearActive()
     navigate('/')
   }
-  const openHistory = () => setHistoryOpen(true)
-  const closeHistory = () => setHistoryOpen(false)
+  const openHistory = () => navigate('/history')
 
   // ---- render ----
 
-  const drawer = (
-    <HistoryDrawer
-      open={historyOpen}
-      onClose={closeHistory}
-      onOpenJob={(id) => navigate(`/jobs/${id}`)}
-      onDeleted={(id, title) => {
-        if (id === jobId) clearActive(id)
-        toast.success('已删除', undefined, {taskName: title || undefined})
-      }}
-      refreshKey={
-        // 只在「进入终态」时刷新历史列表，避免运行中每个 status 变化都拉一次
-        jobId ??
-        (job?.status === 'COMPLETED' || job?.status === 'FAILED' || job?.status === 'CANCELED'
-          ? job.status
-          : null)
-      }
-    />
-  )
-
   if (!jobId) {
     if (recovering) {
-      return (
-        <>
-          <p className="py-12 text-center text-sm text-muted">恢复上次任务…</p>
-          {drawer}
-        </>
-      )
+      return <p className="py-12 text-center text-sm text-muted">恢复上次任务…</p>
     }
-    return (
-      <>
-        <IdleView onSubmit={submitNew} onOpenHistory={openHistory} />
-        {drawer}
-      </>
-    )
+    return <IdleView onSubmit={submitNew} onOpenHistory={openHistory} />
   }
 
   if (error) {
     return (
-      <>
-        <div className="grid gap-3 py-8 text-center">
-          <p className="text-sm text-danger">{error}</p>
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <IconButton icon={<Plus size={18} />} label="新建" onClick={goNew} />
-            <IconButton icon={<History size={18} />} label="历史" onClick={openHistory} />
-          </div>
+      <div className="grid gap-3 py-8 text-center">
+        <p className="text-sm text-danger">{error}</p>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <IconButton icon={<Plus size={18} />} label="新建" onClick={goNew} />
+          <IconButton icon={<History size={18} />} label="历史" onClick={openHistory} />
         </div>
-        {drawer}
-      </>
+      </div>
     )
   }
 
   if (!job) {
-    return (
-      <>
-        <p className="py-12 text-center text-sm text-muted">加载中</p>
-        {drawer}
-      </>
-    )
+    return <p className="py-12 text-center text-sm text-muted">加载中</p>
   }
 
   // 流式总结时的跳到底浮标
@@ -336,19 +296,16 @@ export function Workspace({jobId}: WorkspaceProps) {
 
   if (job.status === 'COMPLETED') {
     return (
-      <>
-        <DoneView
-          job={job}
-          onNew={goNew}
-          onOpenHistory={openHistory}
-          onDownloadAudio={downloadAudio}
-          onCopy={copySummary}
-          onDownloadMarkdown={downloadMarkdown}
-          onResendEmail={resendCurrentEmail}
-          emailBusy={emailBusy}
-        />
-        {drawer}
-      </>
+      <DoneView
+        job={job}
+        onNew={goNew}
+        onOpenHistory={openHistory}
+        onDownloadAudio={downloadAudio}
+        onCopy={copySummary}
+        onDownloadMarkdown={downloadMarkdown}
+        onResendEmail={resendCurrentEmail}
+        emailBusy={emailBusy}
+      />
     )
   }
 
@@ -364,7 +321,6 @@ export function Workspace({jobId}: WorkspaceProps) {
         cancelPending={cancelPending}
       />
       {jumpFloater}
-      {drawer}
     </>
   )
 }
