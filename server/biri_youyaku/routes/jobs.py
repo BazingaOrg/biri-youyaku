@@ -106,6 +106,44 @@ def serialize_job(job: Job) -> dict:
     }
 
 
+def serialize_job_lite(job: Job) -> dict:
+    """列表页专用：不读 summary 磁盘文件、不带 transcript/chapters/stage_timings 全文。
+
+    列表只用到元数据（标题 / UP 主 / 状态 / 时长 / 时间）。serialize_job 会对每条
+    调 read_summary() 读盘并把总结全文塞进响应——几百条记录 = 几百次磁盘读 + 几兆 JSON。
+    这里按 list_jobs 的 lite 投影（transcript/chapters/stage_timings 已是 None）对齐，
+    总结只用 summary_available 布尔标记替代全文。
+    """
+    return {
+        "id": job.id,
+        "url": job.url,
+        "bvid": job.bvid,
+        "cid": job.cid,
+        "title": job.title,
+        "author": job.author,
+        "duration": job.duration,
+        "status": job.status.value,
+        "error_stage": job.error_stage,
+        "error_message": job.error_message,
+        "error_code": job.error_code,
+        "subtitle_source": job.subtitle_source,
+        "chapters": [],
+        "transcript": [],
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "completed_at": job.completed_at,
+        "stream_finished_at": job.stream_finished_at,
+        "token_usage": job.token_usage,
+        "stage_timings": [],
+        "summary": None,
+        "summary_available": job.summary_path is not None,
+        "options": job.options.as_dict(),
+        "option_overrides": job.option_overrides or {},
+        "audio_available": _has_audio(job),
+        "email_error": job.email_error,
+    }
+
+
 def _video_meta_from_job(job: Job) -> VideoMeta:
     return VideoMeta(
         url=job.url,
@@ -192,7 +230,7 @@ async def list_jobs(
 ) -> dict:
     jobs = repo.list_jobs(limit=limit, offset=offset, cursor=cursor)
     next_cursor = jobs[-1].created_at if len(jobs) == limit else None
-    return {"ok": True, "jobs": [serialize_job(job) for job in jobs], "next_cursor": next_cursor}
+    return {"ok": True, "jobs": [serialize_job_lite(job) for job in jobs], "next_cursor": next_cursor}
 
 
 @router.get("/jobs/{job_id}")

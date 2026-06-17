@@ -58,6 +58,8 @@ export interface Job {
     text: string
   }>
   summary?: string
+  /** 列表（lite）响应不带 summary 全文，仅用此布尔标记是否有总结；详情接口才返回 summary。 */
+  summary_available?: boolean
   created_at: number
   updated_at: number
   completed_at?: number
@@ -101,6 +103,16 @@ export function getApiToken() {
   return API_TOKEN
 }
 
+/** 带 HTTP status 的错误，调用方可据此区分 404 / 409 等（如删除时 404 = 已不存在）。 */
+export class ApiError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   headers.set('Content-Type', 'application/json')
@@ -130,7 +142,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       throw new Error('服务器繁忙，请稍后再试')
     }
     const message = await response.text()
-    throw new Error(message || `HTTP ${response.status}`)
+    throw new ApiError(response.status, message || `HTTP ${response.status}`)
   }
   return response.json() as Promise<T>
 }

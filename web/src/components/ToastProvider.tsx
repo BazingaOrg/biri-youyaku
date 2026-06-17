@@ -1,8 +1,13 @@
 import {createContext, useContext, useMemo, useState} from 'react'
 import type {ReactNode} from 'react'
-import {CheckCircle2, Copy, Info, X, XCircle} from 'lucide-react'
+import {CheckCircle2, Copy, Info, Undo2, X, XCircle} from 'lucide-react'
 
 type ToastType = 'success' | 'error' | 'info'
+
+interface ToastAction {
+  label: string
+  onClick: () => void
+}
 
 interface Toast {
   id: number
@@ -10,6 +15,7 @@ interface Toast {
   title: string
   message?: string
   taskName?: string
+  action?: ToastAction
 }
 
 interface ToastOptions {
@@ -17,6 +23,10 @@ interface ToastOptions {
   // 绑定到具体任务的提示（如「总结完成」「下载音频」），传入后会作为副标题展示，
   // 过长以省略号截断。不传则只显示 title / message。
   taskName?: string
+  // 行内动作按钮（如删除后的「撤销」）。传入即视为限时提示，到点自动关闭。
+  action?: ToastAction
+  // 自定义自动关闭时长（毫秒）。autoClose / action 任一存在时生效。
+  durationMs?: number
 }
 
 interface ToastContextValue {
@@ -38,10 +48,10 @@ export function ToastProvider({children}: {children: ReactNode}) {
   const remove = (id: number) => setToasts((current) => current.filter((toast) => toast.id !== id))
   const push = (type: ToastType, title: string, message?: string, options?: ToastOptions) => {
     const id = Date.now() + Math.random()
-    setToasts((current) => [...current, {id, type, title, message, taskName: options?.taskName}])
-    // 提示默认常驻，等用户主动关闭；如显式传 autoClose: true 才走定时关闭。
-    if (options?.autoClose === true) {
-      const duration = type === 'success' ? 6000 : 4000
+    setToasts((current) => [...current, {id, type, title, message, taskName: options?.taskName, action: options?.action}])
+    // 提示默认常驻，等用户主动关闭；autoClose 或带 action（如撤销）时走定时关闭。
+    if (options?.autoClose === true || options?.action) {
+      const duration = options?.durationMs ?? (type === 'success' ? 6000 : 4000)
       window.setTimeout(() => remove(id), duration)
     }
   }
@@ -106,6 +116,19 @@ export function ToastProvider({children}: {children: ReactNode}) {
                   <X size={16} />
                 </button>
               </div>
+              {toast.action && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    toast.action?.onClick()
+                    remove(toast.id)
+                  }}
+                  className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-xl bg-lift px-3 text-sm font-medium text-brand transition hover:bg-brandSoft/60 active:scale-95"
+                >
+                  <Undo2 size={14} />
+                  {toast.action.label}
+                </button>
+              )}
               {toast.type === 'error' && (
                 <button type="button" onClick={() => navigator.clipboard.writeText(copyText)} className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-xl bg-lift px-3 text-sm text-muted transition hover:bg-line/70 active:scale-95">
                   <Copy size={14} />
