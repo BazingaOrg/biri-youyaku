@@ -43,13 +43,15 @@ async def test_send_uses_worker_payload_contract(monkeypatch, video_meta):
     monkeypatch.setattr(webhook, "email_client", lambda: fake)
     FakeAsyncClient.response = httpx.Response(200, json={"ok": True})
 
+    # 安全契约：webhook.send 故意忽略 options.email_recipient，永远只发到
+    # settings.email_default_recipient（防止借 Worker 给任意邮箱发垃圾邮件）。
     await webhook.send(video_meta, "# Summary", JobOptions(email_recipient="user@example.com"))
 
     assert FakeAsyncClient.last_request == {
         "url": "https://worker.example",
         "headers": {"Authorization": "Bearer secret"},
         "json": {
-            "to": "user@example.com",
+            "to": "default@example.com",
             "subject": "[Biri-Youyaku] Test title",
             "markdown": "# Summary",
             "videoMeta": {

@@ -37,7 +37,7 @@ async def test_runner_pauses_at_transcript_ready_then_resumes(monkeypatch, tmp_p
         repo.set_subtitle_source(job.id, "platform")
         return [TranscriptItem(start=0, end=2, text="hello")]
 
-    async def fake_summarize(job, video_meta, items, *, llm_api_key=None, on_chunk=None, on_usage=None):
+    async def fake_summarize(job, video_meta, items, *, llm_api_key=None, on_chunk=None, on_usage=None, on_segment=None):
         assert llm_api_key == "task-key"
         assert items[0].text == "hello"
         if on_chunk is not None:

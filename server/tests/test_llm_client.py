@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from biri_youyaku.modules.llm import client
@@ -120,6 +122,50 @@ async def test_summarize_chunked_summarizes_segments_then_merges(monkeypatch):
     assert "分段 2" in calls[1]
     assert "segment-1" in calls[2]
     assert "segment-2" in calls[2]
+
+
+@pytest.mark.asyncio
+async def test_summarize_chunked_cancels_sibling_segments_on_failure(monkeypatch):
+    started_sibling = asyncio.Event()
+    canceled_sibling = asyncio.Event()
+
+    async def fake_segment_markdown(fake_client, *, model, prompt, on_usage=None):
+        if "分段 1" in prompt:
+            await started_sibling.wait()
+            raise RuntimeError("segment failed")
+        started_sibling.set()
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            canceled_sibling.set()
+            raise
+        return "should not finish"
+
+    monkeypatch.setattr(client.settings, "llm_chunk_token_threshold", 5)
+    monkeypatch.setattr(client.settings, "llm_segment_concurrency", 2)
+    monkeypatch.setattr(client, "_summarize_segment_markdown", fake_segment_markdown)
+
+    with pytest.raises(RuntimeError, match="segment failed"):
+        await client._summarize_chunked(
+            object(),
+            items=[
+                client.TranscriptItem(start=0, end=1, text="aaaa"),
+                client.TranscriptItem(start=1, end=2, text="bbbb"),
+            ],
+            meta=client.VideoMeta(
+                url="https://example.com",
+                bvid="BV123",
+                cid=1,
+                title="Title",
+                author="Author",
+                duration=10,
+            ),
+            model="provider-model",
+            language="中文简体",
+            subtitle_source="platform",
+        )
+
+    assert canceled_sibling.is_set()
 
 
 @pytest.mark.asyncio

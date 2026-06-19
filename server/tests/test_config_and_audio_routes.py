@@ -23,6 +23,7 @@ async def test_config_defaults_do_not_expose_secret_values(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_runtime_config_returns_only_booleans(monkeypatch):
+    monkeypatch.setattr(config_route.settings, "api_token", "")
     monkeypatch.setattr(config_route.settings, "llm_api_key", "secret-key")
     monkeypatch.setattr(config_route.settings, "email_enabled", True)
     monkeypatch.setattr(config_route.settings, "email_webhook_url", "https://example.test/hook")
@@ -32,6 +33,8 @@ async def test_runtime_config_returns_only_booleans(monkeypatch):
 
     assert response == {
         "ok": True,
+        "auth_mode": "none",
+        "api_token_required": False,
         "llm_configured": True,
         "email_configured": True,
         "bilibili_cookie_configured": True,
@@ -81,13 +84,19 @@ class FakeAsyncClient:
 
 @pytest.mark.asyncio
 async def test_discover_llm_models_uses_openai_compatible_models_endpoint(monkeypatch):
+    # 清空 SSRF 白名单（本地 .env 可能配了 LLM_BASE_URL_ALLOWED_HOSTS），
+    # 否则测试用的 llm.example 会被 _validate_llm_base_url 拒掉。
+    monkeypatch.setattr(config_route.settings, "llm_base_url_allowed_hosts", "")
     monkeypatch.setattr(config_route.httpx, "AsyncClient", FakeAsyncClient)
 
+    # 第一个 None 是路由的 `request: Request` 形参——它只服务于 @limiter.limit，
+    # 测试里限流器已被 conftest 关掉，路由体本身不读它，传 None 即可。
     response = await config_route.discover_llm_models(
+        None,
         config_route.ModelDiscoveryPayload(
             llm_base_url="https://llm.example",
             llm_api_key="task-key",
-        )
+        ),
     )
 
     assert response == {"ok": True, "models": ["model-a", "model-b"]}
@@ -130,7 +139,7 @@ async def test_resume_rejects_non_transcript_ready_job(monkeypatch):
     monkeypatch.setattr(jobs_route.repo, "get_job", lambda job_id: job)
 
     with pytest.raises(HTTPException) as exc_info:
-        await jobs_route.resume("job-1")
+        await jobs_route.resume(None, "job-1")
 
     assert exc_info.value.status_code == 409
 
@@ -163,7 +172,7 @@ async def test_preview_job_returns_meta_and_dedup(monkeypatch):
     )
     monkeypatch.setattr(jobs_route.repo, "find_latest_by_video", lambda bvid, cid: existing)
 
-    response = await jobs_route.preview_job(jobs_route.PreviewJobPayload(url="https://www.bilibili.com/video/BV123"))
+    response = await jobs_route.preview_job(None, jobs_route.PreviewJobPayload(url="https://www.bilibili.com/video/BV123"))
 
     assert response["ok"] is True
     assert response["meta"]["bvid"] == "BV123"
@@ -199,6 +208,7 @@ async def test_resume_updates_summary_options_before_start(monkeypatch):
     )
 
     response = await jobs_route.resume(
+        None,
         "job-1",
         jobs_route.ResumeJobPayload(
             options=jobs_route.JobOptionsPayload(
@@ -234,7 +244,7 @@ async def test_retry_rejects_non_failed_job(monkeypatch):
     monkeypatch.setattr(jobs_route.repo, "get_job", lambda job_id: job)
 
     with pytest.raises(HTTPException) as exc_info:
-        await jobs_route.retry("job-1")
+        await jobs_route.retry(None, "job-1")
 
     assert exc_info.value.status_code == 409
 
@@ -267,6 +277,7 @@ async def test_retry_updates_options_and_starts_runner(monkeypatch):
     )
 
     response = await jobs_route.retry(
+        None,
         "job-1",
         jobs_route.RetryJobPayload(
             options=jobs_route.JobOptionsPayload(llm_model="model-b", llm_api_key="task-key")
