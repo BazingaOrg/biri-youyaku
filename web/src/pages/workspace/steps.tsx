@@ -149,6 +149,23 @@ function renderSummary(job: Job) {
   }
   if (job.status === 'SUMMARIZING') {
     if (job.queued) return <p>排队中…（等总结槽位）</p>
+    // 长视频分段总结阶段没有流式 token，用段进度兜住「正在生成总结」的空窗。
+    const seg = job.summary_segment
+    if (seg && seg.total > 1 && seg.done < seg.total) {
+      const pct = Math.round((seg.done / seg.total) * 100)
+      return (
+        <div className="grid gap-2">
+          <p>分段总结中 {seg.done}/{seg.total}</p>
+          <div className="h-2 overflow-hidden rounded-full bg-panel">
+            <div
+              className="h-full rounded-full bg-brand transition-[width] duration-200"
+              style={{width: `${pct}%`}}
+            />
+          </div>
+          <p className="text-xs">分段完成后再合并成完整笔记…</p>
+        </div>
+      )
+    }
     return <p>正在生成总结…</p>
   }
   return <p>等待生成总结</p>

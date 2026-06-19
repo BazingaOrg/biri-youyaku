@@ -4,6 +4,7 @@ export type JobStreamEvent =
   | 'status'
   | 'meta'
   | 'summary_chunk'
+  | 'summary_segment'
   | 'download_progress'
   | 'transcribe_progress'
   | 'error'

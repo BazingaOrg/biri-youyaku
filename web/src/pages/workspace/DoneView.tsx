@@ -1,8 +1,27 @@
 import ReactMarkdown from 'react-markdown'
-import {Copy, FileDown, History, Mail, Music, Plus, RotateCw} from 'lucide-react'
+import {Clock, Copy, FileDown, History, Mail, Music, Plus, RotateCw} from 'lucide-react'
 import type {Job} from '../../lib/api'
+import {estimateCostCny, formatStageTimings, formatTokenCount} from '../../lib/format'
 import {IconButton} from '../../components/IconButton'
 import {MetaBar} from './MetaBar'
+
+function JobStats({job}: {job: Job}) {
+  const timings = formatStageTimings(job.stage_timings)
+  const tokens = formatTokenCount(job.token_usage)
+  const cost = estimateCostCny(job.token_usage, job.options.llm_model)
+  const parts = [
+    timings,
+    tokens,
+    cost != null ? `~¥${cost < 0.01 ? cost.toFixed(4) : cost.toFixed(2)}` : null,
+  ].filter(Boolean)
+  if (parts.length === 0) return null
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs text-muted">
+      <Clock size={12} className="shrink-0" />
+      <span>{parts.join(' · ')}</span>
+    </div>
+  )
+}
 
 interface DoneViewProps {
   job: Job
@@ -50,6 +69,7 @@ export function DoneView({
         <IconButton icon={<History size={18} />} label="历史" onClick={onOpenHistory} />
       </div>
       <MetaBar job={job} />
+      <JobStats job={job} />
       {job.email_error && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
           <p className="break-words leading-6">

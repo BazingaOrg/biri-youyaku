@@ -91,6 +91,8 @@ export interface Job {
   email_error?: string | null
   /** 后端 transient 标记：true = 当前阶段正在等并发槽位（_io_semaphore / _summary_semaphore）。 */
   queued?: boolean
+  /** 长视频分段总结进度（transient，仅 SSE 推送）：done=已完成段数，total=总段数。 */
+  summary_segment?: {done: number; total: number}
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:17821'

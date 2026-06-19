@@ -143,6 +143,10 @@ export function useJobStream(
         pushSummary(payload.text)
         return
       }
+      if (message.event === 'summary_segment') {
+        onPatch({summary_segment: JSON.parse(message.data) as Job['summary_segment']})
+        return
+      }
       if (message.event === 'download_progress') {
         onPatch({download_progress: JSON.parse(message.data) as Job['download_progress']})
         return
@@ -172,8 +176,10 @@ export function useJobStream(
           handleMessage(message)
         },
         (error) => {
+          // 瞬时连接错误不写进 job.error_message：那会被 UI 当成「任务失败」渲染红卡。
+          // 重连逻辑（onClose 回调）会自动恢复；这里只留一条调试日志。
           if (!terminalRef.current) {
-            onPatch({error_message: error.message})
+            console.debug('[useJobStream] transient SSE error, will reconnect:', error.message)
           }
         },
         () => {

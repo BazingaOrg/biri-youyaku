@@ -30,7 +30,12 @@ export function RunningView({
 }: RunningViewProps) {
   const steps = useMemo(() => buildSteps(job), [job])
   const currentIdx = statusToStepIndex(job.status)
-  const failure = job.error_message ? friendlyError(job.error_code, job.error_message, job.error_stage) : null
+  // 只有 FAILED 才渲染失败卡。运行中（转写 / 总结）遇到一次 SSE 网络抖动时，
+  // error_message 可能被瞬时写入；若不限定 status，会闪出一张假的红色失败卡。
+  const failure =
+    job.status === 'FAILED' && job.error_message
+      ? friendlyError(job.error_code, job.error_message, job.error_stage)
+      : null
   const canCancel = isRunning(job.status)
   const canRetry = job.status === 'FAILED'
   const toast = useToast()

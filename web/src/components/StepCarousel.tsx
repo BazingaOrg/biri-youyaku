@@ -76,7 +76,7 @@ export function StepCarousel({steps, currentIndex}: StepCarouselProps) {
                     </span>
                     <span className="text-base font-semibold text-ink">{step.label}</span>
                   </div>
-                  <div className="min-w-0 h-[220px] overflow-y-auto text-sm leading-6 text-muted">
+                  <div className="min-w-0 min-h-[160px] max-h-[40vh] overflow-y-auto text-sm leading-6 text-muted">
                     {step.render()}
                   </div>
                 </div>
@@ -104,7 +104,8 @@ export function StepCarousel({steps, currentIndex}: StepCarouselProps) {
               <button
                 key={step.key}
                 type="button"
-                aria-label={`查看：${step.label}`}
+                aria-label={`第 ${idx + 1} 步：${step.label}`}
+                aria-current={idx === safeCurrent ? 'step' : undefined}
                 onClick={() => go(idx)}
                 className={`h-2 rounded-full transition-all duration-[220ms] ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
                   isCurrent ? 'w-6 bg-brand' : step.state === 'done' ? 'w-2 bg-brand/40' : step.state === 'failed' ? 'w-2 bg-danger/60' : 'w-2 bg-line'
