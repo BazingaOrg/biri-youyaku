@@ -12,6 +12,7 @@ import {
 } from '../lib/api'
 import type {ConfigDefaults, Job, JobOptionOverrides} from '../lib/api'
 import {isRunning} from '../lib/jobStatus'
+import {triggerDownload} from '../lib/download'
 import {clearActive, readActive, subscribeActive, writeActive} from '../lib/activeJob'
 import {useJob} from '../hooks/useJob'
 import {useJobStream} from '../hooks/useJobStream'
@@ -216,12 +217,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     const taskName = job?.title || undefined
     try {
       const {blob, filename} = await downloadJobAudio(jobId)
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = filename || `${job?.title || jobId}.wav`
-      anchor.click()
-      URL.revokeObjectURL(url)
+      triggerDownload(blob, filename || `${job?.title || jobId}.wav`)
       toast.success('音频已下载', undefined, {taskName})
     } catch (err) {
       toast.error('下载音频失败', err instanceof Error ? err.message : '请重试', {taskName})
@@ -242,12 +238,7 @@ export function Workspace({jobId}: WorkspaceProps) {
   const downloadMarkdown = () => {
     if (!job?.summary) return
     const blob = new Blob([job.summary], {type: 'text/markdown;charset=utf-8'})
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `${job.title || 'summary'}.md`
-    anchor.click()
-    URL.revokeObjectURL(url)
+    triggerDownload(blob, `${job.title || 'summary'}.md`)
     toast.success('Markdown 已下载', undefined, {taskName: job.title || undefined})
   }
 
