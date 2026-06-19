@@ -1,24 +1,19 @@
 import ReactMarkdown from 'react-markdown'
 import {Clock, Copy, FileDown, History, Mail, Music, Plus, RotateCw} from 'lucide-react'
 import type {Job} from '../../lib/api'
-import {estimateCostCny, formatStageTimings, formatTokenCount} from '../../lib/format'
+import {formatStageTimings, formatTokenCount} from '../../lib/format'
 import {IconButton} from '../../components/IconButton'
 import {MetaBar} from './MetaBar'
 
 function JobStats({job}: {job: Job}) {
   const timings = formatStageTimings(job.stage_timings)
   const tokens = formatTokenCount(job.token_usage)
-  const cost = estimateCostCny(job.token_usage, job.options.llm_model)
-  const parts = [
-    timings,
-    tokens,
-    cost != null ? `~¥${cost < 0.01 ? cost.toFixed(4) : cost.toFixed(2)}` : null,
-  ].filter(Boolean)
+  const parts = [timings, tokens].filter(Boolean)
   if (parts.length === 0) return null
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs text-muted">
+    <div className="inline-flex max-w-full items-center gap-1.5 overflow-hidden px-1 text-xs text-muted">
       <Clock size={12} className="shrink-0" />
-      <span>{parts.join(' · ')}</span>
+      <span className="min-w-0 whitespace-nowrap">{parts.join(' · ')}</span>
     </div>
   )
 }
