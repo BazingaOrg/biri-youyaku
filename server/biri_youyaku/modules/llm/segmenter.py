@@ -3,6 +3,8 @@ from biri_youyaku.modules.asr.formatter import transcript_to_text
 
 
 def estimate_tokens(text: str) -> int:
+    # 粗略代理：直接用字符数当 token 数。对中文约 1:1、英文偏高估，作为「是否分段」
+    # 的阈值判断够用，不追求精确。配置项 LLM_CHUNK_TOKEN_THRESHOLD 因此实为字符数阈值。
     return len(text)
 
 

@@ -16,7 +16,6 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
-from biri_youyaku.config import settings
 from biri_youyaku.modules.asr.base import Transcriber
 
 __all__ = [

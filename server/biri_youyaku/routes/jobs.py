@@ -76,45 +76,14 @@ def _has_audio(job: Job) -> bool:
     return Path(job.audio_path).is_file()
 
 
-def serialize_job(job: Job) -> dict:
-    return {
-        "id": job.id,
-        "url": job.url,
-        "bvid": job.bvid,
-        "cid": job.cid,
-        "title": job.title,
-        "author": job.author,
-        "duration": job.duration,
-        "status": job.status.value,
-        "error_stage": job.error_stage,
-        "error_message": job.error_message,
-        "error_code": job.error_code,
-        "subtitle_source": job.subtitle_source,
-        "chapters": job.chapters or [],
-        "transcript": job.transcript or [],
-        "created_at": job.created_at,
-        "updated_at": job.updated_at,
-        "completed_at": job.completed_at,
-        "stream_finished_at": job.stream_finished_at,
-        "token_usage": job.token_usage,
-        "stage_timings": job.stage_timings or [],
-        "summary": repo.read_summary(job),
-        "options": job.options.as_dict(),
-        "option_overrides": job.option_overrides or {},
-        "audio_available": _has_audio(job),
-        "email_error": job.email_error,
-    }
+def serialize_job(job: Job, *, lite: bool = False) -> dict:
+    """把 Job 序列化成 API 响应。
 
-
-def serialize_job_lite(job: Job) -> dict:
-    """列表页专用：不读 summary 磁盘文件、不带 transcript/chapters/stage_timings 全文。
-
-    列表只用到元数据（标题 / UP 主 / 状态 / 时长 / 时间）。serialize_job 会对每条
-    调 read_summary() 读盘并把总结全文塞进响应——几百条记录 = 几百次磁盘读 + 几兆 JSON。
-    这里按 list_jobs 的 lite 投影（transcript/chapters/stage_timings 已是 None）对齐，
-    总结只用 summary_available 布尔标记替代全文。
+    lite=True 给列表页用：不读 summary 磁盘文件、不带 transcript/chapters/stage_timings
+    全文。详情页一条记录无所谓，但列表几百条都走 read_summary() 读盘 = 几百次磁盘读 +
+    几兆 JSON。lite 投影下这些大字段已是 None，总结只用 summary_available 布尔标记替代。
     """
-    return {
+    payload = {
         "id": job.id,
         "url": job.url,
         "bvid": job.bvid,
@@ -127,21 +96,23 @@ def serialize_job_lite(job: Job) -> dict:
         "error_message": job.error_message,
         "error_code": job.error_code,
         "subtitle_source": job.subtitle_source,
-        "chapters": [],
-        "transcript": [],
+        "chapters": [] if lite else (job.chapters or []),
+        "transcript": [] if lite else (job.transcript or []),
         "created_at": job.created_at,
         "updated_at": job.updated_at,
         "completed_at": job.completed_at,
         "stream_finished_at": job.stream_finished_at,
         "token_usage": job.token_usage,
-        "stage_timings": [],
-        "summary": None,
-        "summary_available": job.summary_path is not None,
+        "stage_timings": [] if lite else (job.stage_timings or []),
+        "summary": None if lite else repo.read_summary(job),
         "options": job.options.as_dict(),
         "option_overrides": job.option_overrides or {},
         "audio_available": _has_audio(job),
         "email_error": job.email_error,
     }
+    if lite:
+        payload["summary_available"] = job.summary_path is not None
+    return payload
 
 
 def _video_meta_from_job(job: Job) -> VideoMeta:
@@ -161,7 +132,10 @@ _TERMINAL_JOB_STATUSES = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCE
 @router.post("/jobs")
 @limiter.limit("10/minute")
 async def create_job(request: Request, payload: CreateJobPayload) -> dict:
-    # 容量保护：单 IP 限流挡不住多 IP 协同灌任务；这里看全局在飞总数兜底
+    # 容量保护：单 IP 限流挡不住多 IP 协同灌任务；这里看全局在飞总数兜底。
+    # 注意这是「近似/软上限」——count 与下面的 create_job 不在同一事务里，并发请求
+    # 可能都通过检查再各自 insert，短暂越过 max_inflight_jobs。单用户场景下足够；要硬
+    # 上限需把 SELECT COUNT + INSERT 收进一个 BEGIN IMMEDIATE 事务。
     inflight = repo.count_jobs_excluding_status(_TERMINAL_JOB_STATUSES)
     if inflight >= settings.max_inflight_jobs:
         raise HTTPException(
@@ -230,7 +204,7 @@ async def list_jobs(
 ) -> dict:
     jobs = repo.list_jobs(limit=limit, offset=offset, cursor=cursor)
     next_cursor = jobs[-1].created_at if len(jobs) == limit else None
-    return {"ok": True, "jobs": [serialize_job_lite(job) for job in jobs], "next_cursor": next_cursor}
+    return {"ok": True, "jobs": [serialize_job(job, lite=True) for job in jobs], "next_cursor": next_cursor}
 
 
 @router.get("/jobs/{job_id}")

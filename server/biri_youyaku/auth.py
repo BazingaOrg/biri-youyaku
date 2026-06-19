@@ -1,3 +1,5 @@
+import hmac
+
 from fastapi import Header, HTTPException, status
 
 from biri_youyaku.config import settings
@@ -17,5 +19,7 @@ async def require_token(
     if not expected:
         return
 
-    if authorization != f"Bearer {expected}":
+    # 定长比较防时序侧信道：用 hmac.compare_digest 而非 `==`（后者会在首个不同
+    # 字节就短路返回）。
+    if not hmac.compare_digest(authorization or "", f"Bearer {expected}"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API token")
