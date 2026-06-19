@@ -32,7 +32,9 @@ asr-mlx = [
 dev = [
   "pytest>=8.2.0",
   "pytest-asyncio>=0.23.0",
-  "ruff>=0.4.0",
+  # 钉上限：ruff 的 format 规则跨 minor 会变，不锁会让 `ruff format --check` 在
+  # 新版本上突然把一堆没动过的文件判成需重排，CI 平白挂红。升级时显式抬这个上限。
+  "ruff>=0.4.0,<0.5",
 ]
 
 [tool.ruff]

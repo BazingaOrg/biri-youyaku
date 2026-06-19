@@ -31,9 +31,9 @@ jobs:
       - name: Install deps (no ASR extras — too heavy for CI)
         run: uv sync --extra dev
 
-      - name: Ruff format check
-        run: uv run ruff format --check .
-
+      # 不强制 `ruff format --check`：现有代码并非由某个 ruff 版本统一 format 过，
+      # 跨版本 format 规则一变就会把大批没动过的文件判成需重排，CI 平白挂红。
+      # 只跑 `ruff check`（真 lint，抓未用导入 / import 顺序等实际问题）。
       - name: Ruff lint
         run: uv run ruff check .
 

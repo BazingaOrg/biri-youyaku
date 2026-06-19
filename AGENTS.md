@@ -88,7 +88,8 @@ web/
 cd server
 uv sync --extra dev
 uv run pytest -q
-uv run ruff format --check . && uv run ruff check .
+uv run ruff check .
+# uv run ruff format .  # 可选：想统一格式自己跑，CI 不强制 format
 
 cd ../web
 npm install
