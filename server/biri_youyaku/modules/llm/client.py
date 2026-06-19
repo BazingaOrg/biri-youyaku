@@ -5,8 +5,6 @@ from collections.abc import Awaitable, Callable
 
 from openai import AsyncOpenAI
 
-logger = logging.getLogger(__name__)
-
 from biri_youyaku.config import settings
 from biri_youyaku.jobs.model import JobOptions
 from biri_youyaku.modules._http import openai_client
@@ -22,8 +20,13 @@ from biri_youyaku.modules.llm.prompts import (
 )
 from biri_youyaku.modules.llm.segmenter import should_chunk, split_transcript
 
+logger = logging.getLogger(__name__)
+
 SummaryChunkCallback = Callable[[str], Awaitable[None]]
 TokenUsageCallback = Callable[[dict], Awaitable[None]]
+# (done, total) 分段总结进度：长视频段级总结阶段没有流式 token，靠这个让前端
+# 不至于盯着一动不动的「正在生成总结」。
+SegmentProgressCallback = Callable[[int, int], Awaitable[None]]
 
 
 def resolve_temperature(model: str) -> float:
@@ -263,12 +266,19 @@ async def _summarize_chunked(
     subtitle_source: str | None,
     on_chunk: SummaryChunkCallback | None = None,
     on_usage: TokenUsageCallback | None = None,
+    on_segment: SegmentProgressCallback | None = None,
 ) -> str:
     segments = list(split_transcript(items, settings.llm_chunk_token_threshold))
+    total = len(segments)
     concurrency = max(1, int(settings.llm_segment_concurrency))
     semaphore = asyncio.Semaphore(concurrency)
+    done_count = 0
+
+    if on_segment is not None:
+        await on_segment(0, total)
 
     async def _one_segment(index: int, segment: list[TranscriptItem]) -> tuple[int, str]:
+        nonlocal done_count
         prompt = render_prompt(
             SUMMARY_MARKDOWN_PROMPT,
             language=language,
@@ -280,15 +290,38 @@ async def _summarize_chunked(
         )
         async with semaphore:
             text = await _summarize_segment_markdown(client, model=model, prompt=prompt, on_usage=on_usage)
+        # 单线程 asyncio：done_count 自增在两个 await 之间是原子的
+        done_count += 1
+        if on_segment is not None:
+            await on_segment(done_count, total)
         return index, text
 
-    # 段级总结并行：长视频 5-6 段串行通常 5-10min，并行 2-3 路压到 2-3min
+    # 段级总结并行：长视频 5-6 段串行通常 5-10min，并行 2-3 路压到 2-3min。
+    # 某段抛错时取消其它分段并 drain，避免孤儿协程继续占用 semaphore / 烧 token /
+    # 在 job 已 FAILED 后回调 on_usage。
     tasks = [
         asyncio.create_task(_one_segment(idx, seg))
         for idx, seg in enumerate(segments, start=1)
     ]
-    pairs = await asyncio.gather(*tasks)
-    pairs.sort(key=lambda p: p[0])
+    try:
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+        first_error: BaseException | None = None
+        for task in done:
+            first_error = task.exception()
+            if first_error is not None:
+                break
+        if first_error is not None:
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            raise first_error
+        pairs = sorted((task.result() for task in tasks), key=lambda p: p[0])
+    except BaseException:
+        pending = [task for task in tasks if not task.done()]
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        raise
     segment_summaries = [f"### 分段 {idx}\n{text}" for idx, text in pairs]
 
     merge_prompt = render_prompt(
@@ -321,13 +354,13 @@ async def summarize(
     subtitle_source: str | None = None,
     on_chunk: SummaryChunkCallback | None = None,
     on_usage: TokenUsageCallback | None = None,
+    on_segment: SegmentProgressCallback | None = None,
 ) -> str:
     resolved_api_key = api_key or settings.llm_api_key
     if not resolved_api_key:
-        # 中性表述：前端 Settings 填 key 或后端 server/.env 配 LLM_API_KEY 二选一都能用
         raise RuntimeError(
-            "LLM_API_KEY 未配置：在前端 Settings 中填入，或在 server/.env 配置 LLM_API_KEY，"
-            "二选一即可（OpenAI 兼容供应商皆可；本地 ollama 可填任意非空字符串）。"
+            "LLM_API_KEY 未配置：请在 server/.env 设置 LLM_API_KEY 后重启后端"
+            "（OpenAI 兼容供应商皆可；本地 ollama 可填任意非空字符串）。"
         )
 
     transcript = transcript_to_text(items)
@@ -378,6 +411,7 @@ async def summarize(
             subtitle_source=subtitle_source,
             on_chunk=on_chunk,
             on_usage=on_usage,
+            on_segment=on_segment,
         )
 
     prompt = render_prompt(

@@ -59,6 +59,7 @@ async def summarize(
     llm_api_key: str | None = None,
     on_chunk: Callable[[str], Awaitable[None]] | None = None,
     on_usage: Callable[[dict], Awaitable[None]] | None = None,
+    on_segment: Callable[[int, int], Awaitable[None]] | None = None,
 ) -> str:
     summary_md = await llm_client.summarize(
         items,
@@ -68,6 +69,7 @@ async def summarize(
         subtitle_source=job.subtitle_source,
         on_chunk=on_chunk,
         on_usage=on_usage,
+        on_segment=on_segment,
     )
     summary_path = summary_storage.save(job.id, summary_md)
     repo.set_summary_path(job.id, summary_path)

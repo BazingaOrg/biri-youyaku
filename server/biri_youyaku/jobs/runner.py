@@ -409,6 +409,9 @@ async def run_after_resume(job_id: str) -> None:
                     llm_api_key=_registry.llm_api_keys.get(job_id),
                     on_chunk=lambda text: event_bus.publish(job_id, "summary_chunk", {"text": text}),
                     on_usage=lambda usage: _record_token_usage(job_id, usage),
+                    on_segment=lambda done, total: event_bus.publish(
+                        job_id, "summary_segment", {"done": done, "total": total}
+                    ),
                 ),
             )
         _raise_if_canceled(job_id)
