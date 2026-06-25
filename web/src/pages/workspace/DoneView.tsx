@@ -1,5 +1,5 @@
 import ReactMarkdown from 'react-markdown'
-import {Clock, Copy, FileDown, History, Mail, Music, Plus, RotateCw} from 'lucide-react'
+import {Captions, Clock, Copy, FileDown, History, Mail, Music, Plus, RotateCw} from 'lucide-react'
 import type {Job} from '../../lib/api'
 import {formatStageTimings, formatTokenCount} from '../../lib/format'
 import {IconButton} from '../../components/IconButton'
@@ -25,6 +25,7 @@ interface DoneViewProps {
   onDownloadAudio: () => void
   onCopy: () => void
   onDownloadMarkdown: () => void
+  onDownloadSubtitle: () => void
   onResendEmail: () => void
   emailBusy: boolean
 }
@@ -36,6 +37,7 @@ export function DoneView({
   onDownloadAudio,
   onCopy,
   onDownloadMarkdown,
+  onDownloadSubtitle,
   onResendEmail,
   emailBusy,
 }: DoneViewProps) {
@@ -60,6 +62,12 @@ export function DoneView({
           label="下载 Markdown"
           onClick={onDownloadMarkdown}
           disabled={!job.summary}
+        />
+        <IconButton
+          icon={<Captions size={18} />}
+          label="下载字幕"
+          onClick={onDownloadSubtitle}
+          disabled={!job.transcript?.length}
         />
         <IconButton icon={<History size={18} />} label="历史" onClick={onOpenHistory} />
       </div>
