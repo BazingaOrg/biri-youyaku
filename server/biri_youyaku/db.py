@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   url             TEXT NOT NULL,
   bvid            TEXT,
   cid             INTEGER,
+  mid             INTEGER,
   title           TEXT,
   author          TEXT,
   duration        REAL,
@@ -73,6 +74,7 @@ def init_db() -> None:
             for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
         }
         migrations = {
+            "mid": "ALTER TABLE jobs ADD COLUMN mid INTEGER",
             "chapters_json": "ALTER TABLE jobs ADD COLUMN chapters_json TEXT",
             "transcript_json": "ALTER TABLE jobs ADD COLUMN transcript_json TEXT",
             "effective_options_json": "ALTER TABLE jobs ADD COLUMN effective_options_json TEXT",

@@ -26,6 +26,7 @@ class VideoMeta:
     duration: float
     subtitle_url: str | None = None
     chapters: list[Chapter] | None = None
+    mid: int | None = None
 
     @property
     def has_subtitle(self) -> bool:
@@ -260,13 +261,16 @@ async def fetch(url: str) -> VideoMeta:
         part_title = str(selected_page.get("part") or "").strip()
         if part_title and part_title != base_title:
             base_title = f"{base_title} - {part_title}"
+    owner = data.get("owner") or {}
+    owner_mid = owner.get("mid")
     return VideoMeta(
         url=url,
         bvid=bvid,
         cid=cid,
         title=base_title,
-        author=(data.get("owner") or {}).get("name") or "",
+        author=owner.get("name") or "",
         duration=duration,
         subtitle_url=subtitle_url,
         chapters=chapters,
+        mid=int(owner_mid) if owner_mid is not None else None,
     )

@@ -88,6 +88,7 @@ def serialize_job(job: Job, *, lite: bool = False) -> dict:
         "url": job.url,
         "bvid": job.bvid,
         "cid": job.cid,
+        "mid": job.mid,
         "title": job.title,
         "author": job.author,
         "duration": job.duration,

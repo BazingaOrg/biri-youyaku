@@ -88,6 +88,7 @@ class Job:
     option_overrides: dict[str, Any] | None = None
     bvid: str | None = None
     cid: int | None = None
+    mid: int | None = None
     title: str | None = None
     author: str | None = None
     duration: float | None = None

@@ -18,7 +18,7 @@ def now_ms() -> int:
 # 列表 / 抽屉 / 清理用的 lite 投影：不拉 `chapters_json` / `transcript_json` /
 # `stage_timings_json` 这种长 JSON 字段，30 条一拉从十几兆降到几十 KB。
 _LITE_COLUMNS = (
-    "id, url, bvid, cid, title, author, duration, status, "
+    "id, url, bvid, cid, mid, title, author, duration, status, "
     "error_stage, error_message, error_code, audio_path, "
     "subtitle_source, summary_path, options_json, effective_options_json, "
     "created_at, updated_at, completed_at, stream_finished_at, "
@@ -50,6 +50,7 @@ def _row_to_job(row: Any, *, lite: bool = False) -> Job:
         url=row["url"],
         bvid=row["bvid"],
         cid=row["cid"],
+        mid=_opt_col(row, "mid"),
         title=row["title"],
         author=row["author"],
         duration=row["duration"],
@@ -263,11 +264,21 @@ def clear_error(job_id: str) -> None:
     _set(job_id, error_stage=None, error_message=None, error_code=None)
 
 
-def update_meta(job_id: str, *, bvid: str, cid: int | None, title: str, author: str, duration: float) -> None:
+def update_meta(
+    job_id: str,
+    *,
+    bvid: str,
+    cid: int | None,
+    title: str,
+    author: str,
+    duration: float,
+    mid: int | None = None,
+) -> None:
     _set(
         job_id,
         bvid=bvid,
         cid=cid,
+        mid=mid,
         title=title,
         author=author,
         duration=duration,
@@ -385,6 +396,43 @@ def set_email_error(job_id: str, message: str | None) -> None:
 
 def set_error(job_id: str, stage: str, message: str, code: str | None = None) -> None:
     _set(job_id, error_stage=stage, error_message=message, error_code=code)
+
+
+def summary_status_for_bvids(bvids: list[str]) -> dict[str, dict[str, Any]]:
+    """给一批 bvid，返回 {bvid: {"status": ..., "job_id": ...}}。
+
+    UP 投稿列表只给 bvid（不含 cid/分 P），所以按 **bvid 粒度**匹配。一个 bvid 可能有
+    多条任务，按相关性取一条：COMPLETED 优先，其次进行中，最后失败/取消；同档取最新。
+    没有任何任务的 bvid 不出现在结果里。
+    """
+    unique = [b for b in dict.fromkeys(bvids) if b]
+    if not unique:
+        return {}
+    placeholders = ",".join("?" for _ in unique)
+    with connect() as connection:
+        rows = connection.execute(
+            f"SELECT id, bvid, status, created_at FROM jobs "
+            f"WHERE bvid IN ({placeholders}) ORDER BY created_at ASC",
+            unique,
+        ).fetchall()
+
+    # 状态优先级：COMPLETED 最高，进行中其次，终态失败最低。
+    def rank(status: str) -> int:
+        if status == JobStatus.COMPLETED.value:
+            return 3
+        if status in (JobStatus.FAILED.value, JobStatus.CANCELED.value):
+            return 1
+        return 2  # 进行中
+
+    best: dict[str, tuple[int, int, str, str]] = {}  # bvid -> (rank, created_at, status, job_id)
+    for row in rows:
+        bvid = row["bvid"]
+        candidate = (rank(row["status"]), row["created_at"], row["status"], row["id"])
+        current = best.get(bvid)
+        # 同 rank 时 created_at 大者胜（rows 已按 created_at 升序，直接覆盖即可）。
+        if current is None or candidate[0] >= current[0]:
+            best[bvid] = candidate
+    return {bvid: {"status": value[2], "job_id": value[3]} for bvid, value in best.items()}
 
 
 def find_latest_by_video(bvid: str, cid: int | None) -> Job | None:

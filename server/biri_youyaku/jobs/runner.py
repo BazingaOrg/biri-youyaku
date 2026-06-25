@@ -292,6 +292,7 @@ async def run_until_transcript(job_id: str) -> None:
             title=video_meta.title,
             author=video_meta.author,
             duration=video_meta.duration,
+            mid=video_meta.mid,
         )
         repo.set_chapters(job_id, video_meta.chapters)
         # 顺手把 chapters 一起推到 meta event，前端不用再 refresh 就能拿到
