@@ -1,6 +1,7 @@
 import {Route, Switch} from 'wouter'
 import {AppShell} from './components/AppShell'
 import {HistoryPage} from './pages/HistoryPage'
+import {UpPage} from './pages/UpPage'
 import {Workspace} from './pages/Workspace'
 import {ToastProvider} from './components/ToastProvider'
 
@@ -13,6 +14,12 @@ export default function App() {
         <Switch>
           <Route path="/history">
             <HistoryPage />
+          </Route>
+          <Route path="/up/:mid">
+            {(params) => <UpPage mid={params.mid} />}
+          </Route>
+          <Route path="/up">
+            <UpPage mid={null} />
           </Route>
           <Route path="/jobs/:jobId">
             {(params) => <Workspace jobId={params.jobId} />}

@@ -39,6 +39,8 @@ export interface Job {
   url: string
   bvid?: string
   cid?: number
+  /** UP 主 uid，用于跳「该 UP 全部投稿」页；老任务可能为空。 */
+  mid?: number
   title?: string
   author?: string
   duration?: number
@@ -259,6 +261,42 @@ export function deleteAllJobs() {
 
 export function downloadJobAudio(jobId: string) {
   return requestBlob(`/v1/jobs/${jobId}/audio`)
+}
+
+export interface UpVideo {
+  bvid: string
+  title: string
+  cover: string
+  /** 发布时间，unix 秒。 */
+  pubdate: number
+  /** 时长，秒。 */
+  duration: number
+  url: string
+  /** 该 bvid 是否已有任务及其状态；null = 从未总结过。 */
+  status: JobStatus | null
+  job_id: string | null
+}
+
+export interface UpVideosResponse {
+  ok: true
+  mid: number
+  author: string
+  total: number
+  page: number
+  page_size: number
+  has_more: boolean
+  videos: UpVideo[]
+}
+
+export function resolveUp(input: string) {
+  return request<{ok: true; mid: number}>(`/v1/up/resolve?input=${encodeURIComponent(input)}`)
+}
+
+export function getUpVideos(mid: number, params: {page?: number; keyword?: string} = {}) {
+  const search = new URLSearchParams()
+  search.set('page', String(params.page ?? 1))
+  if (params.keyword) search.set('keyword', params.keyword)
+  return request<UpVideosResponse>(`/v1/up/${mid}/videos?${search.toString()}`)
 }
 
 export {API_BASE_URL}

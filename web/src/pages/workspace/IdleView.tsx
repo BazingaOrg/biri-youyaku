@@ -1,5 +1,6 @@
 import {useState} from 'react'
-import {History, RotateCw, Sparkles} from 'lucide-react'
+import {History, RotateCw, Sparkles, Users} from 'lucide-react'
+import {Link} from 'wouter'
 import {IconButton} from '../../components/IconButton'
 import {UrlInput} from '../../components/UrlInput'
 import {isValidBiliUrl, sanitizeBiliInput} from '../../lib/biliUrl'
@@ -63,6 +64,13 @@ export function IdleView({onSubmit, onOpenHistory}: IdleViewProps) {
           />
           <IconButton icon={<History size={20} />} label="历史" onClick={onOpenHistory} size="lg" />
         </div>
+        <Link
+          href="/up"
+          className="inline-flex items-center justify-center gap-1.5 text-xs text-muted underline-offset-2 transition hover:text-brand hover:underline"
+        >
+          <Users size={13} />
+          或按 UP 主浏览投稿
+        </Link>
       </div>
     </div>
   )
