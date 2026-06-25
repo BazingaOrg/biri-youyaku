@@ -204,6 +204,8 @@ GET  /v1/config/runtime             which capabilities are configured
 POST /v1/jobs                       create a job
 GET  /v1/jobs                       history
 GET  /v1/jobs/{id}/stream           SSE stream
+GET  /v1/up/{mid}/videos            an uploader's videos (flags which are summarized)
+GET  /v1/up/resolve                 space URL / UID / video URL → mid
 ```
 
 ---

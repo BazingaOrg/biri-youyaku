@@ -199,6 +199,8 @@ GET  /v1/config/runtime             各能力是否已配置
 POST /v1/jobs                       建任务
 GET  /v1/jobs                       历史列表
 GET  /v1/jobs/{id}/stream           SSE 流式订阅
+GET  /v1/up/{mid}/videos            某 UP 的投稿列表（标记哪些已总结）
+GET  /v1/up/resolve                 主页链接 / UID / 视频链接 → mid
 ```
 
 ---
