@@ -55,7 +55,9 @@ export function StepCarousel({steps, currentIndex}: StepCarouselProps) {
             const isFailed = step.state === 'failed'
             return (
               <div key={step.key} className="min-w-0 w-full shrink-0 pr-1">
-                <div className={`grid min-w-0 gap-3 rounded-2xl border p-4 sm:p-5 ${
+                {/* h-full：让每个卡片填满 flex 行（align-items:stretch 已把各 slide 拉到
+                    最高一张的高度），否则较矮的步骤边框只包到内容、各步骤高度看着不一致。 */}
+                <div className={`grid h-full min-w-0 content-start gap-3 rounded-2xl border p-4 sm:p-5 ${
                   isFailed
                     ? 'border-danger/40 bg-danger/10'
                     : step.state === 'active'
