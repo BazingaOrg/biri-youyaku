@@ -62,7 +62,8 @@ async def test_fetch_up_videos_parses_vlist(monkeypatch):
         return {
             "list": {
                 "vlist": [
-                    {"bvid": "BV1", "title": "标题一", "pic": "http://i0.hdslb.com/a.jpg",
+                    {"bvid": "BV1", "title": '标题<em class="keyword">一</em> &amp; 二',
+                     "pic": "http://i0.hdslb.com/a.jpg",
                      "created": 1700000000, "length": "10:00", "author": "张三"},
                     {"bvid": "", "title": "无 bvid 应被跳过", "created": 0, "length": "1:00"},
                 ]
@@ -79,5 +80,6 @@ async def test_fetch_up_videos_parses_vlist(monkeypatch):
     assert result.total == 42
     assert result.has_more is True  # 1*30 < 42
     assert [v.bvid for v in result.videos] == ["BV1"]
+    assert result.videos[0].title == "标题一 & 二"  # <em> 去掉、&amp; 反转义
     assert result.videos[0].cover.startswith("https://")  # http -> https
     assert result.videos[0].duration == 600.0

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import re
 from dataclasses import dataclass
@@ -80,6 +81,11 @@ def _parse_length(value: str) -> float:
     if len(nums) == 3:
         return float(nums[0] * 3600 + nums[1] * 60 + nums[2])
     return 0.0
+
+
+def _clean_title(raw: str) -> str:
+    """搜索结果标题里命中关键词会被包成 <em class="keyword">…</em>，去掉所有标签并反转义实体。"""
+    return html.unescape(re.sub(r"<[^>]+>", "", raw)).strip()
 
 
 def _https(url: str) -> str:
@@ -217,7 +223,7 @@ async def fetch_up_videos(mid: int, *, page: int = 1, keyword: str = "") -> UpVi
     videos = [
         UpVideo(
             bvid=str(item.get("bvid") or ""),
-            title=str(item.get("title") or "").strip(),
+            title=_clean_title(str(item.get("title") or "")),
             cover=_https(str(item.get("pic") or "")),
             pubdate=int(item.get("created") or 0),
             duration=_parse_length(str(item.get("length") or "")),

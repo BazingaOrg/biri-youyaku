@@ -66,3 +66,12 @@ export function formatDate(ms: number) {
     minute: '2-digit',
   }).format(new Date(ms))
 }
+
+/** 仅年月日：UP 投稿列表跨越多年，需要带年份。 */
+export function formatDay(ms: number) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(ms))
+}

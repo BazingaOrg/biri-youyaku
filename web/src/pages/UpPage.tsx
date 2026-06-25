@@ -2,7 +2,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import {ArrowLeft, Check, RotateCw, Search, Sparkles} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
 import {createJob, getUpVideos, resolveUp, type JobStatus, type UpVideo} from '../lib/api'
-import {formatDate, formatDuration} from '../lib/format'
+import {formatDay, formatDuration} from '../lib/format'
 import {isRunning} from '../lib/jobStatus'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
 import {useToast} from '../components/ToastProvider'
@@ -16,7 +16,16 @@ interface UpPageProps {
 
 export function UpPage({mid}: UpPageProps) {
   if (!mid) return <UpEntry />
-  return <UpList key={mid} mid={Number(mid)} />
+  const numeric = Number(mid)
+  if (!Number.isInteger(numeric) || numeric <= 0) {
+    return (
+      <div className="grid min-h-[40vh] place-items-center gap-3 px-4 text-center">
+        <p className="text-sm text-muted">无效的 UP 主 UID</p>
+        <BackButton />
+      </div>
+    )
+  }
+  return <UpList key={mid} mid={numeric} />
 }
 
 /** /up：粘贴主页链接 / UID → 解析 → 跳 /up/:mid。 */
@@ -354,7 +363,7 @@ function VideoRow({
         >
           {video.title}
         </a>
-        <p className="mt-1 truncate text-xs text-muted">{formatDate(video.pubdate * 1000)}</p>
+        <p className="mt-1 truncate text-xs text-muted">{formatDay(video.pubdate * 1000)}</p>
       </div>
 
       <div className="flex items-center justify-end">
