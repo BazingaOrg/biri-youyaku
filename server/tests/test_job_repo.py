@@ -154,3 +154,39 @@ def test_list_jobs_by_status_before_filters_by_updated_at(monkeypatch, tmp_path)
     jobs = repo.list_jobs_by_status_before({JobStatus.COMPLETED}, cutoff)
 
     assert [job.id for job in jobs] == [old.id]
+
+
+def test_update_meta_persists_mid(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    job = repo.create_job("https://www.bilibili.com/video/BV123", JobOptions())
+
+    repo.update_meta(job.id, bvid="BV123", cid=1, title="T", author="UP", duration=12.0, mid=42)
+    loaded = repo.get_job(job.id)
+
+    assert loaded is not None
+    assert loaded.mid == 42
+
+
+def test_summary_status_for_bvids_prefers_completed(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+
+    def make(bvid: str, status: JobStatus):
+        job = repo.create_job(f"https://www.bilibili.com/video/{bvid}", JobOptions())
+        repo.update_meta(job.id, bvid=bvid, cid=None, title="T", author="UP", duration=1.0, mid=1)
+        repo.update_status(job.id, status)
+        return job
+
+    # BV1：先失败再完成 → 应取 COMPLETED 那条
+    failed = make("BV1", JobStatus.FAILED)
+    completed = make("BV1", JobStatus.COMPLETED)
+    # BV2：只有进行中
+    running = make("BV2", JobStatus.SUMMARIZING)
+
+    result = repo.summary_status_for_bvids(["BV1", "BV2", "BVnone"])
+
+    assert result["BV1"] == {"status": "COMPLETED", "job_id": completed.id}
+    assert result["BV2"] == {"status": "SUMMARIZING", "job_id": running.id}
+    assert "BVnone" not in result
+    assert failed.id != completed.id  # sanity
