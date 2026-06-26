@@ -5,6 +5,7 @@ import {createJob, getUpVideos, resolveUp, type JobStatus, type UpVideo} from '.
 import {formatDay, formatDuration} from '../lib/format'
 import {isRunning} from '../lib/jobStatus'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
+import {PageLoading, Spinner} from '../components/Spinner'
 import {useToast} from '../components/ToastProvider'
 
 type Filter = 'all' | 'todo' | 'done'
@@ -266,7 +267,7 @@ function UpList({mid}: {mid: number}) {
         </div>
 
         <div className="py-3">
-          {loading && <p className="py-12 text-center text-sm text-muted">加载中…</p>}
+          {loading && <PageLoading label="加载投稿…" />}
 
           {!loading && error && (
             <div className="grid justify-items-center gap-3 py-12 text-center">
@@ -303,7 +304,12 @@ function UpList({mid}: {mid: number}) {
               {hasMore && filter === 'all' && (
                 <div ref={sentinelRef} aria-hidden className="h-8" />
               )}
-              {loadingMore && <p className="py-4 text-center text-xs text-muted">加载更多…</p>}
+              {loadingMore && (
+                <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted">
+                  <Spinner size={14} />
+                  加载更多…
+                </div>
+              )}
               {hasMore && filter !== 'all' && (
                 <p className="py-4 text-center text-xs text-muted">
                   筛选只作用于已加载的 {videos.length} 条；切到「全部」可继续加载

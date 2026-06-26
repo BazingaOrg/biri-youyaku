@@ -23,6 +23,7 @@ import {useTerminalToast} from '../hooks/useTerminalToast'
 import {useAutoResume} from '../hooks/useAutoResume'
 import {useToast} from '../components/ToastProvider'
 import {IconButton} from '../components/IconButton'
+import {PageLoading} from '../components/Spinner'
 import {IdleView} from './workspace/IdleView'
 import {RunningView} from './workspace/RunningView'
 import {DoneView} from './workspace/DoneView'
@@ -265,7 +266,7 @@ export function Workspace({jobId}: WorkspaceProps) {
 
   if (!jobId) {
     if (recovering) {
-      return <p className="py-12 text-center text-sm text-muted">恢复上次任务…</p>
+      return <PageLoading label="恢复上次任务…" />
     }
     return <IdleView onSubmit={submitNew} onOpenHistory={openHistory} />
   }
@@ -283,7 +284,7 @@ export function Workspace({jobId}: WorkspaceProps) {
   }
 
   if (!job) {
-    return <p className="py-12 text-center text-sm text-muted">加载中</p>
+    return <PageLoading label="加载任务…" />
   }
 
   // 流式总结时的跳到底浮标
