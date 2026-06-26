@@ -5,6 +5,7 @@ import {Link, useLocation} from 'wouter'
 import {ApiError, deleteAllJobs, deleteJob, listJobs, type Job} from '../lib/api'
 import {formatDate, formatDuration, formatStatus} from '../lib/format'
 import {isRunning} from '../lib/jobStatus'
+import {AuthorLink} from '../components/AuthorLink'
 import {useToast} from '../components/ToastProvider'
 import {ConfirmDialog} from '../components/ConfirmDialog'
 
@@ -45,7 +46,8 @@ function SkeletonRow() {
 export function HistoryPage() {
   const [, navigate] = useLocation()
   const [jobs, setJobs] = useState<Job[]>([])
-  const [loading, setLoading] = useState(false)
+  // 初始即 true：避免首帧 jobs=[] && !loading 闪一下「还没有任务记录」空状态。
+  const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
@@ -397,17 +399,21 @@ export function HistoryPage() {
                       key={job.id}
                       className="group/item grid grid-cols-[minmax(0,1fr)_2.75rem] items-start gap-2 rounded-2xl bg-lift/55 p-2 transition-[background-color,box-shadow] hover:bg-brandSoft/30"
                     >
-                      <Link
-                        href={`/jobs/${job.id}`}
-                        className="min-w-0 rounded-xl px-2 py-1.5 text-left transition-[transform] active:scale-[0.99]"
-                      >
-                        <p className="line-clamp-2 break-words text-sm font-medium text-ink">
-                          {job.title || job.url}
+                      <div className="min-w-0 px-2 py-1.5">
+                        <Link
+                          href={`/jobs/${job.id}`}
+                          className="block transition-[transform] active:scale-[0.99]"
+                        >
+                          <p className="line-clamp-2 break-words text-sm font-medium text-ink">
+                            {job.title || job.url}
+                          </p>
+                        </Link>
+                        {/* 作者是独立可点链接（不能套在上面的任务 Link 里——anchor 不能嵌 anchor）。 */}
+                        <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted">
+                          <AuthorLink job={job} />
+                          <span className="shrink-0">· {formatDuration(job.duration)}</span>
                         </p>
-                        <p className="mt-1 truncate text-xs text-muted">
-                          {job.author || '未知 UP'} · {formatDuration(job.duration)}
-                        </p>
-                        <p className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                        <Link href={`/jobs/${job.id}`} className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                           <span
                             className={`rounded-full px-2 py-0.5 ${
                               job.status === 'COMPLETED'
@@ -422,8 +428,8 @@ export function HistoryPage() {
                             {formatStatus(job.status)}
                           </span>
                           <span className="text-muted">{formatDate(job.created_at)}</span>
-                        </p>
-                      </Link>
+                        </Link>
+                      </div>
                       <IconTooltip label="删除">
                         <button
                           type="button"

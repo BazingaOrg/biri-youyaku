@@ -1,7 +1,7 @@
 import {ExternalLink} from 'lucide-react'
-import {Link} from 'wouter'
 import type {Job} from '../../lib/api'
 import {formatDuration} from '../../lib/format'
+import {AuthorLink} from '../../components/AuthorLink'
 
 /** 顶部固定的视频元信息条：BV / 字幕来源 / 时长 / 视频源链接 / 标题 / UP。 */
 export function MetaBar({job}: {job: Job}) {
@@ -29,17 +29,7 @@ export function MetaBar({job}: {job: Job}) {
       <p className="line-clamp-2 break-words text-base font-semibold leading-snug text-ink">
         {job.title || '识别中…'}
       </p>
-      {job.mid ? (
-        <Link
-          href={`/up/${job.mid}`}
-          className="w-fit max-w-full truncate text-xs text-muted underline-offset-2 hover:text-brand hover:underline"
-          title="查看该 UP 的全部投稿"
-        >
-          {job.author || '未知 UP'} · 全部投稿 →
-        </Link>
-      ) : (
-        <p className="truncate text-xs text-muted">{job.author || '未知 UP'}</p>
-      )}
+      <AuthorLink job={job} variant="chip" />
     </div>
   )
 }
