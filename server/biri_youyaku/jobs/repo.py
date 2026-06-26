@@ -284,6 +284,22 @@ def update_meta(
         duration=duration,
         content_hash=content_hash_for(bvid, cid),
     )
+    # 顺手把这个作者的「老任务」（mid 列上线前建的，author 有但 mid 为空）补上 mid，
+    # 之后它们的作者名也能直接点开「全部投稿」，不必每次现场解析。
+    if mid is not None and author:
+        backfill_mid_by_author(author, mid)
+
+
+def backfill_mid_by_author(author: str, mid: int) -> int:
+    """把同名作者下 mid 仍为空的任务补上 mid，返回补了多少条。"""
+    if not author:
+        return 0
+    with connect() as connection:
+        cursor = connection.execute(
+            "UPDATE jobs SET mid = ? WHERE mid IS NULL AND author = ?",
+            (mid, author),
+        )
+        return cursor.rowcount
 
 
 def set_chapters(job_id: str, chapters: list[Chapter] | None) -> None:

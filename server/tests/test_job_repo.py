@@ -190,3 +190,25 @@ def test_summary_status_for_bvids_prefers_completed(monkeypatch, tmp_path):
     assert result["BV2"] == {"status": "SUMMARIZING", "job_id": running.id}
     assert "BVnone" not in result
     assert failed.id != completed.id  # sanity
+
+
+def test_update_meta_backfills_mid_for_same_author(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+
+    # 老任务：有 author、没有 mid（模拟 mid 列上线前建的）。
+    old = repo.create_job("https://www.bilibili.com/video/BVold", JobOptions())
+    repo.update_meta(old.id, bvid="BVold", cid=None, title="旧", author="老番茄", duration=1.0)
+    assert repo.get_job(old.id).mid is None  # 这次没传 mid
+
+    # 另一作者的老任务，不应被误伤。
+    other = repo.create_job("https://www.bilibili.com/video/BVx", JobOptions())
+    repo.update_meta(other.id, bvid="BVx", cid=None, title="别人", author="别的UP", duration=1.0)
+
+    # 新任务带上了同作者的 mid → 触发回填。
+    fresh = repo.create_job("https://www.bilibili.com/video/BVnew", JobOptions())
+    repo.update_meta(fresh.id, bvid="BVnew", cid=None, title="新", author="老番茄", duration=1.0, mid=546195)
+
+    assert repo.get_job(old.id).mid == 546195   # 老任务被补上
+    assert repo.get_job(fresh.id).mid == 546195
+    assert repo.get_job(other.id).mid is None    # 不同作者不动
