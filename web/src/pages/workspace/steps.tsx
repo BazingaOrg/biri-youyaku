@@ -141,8 +141,9 @@ function renderSubtitle(job: Job) {
 
 function renderSummary(job: Job) {
   if (job.summary) {
+    // 不再自带 max-h/overflow：由外层固定高度的步骤盒统一滚动，避免内层滚动条撑不满盒子。
     return (
-      <div className="prose prose-sm max-h-48 max-w-none overflow-y-auto break-words text-ink dark:prose-invert prose-a:text-brand [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto [&_code]:break-all">
+      <div className="prose prose-sm max-w-none break-words text-ink dark:prose-invert prose-a:text-brand [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto [&_code]:break-all">
         <ReactMarkdown>{job.summary}</ReactMarkdown>
       </div>
     )
