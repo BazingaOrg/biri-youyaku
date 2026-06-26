@@ -19,7 +19,7 @@ async def test_up_videos_merges_summary_status(monkeypatch):
         ],
     )
 
-    async def fetch(mid, *, page=1, keyword=""):
+    async def fetch(mid, *, page=1, keyword="", order="pubdate"):
         assert mid == 123
         return page_obj
 
@@ -44,7 +44,7 @@ async def test_up_videos_merges_summary_status(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_up_videos_maps_rate_limit_to_503_with_hint(monkeypatch):
-    async def fetch(mid, *, page=1, keyword=""):
+    async def fetch(mid, *, page=1, keyword="", order="pubdate"):
         raise space.SpaceRateLimited("风控校验失败")
 
     monkeypatch.setattr(up_route.space, "fetch_up_videos", fetch)

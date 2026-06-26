@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import {ArrowLeft, Check, RotateCw, Search, Sparkles} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
-import {createJob, getUpVideos, resolveUp, type JobStatus, type UpVideo} from '../lib/api'
+import {createJob, getUpVideos, resolveUp, type JobStatus, type UpOrder, type UpVideo} from '../lib/api'
 import {formatDay, formatDuration} from '../lib/format'
 import {isRunning} from '../lib/jobStatus'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
@@ -115,6 +115,7 @@ function UpList({mid}: {mid: number}) {
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
+  const [order, setOrder] = useState<UpOrder>('pubdate')
   // 一键总结后的乐观覆盖：bvid -> {status, job_id}，不刷新就能立刻显示「进行中」。
   const [overrides, setOverrides] = useState<Record<string, {status: JobStatus; job_id: string}>>({})
   const [summarizing, setSummarizing] = useState<Set<string>>(new Set())
@@ -125,12 +126,12 @@ function UpList({mid}: {mid: number}) {
   }, [query])
 
   const fetchPage = useCallback(
-    async (pageNum: number, keyword: string, mode: 'reset' | 'append') => {
+    async (pageNum: number, keyword: string, sortOrder: UpOrder, mode: 'reset' | 'append') => {
       if (mode === 'reset') setLoading(true)
       else setLoadingMore(true)
       setError(null)
       try {
-        const res = await getUpVideos(mid, {page: pageNum, keyword})
+        const res = await getUpVideos(mid, {page: pageNum, keyword, order: sortOrder})
         // 空结果页（如搜索无命中）author 为空时保留上一次的昵称。
         setAuthor((prev) => res.author || prev)
         setTotal(res.total)
@@ -148,10 +149,10 @@ function UpList({mid}: {mid: number}) {
     [mid],
   )
 
-  // mid / 搜索词变化 → 重置到第一页。
+  // mid / 搜索词 / 排序变化 → 重置到第一页。
   useEffect(() => {
-    void fetchPage(1, debouncedQuery, 'reset')
-  }, [fetchPage, debouncedQuery])
+    void fetchPage(1, debouncedQuery, order, 'reset')
+  }, [fetchPage, debouncedQuery, order])
 
   // 滚到底自动加载下一页。
   const sentinelRef = useRef<HTMLDivElement | null>(null)
@@ -161,14 +162,14 @@ function UpList({mid}: {mid: number}) {
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting && hasMore && !loading && !loadingMore) {
-          void fetchPage(page + 1, debouncedQuery, 'append')
+          void fetchPage(page + 1, debouncedQuery, order, 'append')
         }
       },
       {rootMargin: '400px'},
     )
     observer.observe(node)
     return () => observer.disconnect()
-  }, [fetchPage, hasMore, loading, loadingMore, page, debouncedQuery])
+  }, [fetchPage, hasMore, loading, loadingMore, page, debouncedQuery, order])
 
   const effectiveStatus = useCallback(
     (video: UpVideo): JobStatus | null => overrides[video.bvid]?.status ?? video.status,
@@ -266,6 +267,29 @@ function UpList({mid}: {mid: number}) {
           </div>
         </div>
 
+        <div className="flex items-center justify-end gap-2 pt-2 text-xs text-muted">
+          <span>排序</span>
+          <div className="flex gap-1 rounded-2xl bg-lift p-1">
+            {(
+              [
+                ['pubdate', '最新'],
+                ['click', '最热'],
+              ] as Array<[UpOrder, string]>
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setOrder(key)}
+                className={`min-h-8 rounded-xl px-3 transition-[background-color,color] ${
+                  order === key ? 'bg-brand text-white shadow-card' : 'text-muted hover:text-ink'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="py-3">
           {loading && <PageLoading label="加载投稿…" />}
 
@@ -274,7 +298,7 @@ function UpList({mid}: {mid: number}) {
               <p className="text-sm text-muted">{error}</p>
               <button
                 type="button"
-                onClick={() => void fetchPage(1, debouncedQuery, 'reset')}
+                onClick={() => void fetchPage(1, debouncedQuery, order, 'reset')}
                 className="inline-flex min-h-10 items-center gap-2 rounded-2xl bg-lift px-4 text-sm text-muted transition hover:bg-line/70 hover:text-ink active:scale-95"
               >
                 <RotateCw size={15} />

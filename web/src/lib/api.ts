@@ -292,10 +292,16 @@ export function resolveUp(input: string) {
   return request<{ok: true; mid: number}>(`/v1/up/resolve?input=${encodeURIComponent(input)}`)
 }
 
-export function getUpVideos(mid: number, params: {page?: number; keyword?: string} = {}) {
+export type UpOrder = 'pubdate' | 'click'
+
+export function getUpVideos(
+  mid: number,
+  params: {page?: number; keyword?: string; order?: UpOrder} = {},
+) {
   const search = new URLSearchParams()
   search.set('page', String(params.page ?? 1))
   if (params.keyword) search.set('keyword', params.keyword)
+  if (params.order) search.set('order', params.order)
   return request<UpVideosResponse>(`/v1/up/${mid}/videos?${search.toString()}`)
 }
 

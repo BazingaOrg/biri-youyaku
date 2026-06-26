@@ -29,9 +29,10 @@ async def up_videos(
     mid: int,
     page: int = Query(default=1, ge=1),
     keyword: str = Query(default=""),
+    order: str = Query(default="pubdate"),
 ) -> dict:
     try:
-        result = await space.fetch_up_videos(mid, page=page, keyword=keyword)
+        result = await space.fetch_up_videos(mid, page=page, keyword=keyword, order=order)
     except space.SpaceRateLimited as exc:
         # 风控 / 频控。用 503 让前端能拿到 detail（429 通道是通用文案），
         # 并提示配置 SESSDATA 提升成功率。

@@ -58,7 +58,7 @@ def test_raise_for_code_maps_rate_limit_and_errors():
 
 @pytest.mark.asyncio
 async def test_fetch_up_videos_parses_vlist(monkeypatch):
-    async def fake_search(mid, page, keyword, cookie_header):
+    async def fake_search(mid, page, keyword, order, cookie_header):
         return {
             "list": {
                 "vlist": [
@@ -83,3 +83,48 @@ async def test_fetch_up_videos_parses_vlist(monkeypatch):
     assert result.videos[0].title == "标题一 & 二"  # <em> 去掉、&amp; 反转义
     assert result.videos[0].cover.startswith("https://")  # http -> https
     assert result.videos[0].duration == 600.0
+
+
+@pytest.mark.asyncio
+async def test_fetch_up_videos_retries_once_on_rate_limit(monkeypatch):
+    calls = {"n": 0}
+
+    async def flaky(mid, page, keyword, order, cookie_header):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise space.SpaceRateLimited("风控校验失败")
+        return {
+            "list": {"vlist": [{"bvid": "BV1", "title": "t", "pic": "", "created": 1, "length": "1:00"}]},
+            "page": {"count": 1, "pn": 1, "ps": 30},
+        }
+
+    flaky.cache_clear = lambda: None  # 重试路径会调它
+    monkeypatch.setattr(space, "_fetch_space_search", flaky)
+
+    async def fake_cookie():
+        return ""
+
+    monkeypatch.setattr(space, "_effective_cookie", fake_cookie)
+
+    result = await space.fetch_up_videos(123, page=1)
+    assert calls["n"] == 2  # 第一次 -352，换身份后第二次成功
+    assert [v.bvid for v in result.videos] == ["BV1"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_up_videos_normalizes_bad_order(monkeypatch):
+    captured = {}
+
+    async def fake_search(mid, page, keyword, order, cookie_header):
+        captured["order"] = order
+        return {"list": {"vlist": []}, "page": {"count": 0, "pn": 1, "ps": 30}}
+
+    monkeypatch.setattr(space, "_fetch_space_search", fake_search)
+
+    async def fake_cookie():
+        return ""
+
+    monkeypatch.setattr(space, "_effective_cookie", fake_cookie)
+
+    await space.fetch_up_videos(1, order="garbage")
+    assert captured["order"] == "pubdate"  # 非法 order 归一到 pubdate

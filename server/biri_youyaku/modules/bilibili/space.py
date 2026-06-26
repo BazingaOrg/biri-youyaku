@@ -19,6 +19,9 @@ from biri_youyaku.modules.bilibili.wbi import sign
 
 PAGE_SIZE = 30
 
+# B 站投稿列表支持的排序：pubdate=最新发布、click=最多播放、stow=最多收藏。
+_VALID_ORDERS = {"pubdate", "click", "stow"}
+
 # 一个像样的桌面 Chrome UA：风控对非浏览器 UA 更敏感。
 _BROWSER_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -180,7 +183,7 @@ async def _fetch_w_webid(mid: int, cookie_header: str) -> str:
 
 
 @ttl_lru(maxsize=128, ttl_seconds=300)
-async def _fetch_space_search(mid: int, page: int, keyword: str, cookie_header: str) -> dict:
+async def _fetch_space_search(mid: int, page: int, keyword: str, order: str, cookie_header: str) -> dict:
     try:
         w_webid = await _fetch_w_webid(mid, cookie_header)
     except Exception:
@@ -189,7 +192,7 @@ async def _fetch_space_search(mid: int, page: int, keyword: str, cookie_header: 
         "mid": mid,
         "ps": PAGE_SIZE,
         "pn": page,
-        "order": "pubdate",
+        "order": order,
         "platform": "web",
         "web_location": "1550101",
         **_DM_PARAMS,
@@ -214,9 +217,23 @@ async def _fetch_space_search(mid: int, page: int, keyword: str, cookie_header: 
     return _raise_for_code(response.json())
 
 
-async def fetch_up_videos(mid: int, *, page: int = 1, keyword: str = "") -> UpVideoPage:
+async def fetch_up_videos(
+    mid: int, *, page: int = 1, keyword: str = "", order: str = "pubdate"
+) -> UpVideoPage:
+    order = order if order in _VALID_ORDERS else "pubdate"
+    page = max(1, page)
+    keyword = keyword.strip()
     cookie_header = await _effective_cookie()
-    data = await _fetch_space_search(mid, max(1, page), keyword.strip(), cookie_header)
+    try:
+        data = await _fetch_space_search(mid, page, keyword, order, cookie_header)
+    except SpaceRateLimited:
+        # 触发风控时换一套全新匿名身份（buvid / w_webid）重新热身后再试一次：
+        # 冷请求经常能过，很多 -352 是上一次身份被标记导致的。
+        _fetch_space_search.cache_clear()
+        _fetch_w_webid.cache_clear()
+        _fetch_buvid.cache_clear()
+        cookie_header = await _effective_cookie()
+        data = await _fetch_space_search(mid, page, keyword, order, cookie_header)
 
     vlist = ((data.get("list") or {}).get("vlist")) or []
     page_info = data.get("page") or {}
