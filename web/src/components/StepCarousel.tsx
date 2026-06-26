@@ -15,6 +15,8 @@ interface StepCarouselProps {
   steps: StepDef[]
   /** index of the step that is currently progressing (the one to auto-track). */
   currentIndex: number
+  /** 变化时把「当前步骤」的滚动盒贴到底部（仅当用户本来就在底部）。用于流式总结跟随。 */
+  followKey?: unknown
 }
 
 function StateIcon({state}: {state: StepState}) {
@@ -24,11 +26,18 @@ function StateIcon({state}: {state: StepState}) {
   return <Circle size={10} />
 }
 
-export function StepCarousel({steps, currentIndex}: StepCarouselProps) {
+export function StepCarousel({steps, currentIndex, followKey}: StepCarouselProps) {
   const safeCurrent = Math.max(0, Math.min(steps.length - 1, currentIndex))
   const [displayIndex, setDisplayIndex] = useState(safeCurrent)
   const [manualLock, setManualLock] = useState(false)
   const lastCurrentRef = useRef(safeCurrent)
+
+  // 每个步骤滚动盒的 ref + 「用户是否贴着底部」的意图标记。
+  const boxRefs = useRef<Array<HTMLDivElement | null>>([])
+  const pinnedRef = useRef(true)
+  const onBoxScroll = (el: HTMLDivElement) => {
+    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+  }
 
   // Auto-follow current when not manually locked.
   useEffect(() => {
@@ -37,6 +46,14 @@ export function StepCarousel({steps, currentIndex}: StepCarouselProps) {
     }
     lastCurrentRef.current = safeCurrent
   }, [safeCurrent, manualLock])
+
+  // 流式内容增长时，把当前步骤的滚动盒贴到底部——但仅当用户没主动往上翻（pinned）。
+  useEffect(() => {
+    const box = boxRefs.current[safeCurrent]
+    if (box && pinnedRef.current) {
+      box.scrollTop = box.scrollHeight
+    }
+  }, [followKey, safeCurrent])
 
   const go = (next: number) => {
     const clamped = Math.max(0, Math.min(steps.length - 1, next))
@@ -51,7 +68,7 @@ export function StepCarousel({steps, currentIndex}: StepCarouselProps) {
           className="flex min-w-0 transition-transform duration-[220ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"
           style={{transform: `translateX(-${displayIndex * 100}%)`}}
         >
-          {steps.map((step) => {
+          {steps.map((step, idx) => {
             const isFailed = step.state === 'failed'
             return (
               <div key={step.key} className="min-w-0 w-full shrink-0 pr-1">
@@ -78,7 +95,13 @@ export function StepCarousel({steps, currentIndex}: StepCarouselProps) {
                   </div>
                   {/* 固定高度：每一步、以及同一步内容从无到有的整个过程，盒子高度都不变，
                       内容超出时由这层自己滚动（短内容留白也照旧，换取各步骤一致的高度）。 */}
-                  <div className="min-w-0 h-[clamp(220px,40vh,360px)] overflow-y-auto text-sm leading-6 text-muted">
+                  <div
+                    ref={(el) => {
+                      boxRefs.current[idx] = el
+                    }}
+                    onScroll={(e) => onBoxScroll(e.currentTarget)}
+                    className="min-w-0 h-[clamp(220px,40vh,360px)] overflow-y-auto text-sm leading-6 text-muted"
+                  >
                     {step.render()}
                   </div>
                 </div>
