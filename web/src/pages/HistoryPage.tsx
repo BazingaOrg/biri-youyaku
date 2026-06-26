@@ -6,6 +6,7 @@ import {ApiError, deleteAllJobs, deleteJob, listJobs, type Job} from '../lib/api
 import {formatDate, formatDuration, formatStatus} from '../lib/format'
 import {isRunning} from '../lib/jobStatus'
 import {AuthorLink} from '../components/AuthorLink'
+import {PageLoading} from '../components/Spinner'
 import {useToast} from '../components/ToastProvider'
 import {ConfirmDialog} from '../components/ConfirmDialog'
 
@@ -25,21 +26,6 @@ function IconTooltip({label, children, className = ''}: {label: string; children
         {label}
       </span>
     </span>
-  )
-}
-
-function SkeletonRow() {
-  return (
-    <li className="grid grid-cols-[minmax(0,1fr)_2.75rem] items-start gap-2 rounded-2xl bg-lift/55 p-2">
-      <div className="animate-pulse px-2 py-1.5">
-        <div className="h-4 w-3/4 rounded bg-line/70" />
-        <div className="mt-2 h-3 w-2/5 rounded bg-line/60" />
-        <div className="mt-3 flex gap-2">
-          <div className="h-4 w-14 rounded-full bg-line/60" />
-          <div className="h-4 w-20 rounded bg-line/50" />
-        </div>
-      </div>
-    </li>
   )
 }
 
@@ -348,13 +334,7 @@ export function HistoryPage() {
         )}
 
         <div className="py-3">
-          {loading && (
-            <ul className="grid gap-2">
-              {Array.from({length: 6}).map((_, index) => (
-                <SkeletonRow key={index} />
-              ))}
-            </ul>
-          )}
+          {loading && <PageLoading label="加载历史…" />}
 
           {!loading && loadError && (
             <div className="grid justify-items-center gap-3 border-b border-line/60 py-12 text-center">
