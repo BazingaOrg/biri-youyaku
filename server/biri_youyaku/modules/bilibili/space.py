@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import unquote, urlparse
 
+from biri_youyaku.config import settings
 from biri_youyaku.modules._cache import ttl_lru
 from biri_youyaku.modules._http import bili_client, bili_get
 from biri_youyaku.modules.bilibili import meta as bili_meta
@@ -143,32 +144,44 @@ async def _fetch_buvid() -> tuple[str, str]:
     return str(data.get("b_3") or ""), str(data.get("b_4") or "")
 
 
-async def _effective_cookie() -> str:
-    """已配置的 cookie（含 SESSDATA）+ 匿名 buvid。已自带 buvid3 就不再补。"""
-    configured = bili_meta._cookie_header()
-    if "buvid3=" in configured:
-        return configured
-    try:
-        b3, b4 = await _fetch_buvid()
-    except Exception:
-        return configured
-    parts = [configured] if configured else []
-    if b3:
-        parts.append(f"buvid3={b3}")
-    if b4:
-        parts.append(f"buvid4={b4}")
-    return "; ".join(p for p in parts if p)
+def _auth_fingerprint() -> str:
+    """仅用于区分缓存身份（登录 vs 匿名），不放真实值。"""
+    return "auth" if settings.bili_sessdata else "anon"
+
+
+async def _prime_cookies() -> None:
+    """把鉴权 cookie 写进共享 client 的 cookie jar，之后空间页 / 搜索都靠 jar 带 cookie。
+
+    关键点：不再用显式 Cookie header——那样会丢掉访问空间页时被 Set-Cookie 的
+    b_nut / buvid4 / _uuid 等反风控 cookie。走 jar 则「已配置的 SESSDATA + 页面热身
+    下发的 cookie」一起发出，风控通过率高得多。匿名时补一次 SPI buvid3/4。
+    """
+    jar = bili_client().cookies
+    if settings.bili_sessdata:
+        jar.set("SESSDATA", settings.bili_sessdata, domain=".bilibili.com")
+    if settings.bili_bili_jct:
+        jar.set("bili_jct", settings.bili_bili_jct, domain=".bilibili.com")
+    if settings.bili_buvid3:
+        jar.set("buvid3", settings.bili_buvid3, domain=".bilibili.com")
+    elif jar.get("buvid3") is None:
+        try:
+            b3, b4 = await _fetch_buvid()
+        except Exception:
+            b3 = b4 = ""
+        if b3:
+            jar.set("buvid3", b3, domain=".bilibili.com")
+        if b4:
+            jar.set("buvid4", b4, domain=".bilibili.com")
 
 
 @ttl_lru(maxsize=64, ttl_seconds=3600)
-async def _fetch_w_webid(mid: int, cookie_header: str) -> str:
+async def _fetch_w_webid(mid: int, auth_key: str) -> str:
     """从 UP 空间页 HTML 的 __RENDER_DATA__ 里取 access_id（即 w_webid）。
 
     风控要求投稿列表带 w_webid，否则 -352。空间页里这段是 URL 编码的 JSON。
+    cookie 走 jar（_prime_cookies 已注入），这里不传显式 Cookie header。
     """
     headers = {"User-Agent": _BROWSER_UA, "Referer": "https://www.bilibili.com/"}
-    if cookie_header:
-        headers["Cookie"] = cookie_header
     response = await bili_get(bili_client(), f"https://space.bilibili.com/{mid}", headers=headers)
     match = re.search(
         r'<script id="__RENDER_DATA__"[^>]*>(.*?)</script>', response.text, re.S
@@ -183,9 +196,9 @@ async def _fetch_w_webid(mid: int, cookie_header: str) -> str:
 
 
 @ttl_lru(maxsize=128, ttl_seconds=300)
-async def _fetch_space_search(mid: int, page: int, keyword: str, order: str, cookie_header: str) -> dict:
+async def _fetch_space_search(mid: int, page: int, keyword: str, order: str, auth_key: str) -> dict:
     try:
-        w_webid = await _fetch_w_webid(mid, cookie_header)
+        w_webid = await _fetch_w_webid(mid, auth_key)
     except Exception:
         w_webid = ""
     params: dict[str, object] = {
@@ -201,13 +214,12 @@ async def _fetch_space_search(mid: int, page: int, keyword: str, order: str, coo
         params["w_webid"] = w_webid
     if keyword:
         params["keyword"] = keyword
-    signed = await sign(params, cookie_header=cookie_header)
+    # WBI 的 nav 取 key 仍用已配置 cookie（登录态拿到的 key 更稳）；请求本身走 jar。
+    signed = await sign(params, cookie_header=bili_meta._cookie_header())
     headers = {
         "User-Agent": _BROWSER_UA,
         "Referer": f"https://space.bilibili.com/{mid}/video",
     }
-    if cookie_header:
-        headers["Cookie"] = cookie_header
     response = await bili_get(
         bili_client(),
         "https://api.bilibili.com/x/space/wbi/arc/search",
@@ -223,17 +235,17 @@ async def fetch_up_videos(
     order = order if order in _VALID_ORDERS else "pubdate"
     page = max(1, page)
     keyword = keyword.strip()
-    cookie_header = await _effective_cookie()
+    await _prime_cookies()
+    auth = _auth_fingerprint()
     try:
-        data = await _fetch_space_search(mid, page, keyword, order, cookie_header)
+        data = await _fetch_space_search(mid, page, keyword, order, auth)
     except SpaceRateLimited:
-        # 触发风控时换一套全新匿名身份（buvid / w_webid）重新热身后再试一次：
-        # 冷请求经常能过，很多 -352 是上一次身份被标记导致的。
+        # 触发风控时清缓存重新热身（再访问一次空间页拿新的反风控 cookie）后再试一次：
+        # 冷请求经常能过，很多 -352 是上一次状态被标记导致的。
         _fetch_space_search.cache_clear()
         _fetch_w_webid.cache_clear()
-        _fetch_buvid.cache_clear()
-        cookie_header = await _effective_cookie()
-        data = await _fetch_space_search(mid, page, keyword, order, cookie_header)
+        await _prime_cookies()
+        data = await _fetch_space_search(mid, page, keyword, order, auth)
 
     vlist = ((data.get("list") or {}).get("vlist")) or []
     page_info = data.get("page") or {}

@@ -5,6 +5,11 @@ import pytest
 from biri_youyaku.modules.bilibili import space, wbi
 
 
+async def _noop_prime() -> None:
+    """替换 space._prime_cookies：测试里不碰 cookie jar / 网络。"""
+    return None
+
+
 def test_mixin_key_is_32_chars_and_deterministic():
     key = wbi._mixin_key("7cd084941338484aae1ad9425b84077c", "4932caff0ff746eab6f01bf08b70ac45")
     assert len(key) == 32
@@ -72,7 +77,7 @@ async def test_fetch_up_videos_parses_vlist(monkeypatch):
         }
 
     monkeypatch.setattr(space, "_fetch_space_search", fake_search)
-    monkeypatch.setattr(space.bili_meta, "_cookie_header", lambda: "")
+    monkeypatch.setattr(space, "_prime_cookies", _noop_prime)
 
     result = await space.fetch_up_videos(123, page=1)
 
@@ -101,10 +106,7 @@ async def test_fetch_up_videos_retries_once_on_rate_limit(monkeypatch):
     flaky.cache_clear = lambda: None  # 重试路径会调它
     monkeypatch.setattr(space, "_fetch_space_search", flaky)
 
-    async def fake_cookie():
-        return ""
-
-    monkeypatch.setattr(space, "_effective_cookie", fake_cookie)
+    monkeypatch.setattr(space, "_prime_cookies", _noop_prime)
 
     result = await space.fetch_up_videos(123, page=1)
     assert calls["n"] == 2  # 第一次 -352，换身份后第二次成功
@@ -121,10 +123,7 @@ async def test_fetch_up_videos_normalizes_bad_order(monkeypatch):
 
     monkeypatch.setattr(space, "_fetch_space_search", fake_search)
 
-    async def fake_cookie():
-        return ""
-
-    monkeypatch.setattr(space, "_effective_cookie", fake_cookie)
+    monkeypatch.setattr(space, "_prime_cookies", _noop_prime)
 
     await space.fetch_up_videos(1, order="garbage")
     assert captured["order"] == "pubdate"  # 非法 order 归一到 pubdate
