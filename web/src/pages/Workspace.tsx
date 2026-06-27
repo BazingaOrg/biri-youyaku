@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useState} from 'react'
+import {useCallback, useEffect, useRef, useState} from 'react'
 import {ChevronDown, History, Plus} from 'lucide-react'
 import {useLocation} from 'wouter'
 import {
@@ -82,7 +82,16 @@ export function Workspace({jobId}: WorkspaceProps) {
   // SSE patch：流式更新 status / summary / progress / 等等。
   const patchJob = useCallback(
     (partial: Partial<Job>) => {
-      setJob((current) => (current ? {...current, ...partial} : current))
+      setJob((current) => {
+        if (!current) return current
+        const next = {...current, ...partial}
+        // TRANSCRIPT_READY SSE 只带前几行 preview；如果详情 snapshot 已有完整字幕，
+        // 不能让晚到的 preview 把完整 transcript 覆盖掉。
+        if (partial.transcript && (current.transcript?.length ?? 0) > partial.transcript.length) {
+          next.transcript = current.transcript
+        }
+        return next
+      })
     },
     [setJob],
   )
@@ -100,6 +109,17 @@ export function Workspace({jobId}: WorkspaceProps) {
   })
 
   useTerminalToast(job, jobId)
+
+  // SSE 的 COMPLETED status 不带完整 transcript。实时跑完时，当前 state 可能仍只有
+  // TRANSCRIPT_READY 的 preview；终态到达后拉一次详情 snapshot，补齐字幕全文等大字段。
+  const previousJobStatusRef = useRef(jobStatus)
+  useEffect(() => {
+    const previous = previousJobStatusRef.current
+    previousJobStatusRef.current = jobStatus
+    if (jobStatus === 'COMPLETED' && previous && previous !== 'COMPLETED') {
+      void refresh()
+    }
+  }, [jobStatus, refresh])
 
   // ---- 状态恢复 / 跨标签同步 ----
 
