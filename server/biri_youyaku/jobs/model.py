@@ -18,6 +18,21 @@ class JobStatus(StrEnum):
     CANCELED = "CANCELED"
 
 
+TERMINAL_JOB_STATUSES = frozenset(
+    {
+        JobStatus.COMPLETED,
+        JobStatus.FAILED,
+        JobStatus.CANCELED,
+    }
+)
+TERMINAL_JOB_STATUS_VALUES = frozenset(status.value for status in TERMINAL_JOB_STATUSES)
+
+# TRANSCRIPT_READY is persisted as a boundary state: it is handled by a dedicated
+# resume path on startup, but it is not a final user-visible outcome.
+PAUSED_OR_TERMINAL_JOB_STATUSES = TERMINAL_JOB_STATUSES | frozenset({JobStatus.TRANSCRIPT_READY})
+RETENTION_DELETE_JOB_STATUSES = PAUSED_OR_TERMINAL_JOB_STATUSES
+
+
 @dataclass(frozen=True)
 class JobOptions:
     task_type: str = "summary"

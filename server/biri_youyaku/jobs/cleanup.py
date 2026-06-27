@@ -8,19 +8,13 @@ from pathlib import Path
 from biri_youyaku.config import settings
 from biri_youyaku.db import connect
 from biri_youyaku.jobs import repo
-from biri_youyaku.jobs.model import Job, JobStatus
+from biri_youyaku.jobs.model import Job, JobStatus, RETENTION_DELETE_JOB_STATUSES
 
 logger = logging.getLogger(__name__)
 
-TERMINAL_DELETE_STATUSES = {
-    JobStatus.COMPLETED,
-    JobStatus.FAILED,
-    JobStatus.CANCELED,
-    JobStatus.TRANSCRIPT_READY,
-}
-
 
 # --- 单 job 文件级清理 ---------------------------------------------------------
+
 
 def delete_job_files(job: Job, *, audio_only: bool = False) -> None:
     if job.audio_path:
@@ -44,6 +38,7 @@ def delete_job_files(job: Job, *, audio_only: bool = False) -> None:
 
 # --- 主循环：每轮做哪些事 -------------------------------------------------------
 
+
 async def cleanup_once() -> dict[str, int]:
     """每小时跑一次的「文件级 + 任务级」常规清理。"""
     now = repo.now_ms()
@@ -52,13 +47,13 @@ async def cleanup_once() -> dict[str, int]:
     audio_removed = 0
     jobs_removed = 0
 
-    for job in repo.list_jobs_by_status(TERMINAL_DELETE_STATUSES):
+    for job in repo.list_jobs_by_status(RETENTION_DELETE_JOB_STATUSES):
         if job.audio_path and job.updated_at < audio_cutoff:
             delete_job_files(job, audio_only=True)
             repo.clear_audio_path(job.id)
             audio_removed += 1
 
-    expired_jobs = repo.list_jobs_by_status_before(TERMINAL_DELETE_STATUSES, job_cutoff)
+    expired_jobs = repo.list_jobs_by_status_before(RETENTION_DELETE_JOB_STATUSES, job_cutoff)
     for job in expired_jobs:
         delete_job_files(job)
         jobs_removed += repo.delete_job(job.id)
@@ -67,6 +62,7 @@ async def cleanup_once() -> dict[str, int]:
 
 
 # --- P3 新增：僵尸任务、孤儿文件、DB 维护 -----------------------------------
+
 
 async def fail_stale_running_once() -> int:
     """非终态任务长时间 `updated_at` 不动 → 视为僵尸，置 FAILED。

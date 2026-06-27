@@ -1,5 +1,5 @@
-import json
 import asyncio
+import json
 import logging
 import re
 from pathlib import Path
@@ -13,9 +13,16 @@ from sse_starlette.sse import EventSourceResponse
 from biri_youyaku.auth import require_token
 from biri_youyaku.config import settings
 from biri_youyaku.events import event_bus
-from biri_youyaku.jobs.cleanup import TERMINAL_DELETE_STATUSES, delete_job_files
 from biri_youyaku.jobs import repo
-from biri_youyaku.jobs.model import Job, JobOptions, JobStatus
+from biri_youyaku.jobs.cleanup import delete_job_files
+from biri_youyaku.jobs.model import (
+    Job,
+    JobOptions,
+    JobStatus,
+    RETENTION_DELETE_JOB_STATUSES,
+    TERMINAL_JOB_STATUSES,
+    TERMINAL_JOB_STATUS_VALUES,
+)
 from biri_youyaku.jobs.runner import (
     cancel_job,
     clear_job_state,
@@ -24,9 +31,9 @@ from biri_youyaku.jobs.runner import (
     retry_job,
     start_job,
 )
-from biri_youyaku.modules.email.webhook import send as send_email
-from biri_youyaku.modules.bilibili.meta import VideoMeta
 from biri_youyaku.modules.bilibili import meta as bili_meta
+from biri_youyaku.modules.bilibili.meta import VideoMeta
+from biri_youyaku.modules.email.webhook import send as send_email
 from biri_youyaku.rate_limit import limiter
 from biri_youyaku.routes.config import _validate_llm_base_url
 
@@ -119,9 +126,6 @@ def _video_meta_from_job(job: Job) -> VideoMeta:
     )
 
 
-_TERMINAL_JOB_STATUSES = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED}
-
-
 def _extract_option_overrides(options: JobOptionsPayload | None) -> tuple[dict, str | None]:
     option_overrides = (options or JobOptionsPayload()).model_dump(exclude_unset=True)
     llm_api_key = option_overrides.pop("llm_api_key", None)
@@ -167,7 +171,7 @@ async def create_job(request: Request, payload: CreateJobPayload) -> dict:
     # 注意这是「近似/软上限」——count 与下面的 create_job 不在同一事务里，并发请求
     # 可能都通过检查再各自 insert，短暂越过 max_inflight_jobs。单用户场景下足够；要硬
     # 上限需把 SELECT COUNT + INSERT 收进一个 BEGIN IMMEDIATE 事务。
-    inflight = repo.count_jobs_excluding_status(_TERMINAL_JOB_STATUSES)
+    inflight = repo.count_jobs_excluding_status(TERMINAL_JOB_STATUSES)
     if inflight >= settings.max_inflight_jobs:
         raise HTTPException(
             status_code=503,
@@ -207,8 +211,6 @@ async def stream_job(job_id: str):
     if repo.get_job(job_id) is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    terminal_set = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED}
-
     def _snapshot_payload(job: Job) -> str:
         return json.dumps(
             {
@@ -235,7 +237,7 @@ async def stream_job(job_id: str):
                 return
             yield {"event": "status", "data": _snapshot_payload(job)}
             # snapshot 已是终态：发完直接结束，不进 while loop 浪费连接。
-            if job.status in terminal_set:
+            if job.status in TERMINAL_JOB_STATUSES:
                 return
 
             while True:
@@ -245,11 +247,10 @@ async def stream_job(job_id: str):
                     yield {"comment": "keepalive"}
                     continue
                 yield {"event": message["event"], "data": json.dumps(message["data"], ensure_ascii=False)}
-                if message["event"] == "status" and message["data"].get("status") in {
-                    JobStatus.COMPLETED.value,
-                    JobStatus.FAILED.value,
-                    JobStatus.CANCELED.value,
-                }:
+                if (
+                    message["event"] == "status"
+                    and message["data"].get("status") in TERMINAL_JOB_STATUS_VALUES
+                ):
                     return
 
     return EventSourceResponse(generator(), ping=25)
@@ -344,11 +345,11 @@ async def download_audio(job_id: str):
 
 @router.delete("/jobs")
 async def delete_all() -> dict:
-    skipped_count = repo.count_jobs_excluding_status(TERMINAL_DELETE_STATUSES)
-    for job in repo.list_jobs_by_status(TERMINAL_DELETE_STATUSES):
+    skipped_count = repo.count_jobs_excluding_status(RETENTION_DELETE_JOB_STATUSES)
+    for job in repo.list_jobs_by_status(RETENTION_DELETE_JOB_STATUSES):
         delete_job_files(job)
         clear_job_state(job.id)
-    deleted_count = repo.delete_jobs_by_status(TERMINAL_DELETE_STATUSES)
+    deleted_count = repo.delete_jobs_by_status(RETENTION_DELETE_JOB_STATUSES)
     return {"ok": True, "deleted_count": deleted_count, "skipped_count": skipped_count}
 
 
@@ -357,7 +358,7 @@ async def delete(job_id: str) -> dict:
     job = repo.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    if job.status not in TERMINAL_DELETE_STATUSES:
+    if job.status not in RETENTION_DELETE_JOB_STATUSES:
         raise HTTPException(status_code=409, detail="任务进行中，请先取消再删除")
 
     delete_job_files(job)

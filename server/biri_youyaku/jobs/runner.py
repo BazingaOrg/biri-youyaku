@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from biri_youyaku.config import settings
 from biri_youyaku.events import event_bus
 from biri_youyaku.jobs import repo
-from biri_youyaku.jobs.model import JobOptions, JobStatus
+from biri_youyaku.jobs.model import JobOptions, JobStatus, PAUSED_OR_TERMINAL_JOB_STATUSES
 from biri_youyaku.jobs.pipeline import (
     CanceledError,
     download_audio,
@@ -121,7 +121,7 @@ async def transition(job_id: str, status: JobStatus, **data) -> None:
     if previous is not None and previous[0] != status.value:
         repo.add_stage_timing(job_id, previous[0], previous[1], now)
         _registry.stage_started_at.pop(job_id, None)
-    if status not in {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED, JobStatus.TRANSCRIPT_READY}:
+    if status not in PAUSED_OR_TERMINAL_JOB_STATUSES:
         _registry.stage_started_at[job_id] = (status.value, now)
     repo.update_status(job_id, status)
     await event_bus.publish(job_id, "status", {"status": status.value, **data})

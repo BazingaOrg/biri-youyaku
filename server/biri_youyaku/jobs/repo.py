@@ -2,10 +2,16 @@ import json
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Collection, Iterable
 
 from biri_youyaku.db import connect
-from biri_youyaku.jobs.model import Job, JobOptions, JobStatus
+from biri_youyaku.jobs.model import (
+    Job,
+    JobOptions,
+    JobStatus,
+    PAUSED_OR_TERMINAL_JOB_STATUSES,
+    TERMINAL_JOB_STATUSES,
+)
 from biri_youyaku.modules.bilibili.meta import Chapter
 from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
 
@@ -33,6 +39,11 @@ def _opt_col(row: Any, key: str) -> Any:
 def _opt_json(row: Any, key: str) -> Any:
     raw = _opt_col(row, key)
     return json.loads(raw) if raw else None
+
+
+def _status_filter(statuses: Iterable[JobStatus]) -> tuple[str, list[str]]:
+    values = [status.value for status in sorted(statuses, key=lambda status: status.value)]
+    return ",".join("?" for _ in values), values
 
 
 def _row_to_job(row: Any, *, lite: bool = False) -> Job:
@@ -136,30 +147,24 @@ def list_jobs(limit: int = 50, offset: int = 0, cursor: int | None = None) -> li
 
 def list_recoverable_jobs() -> list[Job]:
     """启动恢复：只需要 status / url / options 这些 lite 字段决定是否能恢复。"""
-    terminal_statuses = (
-        JobStatus.COMPLETED.value,
-        JobStatus.FAILED.value,
-        JobStatus.CANCELED.value,
-        JobStatus.TRANSCRIPT_READY.value,
-    )
+    placeholders, values = _status_filter(PAUSED_OR_TERMINAL_JOB_STATUSES)
     with connect() as connection:
         rows = connection.execute(
             f"""
             SELECT {_LITE_COLUMNS} FROM jobs
-            WHERE status NOT IN (?, ?, ?, ?)
+            WHERE status NOT IN ({placeholders})
             ORDER BY created_at ASC
             """,
-            terminal_statuses,
+            values,
         ).fetchall()
     return [_row_to_job_lite(row) for row in rows]
 
 
-def list_jobs_by_status(statuses: set[JobStatus]) -> list[Job]:
+def list_jobs_by_status(statuses: Collection[JobStatus]) -> list[Job]:
     """清理 / 批量删除用：走 lite 投影，省内存。"""
     if not statuses:
         return []
-    placeholders = ",".join("?" for _ in statuses)
-    values = [status.value for status in statuses]
+    placeholders, values = _status_filter(statuses)
     with connect() as connection:
         rows = connection.execute(
             f"SELECT {_LITE_COLUMNS} FROM jobs WHERE status IN ({placeholders}) ORDER BY created_at DESC",
@@ -168,11 +173,10 @@ def list_jobs_by_status(statuses: set[JobStatus]) -> list[Job]:
     return [_row_to_job_lite(row) for row in rows]
 
 
-def list_jobs_by_status_before(statuses: set[JobStatus], before_ms: int) -> list[Job]:
+def list_jobs_by_status_before(statuses: Collection[JobStatus], before_ms: int) -> list[Job]:
     if not statuses:
         return []
-    placeholders = ",".join("?" for _ in statuses)
-    values = [status.value for status in statuses]
+    placeholders, values = _status_filter(statuses)
     with connect() as connection:
         rows = connection.execute(
             f"""
@@ -187,20 +191,15 @@ def list_jobs_by_status_before(statuses: set[JobStatus], before_ms: int) -> list
 
 def list_running_jobs_stale_before(before_ms: int) -> list[Job]:
     """非终态且 `updated_at` 早于 before_ms 的僵尸任务。"""
-    terminal = (
-        JobStatus.COMPLETED.value,
-        JobStatus.FAILED.value,
-        JobStatus.CANCELED.value,
-        JobStatus.TRANSCRIPT_READY.value,
-    )
+    placeholders, values = _status_filter(PAUSED_OR_TERMINAL_JOB_STATUSES)
     with connect() as connection:
         rows = connection.execute(
             f"""
             SELECT {_LITE_COLUMNS} FROM jobs
-            WHERE status NOT IN (?, ?, ?, ?) AND updated_at < ?
+            WHERE status NOT IN ({placeholders}) AND updated_at < ?
             ORDER BY updated_at ASC
             """,
-            (*terminal, before_ms),
+            [*values, before_ms],
         ).fetchall()
     return [_row_to_job_lite(row) for row in rows]
 
@@ -224,7 +223,7 @@ def all_summary_paths() -> set[str]:
 
 def update_status(job_id: str, status: JobStatus) -> None:
     completed_at = now_ms() if status == JobStatus.COMPLETED else None
-    stream_finished_at = now_ms() if status in {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED} else None
+    stream_finished_at = now_ms() if status in TERMINAL_JOB_STATUSES else None
     with connect() as connection:
         connection.execute(
             """
@@ -474,11 +473,10 @@ def delete_job(job_id: str) -> int:
         return cursor.rowcount
 
 
-def delete_jobs_by_status(statuses: set[JobStatus]) -> int:
+def delete_jobs_by_status(statuses: Collection[JobStatus]) -> int:
     if not statuses:
         return 0
-    placeholders = ",".join("?" for _ in statuses)
-    values = [status.value for status in statuses]
+    placeholders, values = _status_filter(statuses)
     with connect() as connection:
         cursor = connection.execute(
             f"DELETE FROM jobs WHERE status IN ({placeholders})",
@@ -487,13 +485,12 @@ def delete_jobs_by_status(statuses: set[JobStatus]) -> int:
         return cursor.rowcount
 
 
-def count_jobs_excluding_status(statuses: set[JobStatus]) -> int:
+def count_jobs_excluding_status(statuses: Collection[JobStatus]) -> int:
     if not statuses:
         with connect() as connection:
             row = connection.execute("SELECT COUNT(*) AS count FROM jobs").fetchone()
         return int(row["count"])
-    placeholders = ",".join("?" for _ in statuses)
-    values = [status.value for status in statuses]
+    placeholders, values = _status_filter(statuses)
     with connect() as connection:
         row = connection.execute(
             f"SELECT COUNT(*) AS count FROM jobs WHERE status NOT IN ({placeholders})",
