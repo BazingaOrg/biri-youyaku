@@ -29,12 +29,12 @@
 | LLM | `LLM_MAX_RETRIES` | `2` | SDK 层重试 |
 | LLM | `LLM_TEMPERATURE` | 空 | 留空走代码默认 |
 | LLM | `LLM_CHUNK_TOKEN_THRESHOLD` | `30000` | 长字幕分段阈值 |
-| LLM | `LLM_SEGMENT_CONCURRENCY` | `3` | 段级总结并发数 |
+| LLM | `LLM_SEGMENT_CONCURRENCY` | `3` | 段级总结并发数；长视频实际 LLM 并发约为 `MAX_CONCURRENT_SUMMARIES * LLM_SEGMENT_CONCURRENCY` |
 | LLM | `LLM_BASE_URL_ALLOWED_HOSTS` | 内置常见供应商列表 | SSRF 白名单；空 = 不限制（仅本地） |
 | 摘要 | `SUMMARY_LANGUAGE` | `中文简体` | 输出语言 |
 | 邮件 | `EMAIL_ENABLED` | `false` | |
 | 邮件 | `EMAIL_WEBHOOK_URL` | 空 | 收 webhook 的 URL（如 Cloudflare Worker） |
-| 邮件 | `EMAIL_WEBHOOK_TOKEN` | 空 | 后端 → Worker 的鉴权 token，与 Worker 端 `BIRI_YOUYAKU_TOKEN` 一致 |
+| 邮件 | `EMAIL_WEBHOOK_TOKEN` | 空 | 启用邮件时必填；后端 → Worker 的鉴权 token，与 Worker 端 `BIRI_YOUYAKU_TOKEN` 一致 |
 | 邮件 | `EMAIL_DEFAULT_RECIPIENT` | 空 | **唯一**收件人；后端永远只发到这里，忽略 job 里的 recipient |
 | 邮件 | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | 支持 `{{title}}` / `{{author}}` |
 | 存储 | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DB_PATH` | `data/...` | |
@@ -77,12 +77,12 @@ All tunable settings live in `server/.env`; defaults are in
 | LLM | `LLM_MAX_RETRIES` | `2` | SDK-level retry |
 | LLM | `LLM_TEMPERATURE` | empty | empty = code default |
 | LLM | `LLM_CHUNK_TOKEN_THRESHOLD` | `30000` | long-transcript split threshold |
-| LLM | `LLM_SEGMENT_CONCURRENCY` | `3` | per-segment summarize concurrency |
+| LLM | `LLM_SEGMENT_CONCURRENCY` | `3` | per-segment summarize concurrency; long-video LLM concurrency is roughly `MAX_CONCURRENT_SUMMARIES * LLM_SEGMENT_CONCURRENCY` |
 | LLM | `LLM_BASE_URL_ALLOWED_HOSTS` | built-in providers | SSRF allowlist; empty = no limit (local only) |
 | Summary | `SUMMARY_LANGUAGE` | `中文简体` | output language |
 | Email | `EMAIL_ENABLED` | `false` | |
 | Email | `EMAIL_WEBHOOK_URL` | empty | the webhook receiver URL (e.g. a Cloudflare Worker) |
-| Email | `EMAIL_WEBHOOK_TOKEN` | empty | auth token from backend → worker; must match the worker's `BIRI_YOUYAKU_TOKEN` |
+| Email | `EMAIL_WEBHOOK_TOKEN` | empty | required when email is enabled; auth token from backend → worker; must match the worker's `BIRI_YOUYAKU_TOKEN` |
 | Email | `EMAIL_DEFAULT_RECIPIENT` | empty | **only** recipient; backend ignores per-job recipient and always sends here |
 | Email | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | `{{title}}` / `{{author}}` allowed |
 | Storage | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DB_PATH` | `data/...` | |

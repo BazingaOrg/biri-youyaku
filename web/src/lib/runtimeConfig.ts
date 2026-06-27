@@ -9,7 +9,6 @@ import {getRuntimeConfig, type RuntimeConfig} from './api'
 const FALLBACK: RuntimeConfig = {
   ok: true,
   auth_mode: 'none',
-  api_token_required: false,
   llm_configured: false,
   email_configured: false,
   bilibili_cookie_configured: false,

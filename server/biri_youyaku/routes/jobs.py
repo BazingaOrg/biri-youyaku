@@ -3,6 +3,7 @@ import asyncio
 import logging
 import re
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
@@ -35,7 +36,7 @@ router = APIRouter(prefix="/v1", dependencies=[Depends(require_token)])
 
 
 class JobOptionsPayload(BaseModel):
-    task_type: str | None = None
+    task_type: Literal["summary", "audio"] | None = None
     language: str | None = None
     force_asr: bool | None = None
     summary_language: str | None = None
@@ -121,6 +122,33 @@ def _video_meta_from_job(job: Job) -> VideoMeta:
 _TERMINAL_JOB_STATUSES = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED}
 
 
+def _extract_option_overrides(options: JobOptionsPayload | None) -> tuple[dict, str | None]:
+    option_overrides = (options or JobOptionsPayload()).model_dump(exclude_unset=True)
+    llm_api_key = option_overrides.pop("llm_api_key", None)
+    return option_overrides, llm_api_key
+
+
+def _job_options_from_overrides(option_overrides: dict) -> JobOptions:
+    options = JobOptions.from_overrides(option_overrides, settings)
+    _validate_llm_base_url(options.llm_base_url)
+    return options
+
+
+def _ensure_email_ready() -> None:
+    webhook_url = (settings.email_webhook_url or "").strip()
+    webhook_token = (settings.email_webhook_token or "").strip()
+    effective_recipient = (settings.email_default_recipient or "").strip()
+    if webhook_url and webhook_token and effective_recipient:
+        return
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "邮件已启用但未配置：请在 .env 设置 EMAIL_WEBHOOK_URL、EMAIL_WEBHOOK_TOKEN 与 "
+            "EMAIL_DEFAULT_RECIPIENT，或本次请求里把 email_enabled 设为 false。"
+        ),
+    )
+
+
 @router.post("/jobs")
 @limiter.limit("10/minute")
 async def create_job(request: Request, payload: CreateJobPayload) -> dict:
@@ -145,25 +173,11 @@ async def create_job(request: Request, payload: CreateJobPayload) -> dict:
             status_code=503,
             detail=f"服务器忙不过来（在飞任务 {inflight}/{settings.max_inflight_jobs}），请稍后重试",
         )
-    option_overrides = payload.options.model_dump(exclude_unset=True)
-    llm_api_key = option_overrides.pop("llm_api_key", None)
-    options = JobOptions.from_overrides(
-        option_overrides,
-        settings,
-    )
-    # 防 SSRF：用户传入的 llm_base_url 必须过白名单（同 /v1/llm/models 规则）
-    _validate_llm_base_url(options.llm_base_url)
+    option_overrides, llm_api_key = _extract_option_overrides(payload.options)
+    options = _job_options_from_overrides(option_overrides)
     # 早失败：开了邮件却没有有效收件人 → 直接拒，别让任务跑完才在 EMAILING 阶段 fail。
     if options.email_enabled:
-        effective_recipient = (settings.email_default_recipient or "").strip()
-        if not effective_recipient or not settings.email_webhook_url:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "邮件已启用但未配置：请在 .env 设置 EMAIL_WEBHOOK_URL 与 "
-                    "EMAIL_DEFAULT_RECIPIENT，或本次请求里把 email_enabled 设为 false。"
-                ),
-            )
+        _ensure_email_ready()
     job = repo.create_job(payload.url, options, option_overrides=option_overrides)
     start_job(job.id, llm_api_key=llm_api_key)
     return {"ok": True, "job_id": job.id}
@@ -268,14 +282,13 @@ async def resume(request: Request, job_id: str, payload: ResumeJobPayload | None
             status_code=409,
             detail=f"任务当前状态 {job.status.value}，无法 resume",
         )
-    option_overrides = (payload.options if payload else JobOptionsPayload()).model_dump(exclude_unset=True)
-    llm_api_key = option_overrides.pop("llm_api_key", None)
+    option_overrides, llm_api_key = _extract_option_overrides(payload.options if payload else None)
 
     # When force_asr is requested, restart the pipeline from scratch instead of
     # jumping straight to summarize.  We clear the existing transcript/subtitle so
     # run_until_transcript will re-download audio and re-transcribe.
     if option_overrides.get("force_asr"):
-        options = JobOptions.from_overrides(option_overrides, settings)
+        options = _job_options_from_overrides(option_overrides)
         repo.update_options(job_id, options, option_overrides=option_overrides)
         repo.clear_transcript(job_id)
         repo.clear_error(job_id)
@@ -285,7 +298,7 @@ async def resume(request: Request, job_id: str, payload: ResumeJobPayload | None
         return {"ok": True}
 
     if option_overrides:
-        options = JobOptions.from_overrides(option_overrides, settings)
+        options = _job_options_from_overrides(option_overrides)
         repo.update_options(job_id, options, option_overrides=option_overrides)
     resume_job(job_id, llm_api_key=llm_api_key)
     return {"ok": True}
@@ -299,10 +312,9 @@ async def retry(request: Request, job_id: str, payload: RetryJobPayload | None =
         raise HTTPException(status_code=404, detail="Job not found")
     if job.status != JobStatus.FAILED:
         raise HTTPException(status_code=409, detail=f"任务当前状态 {job.status.value}，无法 retry")
-    option_overrides = (payload.options if payload else JobOptionsPayload()).model_dump(exclude_unset=True)
-    llm_api_key = option_overrides.pop("llm_api_key", None)
+    option_overrides, llm_api_key = _extract_option_overrides(payload.options if payload else None)
     if option_overrides:
-        options = JobOptions.from_overrides(option_overrides, settings)
+        options = _job_options_from_overrides(option_overrides)
         repo.update_options(job_id, options, option_overrides=option_overrides)
     try:
         retry_job(job_id, llm_api_key=llm_api_key)

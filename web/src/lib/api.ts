@@ -190,8 +190,6 @@ export function getConfigDefaults() {
 export interface RuntimeConfig {
   ok: true
   auth_mode: 'api_token' | 'none'
-  /** @deprecated use auth_mode === 'api_token' */
-  api_token_required: boolean
   llm_configured: boolean
   email_configured: boolean
   bilibili_cookie_configured: boolean

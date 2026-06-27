@@ -25,6 +25,8 @@ async def test_runtime_config_returns_only_booleans(monkeypatch):
     monkeypatch.setattr(config_route.settings, "llm_api_key", "secret-key")
     monkeypatch.setattr(config_route.settings, "email_enabled", True)
     monkeypatch.setattr(config_route.settings, "email_webhook_url", "https://example.test/hook")
+    monkeypatch.setattr(config_route.settings, "email_webhook_token", "secret-token")
+    monkeypatch.setattr(config_route.settings, "email_default_recipient", "you@example.com")
     monkeypatch.setattr(config_route.settings, "bili_sessdata", "sess")
 
     response = await config_route.get_runtime_config()
@@ -73,6 +75,30 @@ async def test_resume_rejects_non_transcript_ready_job(monkeypatch):
         await jobs_route.resume(None, "job-1")
 
     assert exc_info.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_runtime_config_requires_email_recipient(monkeypatch):
+    monkeypatch.setattr(config_route.settings, "email_enabled", True)
+    monkeypatch.setattr(config_route.settings, "email_webhook_url", "https://example.test/hook")
+    monkeypatch.setattr(config_route.settings, "email_webhook_token", "secret-token")
+    monkeypatch.setattr(config_route.settings, "email_default_recipient", "")
+
+    response = await config_route.get_runtime_config()
+
+    assert response["email_configured"] is False
+
+
+@pytest.mark.asyncio
+async def test_runtime_config_requires_email_token(monkeypatch):
+    monkeypatch.setattr(config_route.settings, "email_enabled", True)
+    monkeypatch.setattr(config_route.settings, "email_webhook_url", "https://example.test/hook")
+    monkeypatch.setattr(config_route.settings, "email_webhook_token", "")
+    monkeypatch.setattr(config_route.settings, "email_default_recipient", "you@example.com")
+
+    response = await config_route.get_runtime_config()
+
+    assert response["email_configured"] is False
 
 
 @pytest.mark.asyncio
@@ -150,6 +176,31 @@ async def test_resume_updates_summary_options_before_start(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_resume_rejects_disallowed_llm_base_url(monkeypatch):
+    job = Job(
+        id="job-1",
+        url="https://www.bilibili.com/video/BV123",
+        status=JobStatus.TRANSCRIPT_READY,
+        options=JobOptions(),
+        created_at=1,
+        updated_at=1,
+    )
+    monkeypatch.setattr(jobs_route.repo, "get_job", lambda job_id: job)
+    monkeypatch.setattr(jobs_route.settings, "llm_base_url_allowed_hosts", "api.deepseek.com")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await jobs_route.resume(
+            None,
+            "job-1",
+            jobs_route.ResumeJobPayload(
+                options=jobs_route.JobOptionsPayload(llm_base_url="http://127.0.0.1:11434/v1")
+            ),
+        )
+
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_retry_rejects_non_failed_job(monkeypatch):
     job = Job(
         id="job-1",
@@ -208,6 +259,31 @@ async def test_retry_updates_options_and_starts_runner(monkeypatch):
     assert calls["option_overrides"] == {"llm_model": "model-b"}
     assert calls["started"] == "job-1"
     assert calls["llm_api_key"] == "task-key"
+
+
+@pytest.mark.asyncio
+async def test_retry_rejects_disallowed_llm_base_url(monkeypatch):
+    job = Job(
+        id="job-1",
+        url="https://www.bilibili.com/video/BV123",
+        status=JobStatus.FAILED,
+        options=JobOptions(),
+        created_at=1,
+        updated_at=1,
+    )
+    monkeypatch.setattr(jobs_route.repo, "get_job", lambda job_id: job)
+    monkeypatch.setattr(jobs_route.settings, "llm_base_url_allowed_hosts", "api.deepseek.com")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await jobs_route.retry(
+            None,
+            "job-1",
+            jobs_route.RetryJobPayload(
+                options=jobs_route.JobOptionsPayload(llm_base_url="https://example.test/v1")
+            ),
+        )
+
+    assert exc_info.value.status_code == 400
 
 
 @pytest.mark.asyncio

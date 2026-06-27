@@ -63,10 +63,16 @@ async def get_config_defaults() -> dict:
 @public_router.get("/config/runtime")
 async def get_runtime_config() -> dict:
     # auth_mode 给前端用：api_token 模式前端需要带 Bearer；none 模式（仅本地）不需要。
+    email_configured = bool(
+        settings.email_enabled
+        and (settings.email_webhook_url or "").strip()
+        and (settings.email_webhook_token or "").strip()
+        and (settings.email_default_recipient or "").strip()
+    )
     return {
         "ok": True,
         "auth_mode": "api_token" if settings.api_token else "none",
         "llm_configured": bool(settings.llm_api_key),
-        "email_configured": bool(settings.email_enabled and settings.email_webhook_url),
+        "email_configured": email_configured,
         "bilibili_cookie_configured": bool(settings.bili_sessdata),
     }

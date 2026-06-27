@@ -95,6 +95,7 @@ ollama pull qwen2.5:3b   # 3B, runs in ~4 GB RAM; OK quality for summaries
 LLM_BASE_URL=http://localhost:11434/v1
 LLM_MODEL=qwen2.5:3b
 LLM_API_KEY=ollama       # ollama ignores the key but it must be non-empty
+LLM_BASE_URL_ALLOWED_HOSTS=  # local only; do not disable the allowlist in public deployments
 ```
 
 All summarization now runs locally, no outbound traffic. Combine with the local ASR
@@ -186,8 +187,10 @@ EMAIL_WEBHOOK_TOKEN=must match the Worker's BIRI_YOUYAKU_TOKEN
 EMAIL_DEFAULT_RECIPIENT=you@example.com
 ```
 
-If `EMAIL_ENABLED=true` but any of the required values are empty, the server logs
-a WARN and refuses to create jobs to avoid sending to the wrong address.
+If `EMAIL_ENABLED=true` but any of `EMAIL_WEBHOOK_URL` / `EMAIL_WEBHOOK_TOKEN` /
+`EMAIL_DEFAULT_RECIPIENT` is empty, the server logs a WARN and refuses to create
+jobs to avoid sending to the wrong address. When using the bundled Worker,
+`EMAIL_WEBHOOK_TOKEN` must match the Worker's `BIRI_YOUYAKU_TOKEN`.
 
 ---
 

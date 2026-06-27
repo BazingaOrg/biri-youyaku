@@ -91,6 +91,7 @@ ollama pull qwen2.5:3b   # 3B 模型，4GB 内存可跑；中文摘要够用
 LLM_BASE_URL=http://localhost:11434/v1
 LLM_MODEL=qwen2.5:3b
 LLM_API_KEY=ollama       # ollama 不校验，但不能为空
+LLM_BASE_URL_ALLOWED_HOSTS=  # 仅本地这样留空；公网部署不要放开白名单
 ```
 
 跑通后，所有摘要本地推理、不出网。配合下面「本地 ASR 转写」就能做到端到端零联网（B 站抓数据除外）。
@@ -180,8 +181,9 @@ EMAIL_WEBHOOK_TOKEN=与 Worker 的 BIRI_YOUYAKU_TOKEN 一致
 EMAIL_DEFAULT_RECIPIENT=you@example.com
 ```
 
-启动时若开了 `EMAIL_ENABLED` 但任一必填值为空，后端会打 WARN；创建任务时也会拒
-绝，避免发到错误地址。
+启动时若开了 `EMAIL_ENABLED` 但 `EMAIL_WEBHOOK_URL` / `EMAIL_WEBHOOK_TOKEN` /
+`EMAIL_DEFAULT_RECIPIENT` 任一为空，后端会打 WARN；创建任务时也会拒绝，避免发到错误地址。
+使用仓库自带 Worker 时，`EMAIL_WEBHOOK_TOKEN` 要和 Worker 的 `BIRI_YOUYAKU_TOKEN` 保持一致。
 
 ---
 
