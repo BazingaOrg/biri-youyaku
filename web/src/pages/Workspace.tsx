@@ -20,7 +20,6 @@ import {useJobStream} from '../hooks/useJobStream'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
 import {useStickToBottom} from '../hooks/useStickToBottom'
 import {useTerminalToast} from '../hooks/useTerminalToast'
-import {useAutoResume} from '../hooks/useAutoResume'
 import {useToast} from '../components/ToastProvider'
 import {IconButton} from '../components/IconButton'
 import {PageLoading} from '../components/Spinner'
@@ -64,7 +63,6 @@ export function Workspace({jobId}: WorkspaceProps) {
     if (!defaults) return {}
     return {llm_model: defaults.llm_model, llm_base_url: defaults.llm_base_url}
   }, [defaults])
-  const autoResumeOverrides = currentLlmOverrides()
 
   // 流式总结期间的跳底浮标：用户不主动向上看就自动跟随新内容。
   const streaming = job?.status === 'SUMMARIZING'
@@ -101,7 +99,6 @@ export function Workspace({jobId}: WorkspaceProps) {
     reconnectKey: streamReconnectKey,
   })
 
-  useAutoResume(job, jobId, defaults, autoResumeOverrides, refresh)
   useTerminalToast(job, jobId)
 
   // ---- 状态恢复 / 跨标签同步 ----

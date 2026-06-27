@@ -187,6 +187,11 @@ def _raise_if_canceled(job_id: str) -> None:
         raise CanceledError()
 
 
+def has_active_task(job_id: str) -> bool:
+    """该 job 当前是否有在跑的后台 task。"""
+    return job_id in _registry.tasks
+
+
 def recover_unfinished_jobs() -> None:
     for job in repo.list_recoverable_jobs():
         logger.info("Recovering unfinished job %s from %s", job.id, job.status.value)
@@ -195,6 +200,11 @@ def recover_unfinished_jobs() -> None:
         else:
             repo.set_error(job.id, job.status.value, "服务重启时任务处于不可安全恢复的中间状态", "RECOVERY_UNSAFE")
             repo.update_status(job.id, JobStatus.FAILED)
+    # 字幕已就绪但还没总结的任务：重启时自动续跑（正常流程已服务端自动续，这里兜底
+    # 历史遗留 / 上传字幕 等停在 TRANSCRIPT_READY 的任务，确保总结/邮件不丢）。
+    for job in repo.list_jobs_by_status({JobStatus.TRANSCRIPT_READY}):
+        logger.info("Recovering TRANSCRIPT_READY job %s → 自动续跑总结", job.id)
+        resume_job(job.id)
 
 
 def _meta_from_job(job) -> VideoMeta:
@@ -384,6 +394,75 @@ async def run_until_transcript(job_id: str) -> None:
             transcript_preview=transcript_preview,
             subtitle_source="platform" if (video_meta.has_subtitle and not fresh_job.options.force_asr) else "asr",
         )
+        # 自动续跑：拿到字幕后服务端**直接**进入总结，不依赖前端 /resume。
+        # 否则用户一关浏览器，任务就永远停在 TRANSCRIPT_READY，总结和邮件都不会发生。
+        await _do_summarize(job_id, stage)
+
+
+async def _do_summarize(job_id: str, stage: _RunStage) -> None:
+    """TRANSCRIPT_READY → 总结 → 标签 → 邮件 → COMPLETED。run_until_transcript 自动续跑
+    和 /resume 都走这里（共用同一份逻辑与外层 _job_lifecycle 的 stage 错误标记）。"""
+    _raise_if_canceled(job_id)
+    fresh_job = repo.get_job(job_id)
+    if fresh_job is None:
+        raise RuntimeError("Job not found")
+    items = _transcript_from_job(fresh_job)
+    if not items:
+        raise RuntimeError("任务没有可总结的字幕")
+    video_meta = _meta_from_job(fresh_job)
+    stage.value = JobStatus.SUMMARIZING.value
+    await transition(job_id, JobStatus.SUMMARIZING)
+    async with _semaphore_with_queue_notice(job_id, JobStatus.SUMMARIZING, _summary_semaphore):
+        # 长视频字幕一次喂给 LLM 流式输出，5 分钟常常超；放宽到 20 分钟兜底
+        summary_md = await _with_timeout(
+            JobStatus.SUMMARIZING,
+            1200,
+            summarize(
+                fresh_job,
+                video_meta,
+                items,
+                llm_api_key=_registry.llm_api_keys.get(job_id),
+                on_chunk=lambda text: event_bus.publish(job_id, "summary_chunk", {"text": text}),
+                on_usage=lambda usage: _record_token_usage(job_id, usage),
+                on_segment=lambda done, total: event_bus.publish(
+                    job_id, "summary_segment", {"done": done, "total": total}
+                ),
+            ),
+        )
+    _raise_if_canceled(job_id)
+
+    # 主题标签：限时 60s 的额外一次 LLM 调用，超时/失败都返回 [] 不阻断完成，
+    # 也不让它把「总结完成 → 发邮件」拖到 llm_timeout_seconds × retries 那么久。
+    tags = await _safe_generate_tags(job_id, fresh_job, summary_md)
+    if tags:
+        repo.set_tags(job_id, tags)
+
+    # 邮件失败（含 EMAILING 阶段 timeout = StageTimeoutError(RuntimeError)）一律
+    # 不阻断 COMPLETED：summary 已经落盘，用户可手动 ↻ 重发。
+    # - 与旧契约不同：之前任何邮件异常会把整个 job 置 FAILED。新契约把失败原因
+    #   存到 email_error 字段，前端展示「邮件未送达 ↻ 重发邮件」提示。
+    # - 取消（CancelledError / CanceledError）必须 re-raise，让外层 lifecycle 走
+    #   CANCELED 分支；否则会被静默吞掉变成「completed + email_error=取消」。
+    email_error: str | None = None
+    if fresh_job.options.email_enabled:
+        stage.value = JobStatus.EMAILING.value
+        await transition(job_id, JobStatus.EMAILING)
+        try:
+            await _with_timeout(JobStatus.EMAILING, 120, send_email(video_meta, summary_md, fresh_job.options))
+        except (asyncio.CancelledError, CanceledError):
+            raise
+        except Exception as exc:
+            email_error = str(exc) or "邮件发送失败"
+            logger.warning("Job %s email send failed: %s", job_id, email_error)
+            repo.set_email_error(job_id, email_error)
+
+    await transition(
+        job_id,
+        JobStatus.COMPLETED,
+        summary=summary_md,
+        email_error=email_error,
+        tags=tags,
+    )
 
 
 async def run_after_resume(job_id: str) -> None:
@@ -393,64 +472,21 @@ async def run_after_resume(job_id: str) -> None:
             raise RuntimeError("Job not found")
         if fresh_job.status != JobStatus.TRANSCRIPT_READY:
             raise RuntimeError(f"Job is {fresh_job.status.value}, cannot resume")
-        items = _transcript_from_job(fresh_job)
-        if not items:
-            raise RuntimeError("任务没有可总结的字幕")
-        video_meta = _meta_from_job(fresh_job)
-        stage.value = JobStatus.SUMMARIZING.value
-        await transition(job_id, JobStatus.SUMMARIZING)
-        async with _semaphore_with_queue_notice(job_id, JobStatus.SUMMARIZING, _summary_semaphore):
-            # 长视频字幕一次喂给 LLM 流式输出，5 分钟常常超；放宽到 20 分钟兜底
-            summary_md = await _with_timeout(
-                JobStatus.SUMMARIZING,
-                1200,
-                summarize(
-                    fresh_job,
-                    video_meta,
-                    items,
-                    llm_api_key=_registry.llm_api_keys.get(job_id),
-                    on_chunk=lambda text: event_bus.publish(job_id, "summary_chunk", {"text": text}),
-                    on_usage=lambda usage: _record_token_usage(job_id, usage),
-                    on_segment=lambda done, total: event_bus.publish(
-                        job_id, "summary_segment", {"done": done, "total": total}
-                    ),
-                ),
-            )
-        _raise_if_canceled(job_id)
+        await _do_summarize(job_id, stage)
 
-        # 主题标签：从笔记提炼，失败返回 [] 不阻断完成。
-        tags = await generate_tags(
-            fresh_job, summary_md, llm_api_key=_registry.llm_api_keys.get(job_id)
+
+async def _safe_generate_tags(job_id: str, job, summary_md: str) -> list[str]:
+    """限时提炼标签：超时 / 失败都返回 []（非致命），取消则照常向上抛。"""
+    try:
+        return await asyncio.wait_for(
+            generate_tags(job, summary_md, llm_api_key=_registry.llm_api_keys.get(job_id)),
+            timeout=60,
         )
-        if tags:
-            repo.set_tags(job_id, tags)
-
-        # 邮件失败（含 EMAILING 阶段 timeout = StageTimeoutError(RuntimeError)）一律
-        # 不阻断 COMPLETED：summary 已经落盘，用户可手动 ↻ 重发。
-        # - 与旧契约不同：之前任何邮件异常会把整个 job 置 FAILED。新契约把失败原因
-        #   存到 email_error 字段，前端展示「邮件未送达 ↻ 重发邮件」提示。
-        # - 取消（CancelledError / CanceledError）必须 re-raise，让外层 lifecycle 走
-        #   CANCELED 分支；否则会被静默吞掉变成「completed + email_error=取消」。
-        email_error: str | None = None
-        if fresh_job.options.email_enabled:
-            stage.value = JobStatus.EMAILING.value
-            await transition(job_id, JobStatus.EMAILING)
-            try:
-                await _with_timeout(JobStatus.EMAILING, 120, send_email(video_meta, summary_md, fresh_job.options))
-            except (asyncio.CancelledError, CanceledError):
-                raise
-            except Exception as exc:
-                email_error = str(exc) or "邮件发送失败"
-                logger.warning("Job %s email send failed: %s", job_id, email_error)
-                repo.set_email_error(job_id, email_error)
-
-        await transition(
-            job_id,
-            JobStatus.COMPLETED,
-            summary=summary_md,
-            email_error=email_error,
-            tags=tags,
-        )
+    except (asyncio.CancelledError, CanceledError):
+        raise
+    except Exception:
+        logger.warning("Job %s 标签生成超时/失败，跳过", job_id)
+        return []
 
 
 async def _record_token_usage(job_id: str, usage: dict) -> None:

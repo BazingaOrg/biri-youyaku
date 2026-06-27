@@ -15,7 +15,14 @@ from biri_youyaku.events import event_bus
 from biri_youyaku.jobs.cleanup import TERMINAL_DELETE_STATUSES, delete_job_files
 from biri_youyaku.jobs import repo
 from biri_youyaku.jobs.model import Job, JobOptions, JobStatus
-from biri_youyaku.jobs.runner import cancel_job, clear_job_state, resume_job, retry_job, start_job
+from biri_youyaku.jobs.runner import (
+    cancel_job,
+    clear_job_state,
+    has_active_task,
+    resume_job,
+    retry_job,
+    start_job,
+)
 from biri_youyaku.modules.email.webhook import send as send_email
 from biri_youyaku.modules.bilibili.meta import VideoMeta
 from biri_youyaku.modules.bilibili import meta as bili_meta
@@ -275,12 +282,14 @@ async def cancel(job_id: str) -> dict:
     job = repo.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    if job.status == JobStatus.TRANSCRIPT_READY:
+    # 标记取消 + 取消在跑的 task（现在 transcript→总结 是同一条连续 task，所以
+    # 即便处于 TRANSCRIPT_READY 也通常有 task 在跑）。
+    cancel_job(job_id)
+    # 没有在跑 task 的暂停残留（如上传字幕后停在 TRANSCRIPT_READY）：直接落 CANCELED。
+    if job.status == JobStatus.TRANSCRIPT_READY and not has_active_task(job_id):
         repo.update_status(job_id, JobStatus.CANCELED)
         clear_job_state(job_id)
         await event_bus.publish(job_id, "status", {"status": JobStatus.CANCELED.value})
-        return {"ok": True}
-    cancel_job(job_id)
     return {"ok": True}
 
 
@@ -419,7 +428,16 @@ async def resend_email(request: Request, job_id: str) -> dict:
     summary = repo.read_summary(job)
     if job.status != JobStatus.COMPLETED or not summary:
         raise HTTPException(status_code=409, detail="Only completed jobs with a summary can be emailed")
-    await send_email(_video_meta_from_job(job), summary, job.options)
+    try:
+        await send_email(_video_meta_from_job(job), summary, job.options)
+    except Exception as exc:
+        # 重发失败：更新 email_error（别留旧消息），并把真实原因回给前端，而不是通用 500。
+        message = str(exc) or "邮件发送失败"
+        repo.set_email_error(job_id, message)
+        await event_bus.publish(
+            job_id, "status", {"status": JobStatus.COMPLETED.value, "email_error": message}
+        )
+        raise HTTPException(status_code=502, detail=message) from exc
     # 重发成功 → 把上次记下的 email_error 清掉
     repo.set_email_error(job_id, None)
     await event_bus.publish(job_id, "status", {"status": JobStatus.COMPLETED.value, "email_error": None})
