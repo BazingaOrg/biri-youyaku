@@ -209,21 +209,15 @@ export function createJob(url: string, options: JobOptionOverrides) {
   })
 }
 
-// 注：后端还有 POST /v1/jobs/preview、POST /v1/llm/models、POST /v1/jobs/{id}/transcript
-// 三个 endpoint，对应的 client 函数已删（前端零调用，留着会被当成「半成品 API」误用）。
+// 注：后端还有这些 endpoint 前端零调用、对应 client 函数已删（留着会被当成「半成品 API」误用）：
+// POST /v1/jobs/preview、POST /v1/llm/models、POST /v1/jobs/{id}/transcript、
+// POST /v1/jobs/{id}/resume（总结改为服务端自动续跑后不再需要前端驱动）、GET /v1/usage。
 // 真要接入时去 routes/jobs.py / routes/config.py 看签名重新加。
 
 export function getJob(jobId: string, init?: RequestInit) {
   // init 主要是为了 useJob 透传 AbortController.signal：jobId 切换时取消上一个请求，
   // 避免旧 jobId 的响应晚到覆盖新 jobId 的数据。
   return request<{ok: true; job: Job}>(`/v1/jobs/${jobId}`, init)
-}
-
-export function resumeJob(jobId: string, options: JobOptionOverrides = {}) {
-  return request<{ok: true}>(`/v1/jobs/${jobId}/resume`, {
-    method: 'POST',
-    body: JSON.stringify({options}),
-  })
 }
 
 export function retryJob(jobId: string, options: JobOptionOverrides = {}) {
