@@ -1,10 +1,9 @@
-import ReactMarkdown from 'react-markdown'
-import {Captions, Clock, Copy, FileDown, History, Mail, Music, Plus, RotateCw} from 'lucide-react'
+import {Captions, Clock, Copy, FileDown, History, Mail, Music, Plus, RotateCw, Tag} from 'lucide-react'
 import type {Job} from '../../lib/api'
 import {formatStageTimings, formatTokenCount} from '../../lib/format'
 import {IconButton} from '../../components/IconButton'
 import {MetaBar} from './MetaBar'
-import {TranscriptPanel} from './TranscriptPanel'
+import {SummaryTabs} from './SummaryTabs'
 
 function JobStats({job}: {job: Job}) {
   const timings = formatStageTimings(job.stage_timings)
@@ -15,6 +14,20 @@ function JobStats({job}: {job: Job}) {
     <div className="inline-flex max-w-full items-center gap-1.5 overflow-hidden px-1 text-xs text-muted">
       <Clock size={12} className="shrink-0" />
       <span className="min-w-0 whitespace-nowrap">{parts.join(' · ')}</span>
+    </div>
+  )
+}
+
+function TagChips({tags}: {tags?: string[]}) {
+  if (!tags || tags.length === 0) return null
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 px-1">
+      <Tag size={12} className="shrink-0 text-muted" />
+      {tags.map((tag) => (
+        <span key={tag} className="rounded-full bg-brandSoft px-2 py-0.5 text-xs text-brand">
+          {tag}
+        </span>
+      ))}
     </div>
   )
 }
@@ -52,12 +65,7 @@ export function DoneView({
           onClick={onDownloadAudio}
           disabled={!job.audio_available}
         />
-        <IconButton
-          icon={<Copy size={18} />}
-          label="复制总结"
-          onClick={onCopy}
-          disabled={!job.summary}
-        />
+        <IconButton icon={<Copy size={18} />} label="复制总结" onClick={onCopy} disabled={!job.summary} />
         <IconButton
           icon={<FileDown size={18} />}
           label="下载 Markdown"
@@ -74,11 +82,10 @@ export function DoneView({
       </div>
       <MetaBar job={job} />
       <JobStats job={job} />
+      <TagChips tags={job.tags} />
       {job.email_error && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
-          <p className="break-words leading-6">
-            总结已完成，邮件未送达：{job.email_error}
-          </p>
+          <p className="break-words leading-6">总结已完成，邮件未送达：{job.email_error}</p>
           <button
             type="button"
             onClick={onResendEmail}
@@ -90,19 +97,7 @@ export function DoneView({
           </button>
         </div>
       )}
-      <section className="min-w-0 w-full rounded-3xl bg-panel p-4 shadow-card sm:p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold tracking-[-0.012em]">视频总结</h2>
-        </div>
-        {job.summary ? (
-          <div className="prose prose-sm max-w-none break-words text-ink dark:prose-invert prose-headings:tracking-[-0.012em] prose-a:text-brand [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto [&_code]:break-all">
-            <ReactMarkdown>{job.summary}</ReactMarkdown>
-          </div>
-        ) : (
-          <p className="text-sm text-muted">没有总结内容</p>
-        )}
-      </section>
-      <TranscriptPanel job={job} />
+      <SummaryTabs job={job} />
     </div>
   )
 }

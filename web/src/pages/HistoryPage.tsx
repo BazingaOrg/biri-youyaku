@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import type {ReactNode} from 'react'
-import {ArrowLeft, Plus, RotateCw, Search, Trash, Trash2} from 'lucide-react'
+import {ArrowLeft, Plus, RotateCw, Search, Tag, Trash, Trash2} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
 import {ApiError, deleteAllJobs, deleteJob, listJobs, type Job} from '../lib/api'
 import {formatDate, formatDuration, formatStatus} from '../lib/format'
@@ -38,6 +38,7 @@ export function HistoryPage() {
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null)
+  const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE)
   const [confirmClearOpen, setConfirmClearOpen] = useState(false)
   const [clearing, setClearing] = useState(false)
@@ -106,6 +107,19 @@ export function HistoryPage() {
       .sort((a, b) => b.count - a.count || a.author.localeCompare(b.author))
   }, [jobs])
 
+  const tagStats = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const job of jobs) {
+      for (const tag of job.tags ?? []) {
+        if (tag) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+      }
+    }
+    return [...counts.entries()]
+      .map(([tag, count]) => ({tag, count}))
+      .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
+      .slice(0, 20) // 只展示最常见的若干个，避免标签栏过长
+  }, [jobs])
+
   useEffect(() => {
     if (!selectedAuthor) return
     if (!authorStats.some((item) => item.author === selectedAuthor)) {
@@ -113,11 +127,19 @@ export function HistoryPage() {
     }
   }, [authorStats, selectedAuthor])
 
+  useEffect(() => {
+    if (!selectedTag) return
+    if (!tagStats.some((item) => item.tag === selectedTag)) {
+      setSelectedTag(null)
+    }
+  }, [tagStats, selectedTag])
+
   const filtered = useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase()
-    const source = selectedAuthor
+    let source = selectedAuthor
       ? jobs.filter((job) => (job.author?.trim() || '未知 UP') === selectedAuthor)
       : jobs
+    if (selectedTag) source = source.filter((job) => (job.tags ?? []).includes(selectedTag))
     if (!q) return source
     return source.filter((job) => {
       const haystack = [
@@ -125,17 +147,18 @@ export function HistoryPage() {
         job.author ?? '',
         job.bvid ?? '',
         job.url ?? '',
+        (job.tags ?? []).join(' '),
       ]
         .join(' ')
         .toLowerCase()
       return haystack.includes(q)
     })
-  }, [jobs, debouncedQuery, selectedAuthor])
+  }, [jobs, debouncedQuery, selectedAuthor, selectedTag])
 
   // 筛选条件变化时，增量渲染计数回到初始，避免停留在上一个长列表的高位。
   useEffect(() => {
     setVisibleCount(INITIAL_VISIBLE)
-  }, [debouncedQuery, selectedAuthor])
+  }, [debouncedQuery, selectedAuthor, selectedTag])
 
   const visibleJobs = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount])
   const hasMore = visibleCount < filtered.length
@@ -333,6 +356,30 @@ export function HistoryPage() {
           </div>
         )}
 
+        {!loading && !loadError && tagStats.length > 0 && (
+          <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-1 pt-2 sm:-mx-5 sm:px-5">
+            <Tag size={13} className="shrink-0 text-muted" />
+            {tagStats.map((item) => (
+              <button
+                key={item.tag}
+                type="button"
+                onClick={() => setSelectedTag((current) => (current === item.tag ? null : item.tag))}
+                className={`inline-flex min-h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs transition-[transform,background-color,color] active:scale-95 ${
+                  selectedTag === item.tag
+                    ? 'bg-brand text-white shadow-card'
+                    : 'bg-brandSoft/50 text-brand hover:bg-brandSoft'
+                }`}
+                title={`${item.tag} · ${item.count}`}
+              >
+                <span className="truncate">{item.tag}</span>
+                <span className={selectedTag === item.tag ? 'text-white/80' : 'text-brand/60'}>
+                  {item.count}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="py-3">
           {loading && <PageLoading label="加载历史…" />}
 
@@ -365,7 +412,7 @@ export function HistoryPage() {
 
           {!loading && !loadError && jobs.length > 0 && filtered.length === 0 && (
             <p className="border-b border-line/60 py-12 text-center text-sm text-muted">
-              没有匹配{selectedAuthor ? `「${selectedAuthor}」` : ''}{debouncedQuery ? `「${debouncedQuery}」` : ''}的记录
+              没有匹配{selectedAuthor ? `「${selectedAuthor}」` : ''}{selectedTag ? `「#${selectedTag}」` : ''}{debouncedQuery ? `「${debouncedQuery}」` : ''}的记录
             </p>
           )}
 

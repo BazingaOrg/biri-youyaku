@@ -91,6 +91,8 @@ export interface Job {
   audio_available: boolean
   /** 邮件发送失败时的原因；存在时表示总结已完成但邮件未送达。 */
   email_error?: string | null
+  /** 主题标签（总结完成后由 LLM 提炼；历史任务可能为空）。 */
+  tags?: string[]
   /** 后端 transient 标记：true = 当前阶段正在等并发槽位（_io_semaphore / _summary_semaphore）。 */
   queued?: boolean
   /** 长视频分段总结进度（transient，仅 SSE 推送）：done=已完成段数，total=总段数。 */

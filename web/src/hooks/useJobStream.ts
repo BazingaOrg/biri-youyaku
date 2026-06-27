@@ -57,6 +57,8 @@ interface StatusPayload {
   subtitle_source?: string
   /** 排队等并发槽位（_io_semaphore / _summary_semaphore）的提示 */
   queued?: boolean
+  /** COMPLETED 时带的主题标签 */
+  tags?: string[]
 }
 
 interface UseJobStreamOptions {
@@ -129,6 +131,9 @@ export function useJobStream(
         }
         if (payload.queued !== undefined) {
           patch.queued = payload.queued
+        }
+        if (payload.tags !== undefined) {
+          patch.tags = payload.tags
         }
         onPatch(patch)
         return
