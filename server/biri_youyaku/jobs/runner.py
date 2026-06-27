@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from biri_youyaku.config import settings
 from biri_youyaku.events import event_bus
 from biri_youyaku.jobs import repo
-from biri_youyaku.jobs.model import JobStatus
+from biri_youyaku.jobs.model import JobOptions, JobStatus
 from biri_youyaku.jobs.pipeline import (
     CanceledError,
     download_audio,
@@ -204,6 +204,16 @@ def recover_unfinished_jobs() -> None:
     # 历史遗留 / 上传字幕 等停在 TRANSCRIPT_READY 的任务，确保总结/邮件不丢）。
     for job in repo.list_jobs_by_status({JobStatus.TRANSCRIPT_READY}):
         logger.info("Recovering TRANSCRIPT_READY job %s → 自动续跑总结", job.id)
+        # 老任务可能记着已停用的供应商快照（如 kimi + Moonshot base_url），配当前 key 会
+        # 401。续跑前把 LLM 供应商刷成当前默认值，其它选项（语言 / 邮件等）保留。
+        refreshed = JobOptions.from_dict(
+            {
+                **job.options.as_dict(),
+                "llm_base_url": settings.llm_base_url,
+                "llm_model": settings.llm_model,
+            }
+        )
+        repo.update_options(job.id, refreshed, option_overrides=job.option_overrides or {})
         resume_job(job.id)
 
 
