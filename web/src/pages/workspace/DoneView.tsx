@@ -4,6 +4,7 @@ import type {Job} from '../../lib/api'
 import {formatStageTimings, formatTokenCount} from '../../lib/format'
 import {IconButton} from '../../components/IconButton'
 import {MetaBar} from './MetaBar'
+import {TranscriptPanel} from './TranscriptPanel'
 
 function JobStats({job}: {job: Job}) {
   const timings = formatStageTimings(job.stage_timings)
@@ -101,6 +102,7 @@ export function DoneView({
           <p className="text-sm text-muted">没有总结内容</p>
         )}
       </section>
+      <TranscriptPanel job={job} />
     </div>
   )
 }
