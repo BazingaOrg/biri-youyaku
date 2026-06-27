@@ -21,7 +21,6 @@ def test_job_options_from_settings_uses_env_defaults():
         "force_asr": False,
         "summary_language": "English",
         "email_enabled": False,
-        "email_recipient": "default@example.com",
         "email_subject_template": "Subject {{title}}",
         "llm_base_url": "https://llm.example/v1",
         "llm_model": "model-a",
@@ -39,7 +38,6 @@ def test_job_options_from_overrides_keeps_defaults_for_unset_fields():
         {
             "task_type": "audio",
             "email_enabled": False,
-            "email_recipient": None,
             "llm_model": "model-b",
             "summary_words": 1200,
             "unknown": "ignored",
@@ -49,6 +47,5 @@ def test_job_options_from_overrides_keeps_defaults_for_unset_fields():
 
     assert options.task_type == "audio"
     assert options.email_enabled is False
-    assert options.email_recipient == "default@example.com"
     assert options.llm_model == "model-b"
     assert "summary_words" not in options.as_dict()

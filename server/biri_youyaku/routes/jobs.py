@@ -26,7 +26,6 @@ from biri_youyaku.jobs.runner import (
 from biri_youyaku.modules.email.webhook import send as send_email
 from biri_youyaku.modules.bilibili.meta import VideoMeta
 from biri_youyaku.modules.bilibili import meta as bili_meta
-from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
 from biri_youyaku.rate_limit import limiter
 from biri_youyaku.routes.config import _validate_llm_base_url
 
@@ -41,7 +40,6 @@ class JobOptionsPayload(BaseModel):
     force_asr: bool | None = None
     summary_language: str | None = None
     email_enabled: bool | None = None
-    email_recipient: str | None = None
     email_subject_template: str | None = None
     llm_base_url: str | None = None
     llm_model: str | None = None
@@ -60,21 +58,6 @@ class ResumeJobPayload(BaseModel):
 
 class RetryJobPayload(BaseModel):
     options: JobOptionsPayload = Field(default_factory=JobOptionsPayload)
-
-
-class TranscriptItemPayload(BaseModel):
-    start: float = 0
-    end: float = 0
-    text: str
-
-
-class ReplaceTranscriptPayload(BaseModel):
-    transcript: list[TranscriptItemPayload]
-    source: str = "upload"
-
-
-class PreviewJobPayload(BaseModel):
-    url: str
 
 
 def _has_audio(job: Job) -> bool:
@@ -141,6 +124,17 @@ _TERMINAL_JOB_STATUSES = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCE
 @router.post("/jobs")
 @limiter.limit("10/minute")
 async def create_job(request: Request, payload: CreateJobPayload) -> dict:
+    # 去重：粘到「已经总结完成」的同一个视频（按 BV 号）就直接复用旧结果，不重复烧 token。
+    # BV 直接从 URL 提取（无需网络）；b23 短链等取不到 BV 的跳过去重照常建。
+    try:
+        bvid = bili_meta.extract_bvid(payload.url)
+    except ValueError:
+        bvid = None
+    if bvid:
+        existing = repo.find_completed_by_bvid(bvid)
+        if existing is not None:
+            return {"ok": True, "job_id": existing.id, "deduped": True}
+
     # 容量保护：单 IP 限流挡不住多 IP 协同灌任务；这里看全局在飞总数兜底。
     # 注意这是「近似/软上限」——count 与下面的 create_job 不在同一事务里，并发请求
     # 可能都通过检查再各自 insert，短暂越过 max_inflight_jobs。单用户场景下足够；要硬
@@ -173,36 +167,6 @@ async def create_job(request: Request, payload: CreateJobPayload) -> dict:
     job = repo.create_job(payload.url, options, option_overrides=option_overrides)
     start_job(job.id, llm_api_key=llm_api_key)
     return {"ok": True, "job_id": job.id}
-
-
-@router.post("/jobs/preview")
-@limiter.limit("30/minute")
-async def preview_job(request: Request, payload: PreviewJobPayload) -> dict:
-    meta = await bili_meta.fetch(payload.url)
-    if meta.duration and meta.duration > settings.max_video_duration_seconds:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"视频时长 {int(meta.duration // 60)} 分钟，超过上限 "
-                f"{settings.max_video_duration_seconds // 60} 分钟。"
-            ),
-        )
-    existing = repo.find_latest_by_video(meta.bvid, meta.cid)
-    response = {
-        "ok": True,
-        "meta": {
-            "url": meta.url,
-            "bvid": meta.bvid,
-            "cid": meta.cid,
-            "title": meta.title,
-            "author": meta.author,
-            "duration": meta.duration,
-            "has_subtitle": meta.has_subtitle,
-        },
-    }
-    if existing is not None:
-        response["dedup_job_id"] = existing.id
-    return response
 
 
 @router.get("/jobs")
@@ -344,33 +308,6 @@ async def retry(request: Request, job_id: str, payload: RetryJobPayload | None =
         retry_job(job_id, llm_api_key=llm_api_key)
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return {"ok": True}
-
-
-@router.post("/jobs/{job_id}/transcript")
-async def replace_transcript(job_id: str, payload: ReplaceTranscriptPayload) -> dict:
-    job = repo.get_job(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if job.status not in TERMINAL_DELETE_STATUSES:
-        raise HTTPException(status_code=409, detail="任务进行中，请先取消再覆盖字幕")
-    items = [
-        TranscriptItem(
-            start=item.start,
-            end=item.end,
-            text=item.text.strip(),
-        )
-        for item in payload.transcript
-        if item.text.strip()
-    ]
-    if not items:
-        raise HTTPException(status_code=400, detail="字幕内容为空")
-    repo.set_transcript(job_id, items)
-    repo.set_subtitle_source(job_id, payload.source or "upload")
-    repo.clear_summary_path(job_id)
-    repo.clear_error(job_id)
-    repo.update_status(job_id, JobStatus.TRANSCRIPT_READY)
-    await event_bus.publish(job_id, "status", {"status": JobStatus.TRANSCRIPT_READY.value})
     return {"ok": True}
 
 

@@ -33,14 +33,13 @@ def test_render_prompt_replaces_supported_placeholders():
 def test_resolve_temperature_uses_settings_override(monkeypatch):
     monkeypatch.setattr(client.settings, "llm_temperature", 0.7)
 
-    assert client.resolve_temperature("gpt-4o-mini") == 0.7
+    assert client.resolve_temperature() == 0.7
 
 
 def test_resolve_temperature_defaults_to_zero_point_two(monkeypatch):
     monkeypatch.setattr(client.settings, "llm_temperature", None)
 
-    assert client.resolve_temperature("gpt-4o-mini") == 0.2
-    assert client.resolve_temperature("deepseek-v4-flash") == 0.2
+    assert client.resolve_temperature() == 0.2
 
 
 def test_build_create_kwargs_non_deepseek_passes_temperature(monkeypatch):

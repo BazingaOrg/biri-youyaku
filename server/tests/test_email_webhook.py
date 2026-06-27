@@ -45,7 +45,7 @@ async def test_send_uses_worker_payload_contract(monkeypatch, video_meta):
 
     # 安全契约：webhook.send 故意忽略 options.email_recipient，永远只发到
     # settings.email_default_recipient（防止借 Worker 给任意邮箱发垃圾邮件）。
-    await webhook.send(video_meta, "# Summary", JobOptions(email_recipient="user@example.com"))
+    await webhook.send(video_meta, "# Summary", JobOptions())
 
     assert FakeAsyncClient.last_request == {
         "url": "https://worker.example",
@@ -79,4 +79,4 @@ async def test_send_reports_webhook_error_body(monkeypatch, video_meta):
     FakeAsyncClient.response = httpx.Response(400, json={"ok": False, "error": "Missing required fields"})
 
     with pytest.raises(RuntimeError, match="Email webhook returned 400: Missing required fields"):
-        await webhook.send(video_meta, "# Summary", JobOptions(email_recipient="user@example.com"))
+        await webhook.send(video_meta, "# Summary", JobOptions())

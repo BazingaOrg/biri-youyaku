@@ -25,7 +25,6 @@ class JobOptions:
     force_asr: bool = False
     summary_language: str = "中文简体"
     email_enabled: bool = True
-    email_recipient: str | None = None
     email_subject_template: str = "[Biri-Youyaku] {{title}}"
     llm_base_url: str = "https://api.deepseek.com/v1"
     llm_model: str = "deepseek-v4-flash"
@@ -44,7 +43,6 @@ class JobOptions:
             force_asr=False,
             summary_language=settings.summary_language,
             email_enabled=settings.email_enabled,
-            email_recipient=settings.email_default_recipient,
             email_subject_template=settings.email_subject_template,
             llm_base_url=settings.llm_base_url,
             llm_model=settings.llm_model,
@@ -69,7 +67,6 @@ class JobOptions:
             "force_asr": self.force_asr,
             "summary_language": self.summary_language,
             "email_enabled": self.email_enabled,
-            "email_recipient": self.email_recipient,
             "email_subject_template": self.email_subject_template,
             "llm_base_url": self.llm_base_url,
             "llm_model": self.llm_model,
@@ -103,7 +100,6 @@ class Job:
     completed_at: int | None = None
     stream_finished_at: int | None = None
     token_usage: dict[str, Any] | None = None
-    content_hash: str | None = None
     stage_timings: list[dict[str, Any]] | None = None
     email_error: str | None = None
     tags: list[str] | None = None

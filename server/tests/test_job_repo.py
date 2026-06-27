@@ -110,31 +110,26 @@ def test_stage_timings_and_token_usage_are_persisted(monkeypatch, tmp_path):
     }
 
 
-def test_usage_since_sums_completed_jobs(monkeypatch, tmp_path):
+def test_find_completed_by_bvid_returns_latest_completed(monkeypatch, tmp_path):
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
     db.init_db()
-    done = repo.create_job("https://www.bilibili.com/video/BVdone", JobOptions())
-    old = repo.create_job("https://www.bilibili.com/video/BVold", JobOptions())
-    active = repo.create_job("https://www.bilibili.com/video/BVactive", JobOptions())
-    repo.add_token_usage(done.id, {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15})
-    repo.add_token_usage(old.id, {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150})
-    repo.add_token_usage(active.id, {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2})
-    repo.update_status(done.id, JobStatus.COMPLETED)
-    repo.update_status(old.id, JobStatus.COMPLETED)
-    repo.update_status(active.id, JobStatus.SUMMARIZING)
-    with db.connect() as connection:
-        connection.execute("UPDATE jobs SET completed_at = ? WHERE id = ?", (100, old.id))
-        connection.execute("UPDATE jobs SET completed_at = ? WHERE id = ?", (1000, done.id))
 
-    usage = repo.usage_since(500)
+    def make(bvid: str, status: JobStatus):
+        job = repo.create_job(f"https://www.bilibili.com/video/{bvid}", JobOptions())
+        repo.update_meta(job.id, bvid=bvid, cid=None, title="T", author="UP", duration=1.0)
+        repo.update_status(job.id, status)
+        return job
 
-    assert usage == {
-        "jobs_count": 1,
-        "input_tokens": 10,
-        "output_tokens": 5,
-        "total_tokens": 15,
-        "cost_estimate": None,
-    }
+    # BV1：先失败再完成 → 命中已完成那条
+    make("BV1", JobStatus.FAILED)
+    done = make("BV1", JobStatus.COMPLETED)
+    # BV2：只有进行中 → 不算命中
+    make("BV2", JobStatus.SUMMARIZING)
+
+    assert repo.find_completed_by_bvid("BV1").id == done.id
+    assert repo.find_completed_by_bvid("BV2") is None
+    assert repo.find_completed_by_bvid("BVnone") is None
+    assert repo.find_completed_by_bvid("") is None
 
 
 def test_list_jobs_by_status_before_filters_by_updated_at(monkeypatch, tmp_path):

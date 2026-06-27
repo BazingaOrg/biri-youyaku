@@ -195,8 +195,11 @@ function UpList({mid}: {mid: number}) {
       const options: {task_type: 'summary'; email_enabled?: boolean} = {task_type: 'summary'}
       if (runtime?.email_configured) options.email_enabled = true
       const res = await createJob(video.url, options)
-      setOverrides((o) => ({...o, [video.bvid]: {status: 'PENDING', job_id: res.job_id}}))
-      toast.success('已开始总结', undefined, {taskName: video.title})
+      setOverrides((o) => ({
+        ...o,
+        [video.bvid]: {status: res.deduped ? 'COMPLETED' : 'PENDING', job_id: res.job_id},
+      }))
+      toast.success(res.deduped ? '这条之前总结过，已复用' : '已开始总结', undefined, {taskName: video.title})
     } catch (err) {
       toast.error('总结失败', err instanceof Error ? err.message : '请稍后再试', {taskName: video.title})
     } finally {

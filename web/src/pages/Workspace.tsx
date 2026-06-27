@@ -151,7 +151,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     if (runtime?.email_configured) options.email_enabled = true
     const response = await createJob(url, options)
     writeActive({jobId: response.job_id, url})
-    toast.success('已开始')
+    toast.success(response.deduped ? '这条之前总结过，已为你打开' : '已开始')
     navigate(`/jobs/${response.job_id}`)
   }
 

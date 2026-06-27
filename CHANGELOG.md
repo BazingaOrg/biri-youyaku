@@ -6,6 +6,8 @@
 ## [Unreleased]
 
 ### Added
+- **重复视频去重**：`POST /v1/jobs` 创建时按 BV 号判重，命中「已完成」的同一视频直接复用旧总结
+  （返回 `deduped: true`、不新建任务、不重复烧 token），前端 toast「这条之前总结过，已打开」。
 - **按 UP 主浏览投稿**：`GET /v1/up/{mid}/videos`（WBI 签名 + 匿名 buvid/dm 指纹 + cookie jar
   规避风控）列出某 UP 全部投稿并标记哪些已总结，未总结可一键建任务（留在列表、乐观标「进行中」）；
   `GET /v1/up/resolve` 把主页链接 / UID / 视频链接解析成 mid。支持 最新/最热 排序、标题搜索、滚动加载。
@@ -38,6 +40,15 @@
 - 后端测试 `test_runner_pause.py` 改用 `runner._registry.reset_for_tests()` 替代直接 monkeypatch 4 个模块 dict。
 - Toast 支持任务名副标题（终态相关提示带上视频标题，过长省略号截断）。
 - `docs/code-review-2026-06-14.md`：全量评审报告（clean code / UI / UX / 样式 / 文档对齐）。
+
+### Removed
+- 清掉兼容/死代码，专注链路整洁：
+  - 未接入前端的 endpoint：`POST /v1/jobs/preview`、`POST /v1/llm/models`、
+    `POST /v1/jobs/{id}/transcript`、`GET /v1/usage`（去重已折进 create_job）。
+  - 弃用字段 `api_token_required`（用 `auth_mode`）、死字段 `JobOptions.email_recipient`
+    （webhook 永远发默认收件人）、`resolve_temperature` 的无用 `model` 参数。
+  - 遗留列 `content_hash` / `segments_json`（启动时尽力 DROP，sqlite ≥3.35）。
+  - 前端死代码 `resumeJob` client。
 
 ### Changed
 - **总结/邮件改为服务端自动续跑**：拿到字幕后后端同一条 task 直接续到总结→标签→邮件→完成，

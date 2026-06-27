@@ -31,7 +31,7 @@ TokenUsageCallback = Callable[[dict], Awaitable[None]]
 SegmentProgressCallback = Callable[[int, int], Awaitable[None]]
 
 
-def resolve_temperature(model: str) -> float:
+def resolve_temperature() -> float:
     if settings.llm_temperature is not None:
         return settings.llm_temperature
     return 0.2
@@ -229,7 +229,7 @@ async def _complete_json_summary(
         client,
         model=model,
         messages=[{"role": "user", "content": prompt}],
-        temperature=resolve_temperature(model),
+        temperature=resolve_temperature(),
         on_usage=on_usage,
     )
     try:
@@ -253,7 +253,7 @@ async def _summarize_segment_markdown(
         client,
         model=model,
         messages=[{"role": "user", "content": prompt}],
-        temperature=resolve_temperature(model),
+        temperature=resolve_temperature(),
         on_usage=on_usage,
     )
 
@@ -340,7 +340,7 @@ async def _summarize_chunked(
             client,
             model=model,
             messages=[{"role": "user", "content": merge_prompt}],
-            temperature=resolve_temperature(model),
+            temperature=resolve_temperature(),
             on_chunk=on_chunk,
             on_usage=on_usage,
         )
@@ -391,7 +391,7 @@ async def summarize(
                 client,
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=resolve_temperature(model),
+                temperature=resolve_temperature(),
                 on_chunk=on_chunk,
                 on_usage=on_usage,
             )
@@ -399,7 +399,7 @@ async def summarize(
             client,
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=resolve_temperature(model),
+            temperature=resolve_temperature(),
             on_usage=on_usage,
         )
 
@@ -430,7 +430,7 @@ async def summarize(
             client,
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=resolve_temperature(model),
+            temperature=resolve_temperature(),
             on_chunk=on_chunk,
             on_usage=on_usage,
         )

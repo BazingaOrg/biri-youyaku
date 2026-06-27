@@ -1,5 +1,4 @@
 import json
-import hashlib
 import time
 import uuid
 from pathlib import Path
@@ -22,7 +21,7 @@ _LITE_COLUMNS = (
     "error_stage, error_message, error_code, audio_path, "
     "subtitle_source, summary_path, options_json, effective_options_json, "
     "created_at, updated_at, completed_at, stream_finished_at, "
-    "token_usage_json, content_hash, email_error, tags_json"
+    "token_usage_json, email_error, tags_json"
 )
 
 
@@ -70,7 +69,6 @@ def _row_to_job(row: Any, *, lite: bool = False) -> Job:
         completed_at=row["completed_at"],
         stream_finished_at=_opt_col(row, "stream_finished_at"),
         token_usage=_opt_json(row, "token_usage_json"),
-        content_hash=_opt_col(row, "content_hash"),
         stage_timings=None if lite else _opt_json(row, "stage_timings_json"),
         email_error=_opt_col(row, "email_error"),
         tags=_opt_json(row, "tags_json"),
@@ -79,10 +77,6 @@ def _row_to_job(row: Any, *, lite: bool = False) -> Job:
 
 def _row_to_job_lite(row: Any) -> Job:
     return _row_to_job(row, lite=True)
-
-
-def content_hash_for(bvid: str, cid: int | None) -> str:
-    return hashlib.sha256(f"{bvid}:{cid or ''}".encode("utf-8")).hexdigest()
 
 
 def create_job(url: str, options: JobOptions, option_overrides: dict[str, Any] | None = None) -> Job:
@@ -283,7 +277,6 @@ def update_meta(
         title=title,
         author=author,
         duration=duration,
-        content_hash=content_hash_for(bvid, cid),
     )
     # 顺手把这个作者的「老任务」（mid 列上线前建的，author 有但 mid 为空）补上 mid，
     # 之后它们的作者名也能直接点开「全部投稿」，不必每次现场解析。
@@ -398,27 +391,8 @@ def add_token_usage(job_id: str, usage: dict[str, Any]) -> None:
         )
 
 
-def usage_since(since_ms: int) -> dict[str, Any]:
-    with connect() as connection:
-        rows = connection.execute(
-            """
-            SELECT token_usage_json FROM jobs
-            WHERE completed_at IS NOT NULL AND completed_at >= ? AND token_usage_json IS NOT NULL
-            """,
-            (since_ms,),
-        ).fetchall()
-    jobs_count = 0
-    totals = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
-    for row in rows:
-        usage = json.loads(row["token_usage_json"])
-        jobs_count += 1
-        for key in totals:
-            totals[key] += int(usage.get(key) or 0)
-    return {"jobs_count": jobs_count, **totals, "cost_estimate": None}
-
-
 def clear_summary_path(job_id: str) -> None:
-    # summary 重做时 completed_at 也得清，否则 usage_since 会把它误算成「已完成」。
+    # summary 重做时把 completed_at 也清掉，保持「有 summary 才算完成」的一致性。
     _set(job_id, summary_path=None, completed_at=None)
 
 
@@ -468,16 +442,19 @@ def summary_status_for_bvids(bvids: list[str]) -> dict[str, dict[str, Any]]:
     return {bvid: {"status": value[2], "job_id": value[3]} for bvid, value in best.items()}
 
 
-def find_latest_by_video(bvid: str, cid: int | None) -> Job | None:
+def find_completed_by_bvid(bvid: str) -> Job | None:
+    """同一 BV 号最近一条「已完成」任务，用于创建时去重（命中就复用、不重复总结）。"""
+    if not bvid:
+        return None
     with connect() as connection:
         row = connection.execute(
             """
             SELECT * FROM jobs
-            WHERE content_hash = ?
+            WHERE bvid = ? AND status = ?
             ORDER BY created_at DESC
             LIMIT 1
             """,
-            (content_hash_for(bvid, cid),),
+            (bvid, JobStatus.COMPLETED.value),
         ).fetchone()
     return _row_to_job(row) if row else None
 

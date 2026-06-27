@@ -16,7 +16,6 @@ export interface JobOptions {
   force_asr: boolean
   summary_language: string
   email_enabled: boolean
-  email_recipient?: string
   email_subject_template: string
   llm_base_url: string
   llm_model: string
@@ -203,7 +202,8 @@ export function getRuntimeConfig() {
 }
 
 export function createJob(url: string, options: JobOptionOverrides) {
-  return request<{ok: true; job_id: string}>('/v1/jobs', {
+  // deduped: 后端发现这条视频之前已总结完成，直接复用了旧任务（没有新建、没有再烧 token）。
+  return request<{ok: true; job_id: string; deduped?: boolean}>('/v1/jobs', {
     method: 'POST',
     body: JSON.stringify({url, options}),
   })

@@ -23,7 +23,6 @@ CREATE TABLE IF NOT EXISTS jobs (
   subtitle_source TEXT,
   chapters_json   TEXT,
   transcript_json TEXT,
-  -- segments_json: 历史遗留列，代码从不写入。新库不再创建；旧库通过 init_db 探测保留以不破坏 SELECT * 兼容。
   summary_path    TEXT,
   options_json    TEXT NOT NULL,
   effective_options_json TEXT,
@@ -32,7 +31,6 @@ CREATE TABLE IF NOT EXISTS jobs (
   completed_at    INTEGER,
   stream_finished_at INTEGER,
   token_usage_json TEXT,
-  content_hash    TEXT,
   stage_timings_json TEXT,
   email_error     TEXT,
   tags_json       TEXT
@@ -40,9 +38,13 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);
-DROP INDEX IF EXISTS idx_jobs_bvid_cid;
-CREATE INDEX IF NOT EXISTS idx_jobs_bvid_cid ON jobs(bvid, cid) WHERE bvid IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_jobs_bvid ON jobs(bvid) WHERE bvid IS NOT NULL;
 """
+
+# 已废弃的旧列：去重改走 bvid 查询（不再用 content_hash），旧 SELECT * 兼容列也不再需要。
+# 启动时尽力 DROP 掉；老版本 sqlite（<3.35）不支持 DROP COLUMN 就留着，反正没代码读它。
+_LEGACY_COLUMNS = ("content_hash", "segments_json")
+_LEGACY_INDEXES = ("idx_jobs_content_hash", "idx_jobs_bvid_cid")
 
 _connection: sqlite3.Connection | None = None
 _connection_path: Path | None = None
@@ -82,7 +84,6 @@ def init_db() -> None:
             "error_code": "ALTER TABLE jobs ADD COLUMN error_code TEXT",
             "stream_finished_at": "ALTER TABLE jobs ADD COLUMN stream_finished_at INTEGER",
             "token_usage_json": "ALTER TABLE jobs ADD COLUMN token_usage_json TEXT",
-            "content_hash": "ALTER TABLE jobs ADD COLUMN content_hash TEXT",
             "stage_timings_json": "ALTER TABLE jobs ADD COLUMN stage_timings_json TEXT",
             "email_error": "ALTER TABLE jobs ADD COLUMN email_error TEXT",
             "tags_json": "ALTER TABLE jobs ADD COLUMN tags_json TEXT",
@@ -97,6 +98,12 @@ def init_db() -> None:
             WHERE effective_options_json IS NULL
             """
         )
-        connection.execute(
-            "CREATE INDEX IF NOT EXISTS idx_jobs_content_hash ON jobs(content_hash) WHERE content_hash IS NOT NULL"
-        )
+        # 清掉废弃索引 + 列（尽力，DROP COLUMN 需 sqlite ≥3.35）。
+        for index in _LEGACY_INDEXES:
+            connection.execute(f"DROP INDEX IF EXISTS {index}")
+        for column in _LEGACY_COLUMNS:
+            if column in columns:
+                try:
+                    connection.execute(f"ALTER TABLE jobs DROP COLUMN {column}")
+                except sqlite3.OperationalError:
+                    pass  # 老 sqlite 不支持 DROP COLUMN，留着无害（没代码读它）
