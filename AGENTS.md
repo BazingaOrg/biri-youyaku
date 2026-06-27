@@ -52,17 +52,16 @@ web/
 
 1. `POST /v1/jobs`（`routes/jobs.py`）→ `jobs/repo.create_job` 入库 → `jobs/runner.start_job`。
 2. `runner.run_until_transcript`：取元信息 + 字幕；没字幕则下音频 + 调 `modules/asr` 转写，
-   **停在 `TRANSCRIPT_READY`**（一个暂停点）。
-3. ⚠️ **续跑由前端驱动**：前端 `hooks/useAutoResume` 在 `TRANSCRIPT_READY` 时自动调
-   `POST /v1/jobs/{id}/resume` → `runner.run_after_resume`。后端**不会**自动从
-   `TRANSCRIPT_READY` 往下走，重启恢复（`recover_unfinished_jobs`）也跳过该状态——
-   即没有浏览器驱动时，总结/邮件不会发生。
-4. `run_after_resume`：`pipeline.summarize` → `modules/llm/client` 分段并流式输出（SSE chunk）；
-   随后 `generate_tags` 提炼主题标签（失败不阻断）；可选 `modules/email`；置 `COMPLETED`。
-5. 流过程中通过 `events.publish` 推 SSE → 前端订阅 `GET /v1/jobs/{id}/stream`。
-6. 完成后总结落 `data/summaries/<id>.md`，标签存 `tags_json`。
-7. 启动期 `app.py` 后台跑 `jobs/tags_backfill.backfill_missing_tags`：给历史无标签的已完成任务补标签（幂等、限速）。
-8. `jobs/cleanup` 后台循环：清孤儿文件、checkpoint WAL、置僵尸任务。
+   过 `TRANSCRIPT_READY`（持久化字幕 + 推 preview）。
+3. **服务端自动续跑**：同一条 task 紧接着调 `runner._do_summarize` → `pipeline.summarize`
+   分段流式输出（SSE chunk）；`_safe_generate_tags` 限时提炼标签（失败不阻断）；可选
+   `modules/email`；置 `COMPLETED`。**不依赖浏览器**——关掉页面也会照常总结并发邮件。
+   - `POST /v1/jobs/{id}/resume`（`run_after_resume`）只服务于 force_asr 改选项 / 重启恢复，
+     正常流程不需要前端触发；`recover_unfinished_jobs` 重启时会把残留的 `TRANSCRIPT_READY` 自动续跑。
+4. 流过程通过 `events.publish` 推 SSE → 前端订阅 `GET /v1/jobs/{id}/stream`。
+5. 完成后总结落 `data/summaries/<id>.md`，标签存 `tags_json`。
+6. 启动期 `app.py` 后台跑 `jobs/tags_backfill.backfill_missing_tags`：给历史无标签的已完成任务补标签（幂等、限速）。
+7. `jobs/cleanup` 后台循环：清孤儿文件、checkpoint WAL、置僵尸任务。
 
 > 思维导图不在后端：前端 `lib/markdown.summaryToMindmap` 把已存的 markdown 实时解析成
 > mind-elixir 数据，不调 LLM、不入库。

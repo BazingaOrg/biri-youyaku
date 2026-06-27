@@ -40,6 +40,10 @@
 - `docs/code-review-2026-06-14.md`：全量评审报告（clean code / UI / UX / 样式 / 文档对齐）。
 
 ### Changed
+- **总结/邮件改为服务端自动续跑**：拿到字幕后后端同一条 task 直接续到总结→标签→邮件→完成，
+  不再停在 `TRANSCRIPT_READY` 等前端 `/resume`——关掉浏览器也会照常出总结、发邮件；重启恢复
+  会自动续跑残留的 `TRANSCRIPT_READY`。前端移除 `useAutoResume`。
+- 标签提炼加 60s 超时，避免拖慢「完成→发邮件」；`resend_email` 失败回 502 带真实原因并更新 `email_error`。
 - README 拆分：主 README 只保留 Quickstart + 架构 + 主要特性；公网部署移到
   `DEPLOY.md`，完整配置参考表移到 `CONFIG.md`。
 - 启动期未配 `LLM_API_KEY` 时打 WARN，job 失败时错误信息直接指向 `server/.env`。
