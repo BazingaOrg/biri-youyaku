@@ -57,6 +57,19 @@ SUMMARY_PROMPT = """你是视频字幕的「笔记整理员」。读者目标是
 """
 
 
+# 主题标签：从已生成的笔记里提炼几个检索/归类用的标签。
+TAGS_PROMPT = """从下面的视频笔记里提炼 3-6 个主题标签，用于检索和归类。
+
+要求：
+- 每个标签 2-8 个字的名词或短语（如「机器学习」「投资理财」「职场」「评测」）。
+- 只输出标签本身，用顿号「、」分隔，不要编号、不要解释、不要其它任何文字。
+- 标签要具体、可区分，别用「视频」「内容」「总结」这种没信息量的词。
+
+笔记：
+{{summary}}
+"""
+
+
 # JSON 解析失败时的修复 prompt：把模型瞎写的输出强行套回 {"summary":"..."} 结构。
 # 这里不能改，逻辑上是"承接已有内容"。
 SUMMARY_REPAIR_PROMPT = """You will receive a model output that should represent a JSON object with a single field named "summary".

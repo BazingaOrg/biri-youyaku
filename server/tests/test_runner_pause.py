@@ -54,6 +54,11 @@ async def test_runner_pauses_at_transcript_ready_then_resumes(monkeypatch, tmp_p
     monkeypatch.setattr(runner, "fetch_platform_transcript", fake_fetch_platform_transcript)
     monkeypatch.setattr(runner, "summarize", fake_summarize)
 
+    async def fake_generate_tags(job, summary_md, *, llm_api_key=None):
+        return ["测试标签"]
+
+    monkeypatch.setattr(runner, "generate_tags", fake_generate_tags)
+
     runner.start_job(job.id, llm_api_key="task-key")
     await runner._registry.tasks[job.id]
     await asyncio.sleep(0)

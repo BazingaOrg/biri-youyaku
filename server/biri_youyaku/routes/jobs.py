@@ -110,6 +110,7 @@ def serialize_job(job: Job, *, lite: bool = False) -> dict:
         "option_overrides": job.option_overrides or {},
         "audio_available": _has_audio(job),
         "email_error": job.email_error,
+        "tags": job.tags or [],
     }
     if lite:
         payload["summary_available"] = job.summary_path is not None

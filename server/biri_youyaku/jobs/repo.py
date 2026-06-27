@@ -22,7 +22,7 @@ _LITE_COLUMNS = (
     "error_stage, error_message, error_code, audio_path, "
     "subtitle_source, summary_path, options_json, effective_options_json, "
     "created_at, updated_at, completed_at, stream_finished_at, "
-    "token_usage_json, content_hash, email_error"
+    "token_usage_json, content_hash, email_error, tags_json"
 )
 
 
@@ -73,6 +73,7 @@ def _row_to_job(row: Any, *, lite: bool = False) -> Job:
         content_hash=_opt_col(row, "content_hash"),
         stage_timings=None if lite else _opt_json(row, "stage_timings_json"),
         email_error=_opt_col(row, "email_error"),
+        tags=_opt_json(row, "tags_json"),
     )
 
 
@@ -288,6 +289,22 @@ def update_meta(
     # 之后它们的作者名也能直接点开「全部投稿」，不必每次现场解析。
     if mid is not None and author:
         backfill_mid_by_author(author, mid)
+
+
+def set_tags(job_id: str, tags: list[str]) -> None:
+    _set(job_id, tags_json=json.dumps(tags, ensure_ascii=False))
+
+
+def list_completed_without_tags(limit: int = 500) -> list[Job]:
+    """启动回填用：已完成但还没有标签的任务（lite 投影）。"""
+    with connect() as connection:
+        rows = connection.execute(
+            f"SELECT {_LITE_COLUMNS} FROM jobs "
+            f"WHERE status = ? AND (tags_json IS NULL OR tags_json = '') "
+            f"ORDER BY created_at DESC LIMIT ?",
+            (JobStatus.COMPLETED.value, limit),
+        ).fetchall()
+    return [_row_to_job_lite(row) for row in rows]
 
 
 def backfill_mid_by_author(author: str, mid: int) -> int:

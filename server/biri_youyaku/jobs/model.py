@@ -106,3 +106,4 @@ class Job:
     content_hash: str | None = None
     stage_timings: list[dict[str, Any]] | None = None
     email_error: str | None = None
+    tags: list[str] | None = None

@@ -80,5 +80,9 @@ async def send_email(video_meta: VideoMeta, summary_md: str, options: JobOptions
     await webhook.send(video_meta, summary_md, options)
 
 
+async def generate_tags(job: Job, summary_md: str, *, llm_api_key: str | None = None) -> list[str]:
+    return await llm_client.generate_tags(summary_md, job.options, api_key=llm_api_key)
+
+
 async def fetch_meta(url: str) -> VideoMeta:
     return await meta.fetch(url)

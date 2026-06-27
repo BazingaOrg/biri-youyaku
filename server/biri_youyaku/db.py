@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   token_usage_json TEXT,
   content_hash    TEXT,
   stage_timings_json TEXT,
-  email_error     TEXT
+  email_error     TEXT,
+  tags_json       TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
@@ -84,6 +85,7 @@ def init_db() -> None:
             "content_hash": "ALTER TABLE jobs ADD COLUMN content_hash TEXT",
             "stage_timings_json": "ALTER TABLE jobs ADD COLUMN stage_timings_json TEXT",
             "email_error": "ALTER TABLE jobs ADD COLUMN email_error TEXT",
+            "tags_json": "ALTER TABLE jobs ADD COLUMN tags_json TEXT",
         }
         for column, statement in migrations.items():
             if column not in columns:

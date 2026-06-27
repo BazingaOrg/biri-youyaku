@@ -72,10 +72,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     recover_unfinished_jobs()
     cleanup_task = asyncio.create_task(cleanup_loop())
     warmup_task = asyncio.create_task(_warmup_asr())
+    tags_task = asyncio.create_task(_backfill_tags())
     try:
         yield
     finally:
-        for task in (cleanup_task, warmup_task):
+        for task in (cleanup_task, warmup_task, tags_task):
             task.cancel()
             try:
                 await task
@@ -83,6 +84,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 pass
         # 关闭共享 client 释放 socket，避免 pytest / reload 留连接
         await aclose_all()
+
+
+async def _backfill_tags() -> None:
+    """后台为历史任务补主题标签（不阻塞启动，失败只 log）。"""
+    log = logging.getLogger("biri_youyaku.startup")
+    try:
+        from biri_youyaku.jobs.tags_backfill import backfill_missing_tags
+
+        await backfill_missing_tags()
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        log.warning("标签回填任务异常（忽略）：%s", exc)
 
 
 async def _warmup_asr() -> None:

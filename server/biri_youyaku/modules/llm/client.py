@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 
 from openai import AsyncOpenAI
@@ -17,6 +18,7 @@ from biri_youyaku.modules.llm.prompts import (
     SUMMARY_MERGE_PROMPT,
     SUMMARY_PROMPT,
     SUMMARY_REPAIR_PROMPT,
+    TAGS_PROMPT,
 )
 from biri_youyaku.modules.llm.segmenter import should_chunk, split_transcript
 
@@ -434,3 +436,55 @@ async def summarize(
         )
 
     return await _complete_json_summary(client, model=model, prompt=prompt, on_usage=on_usage)
+
+
+def _parse_tags(content: str) -> list[str]:
+    raw = re.split(r"[、,，\n;；/]+", content.strip())
+    seen: set[str] = set()
+    tags: list[str] = []
+    for item in raw:
+        # 去掉可能的编号/项目符号/引号
+        tag = re.sub(r"^[\s\-*0-9.、)）(（\"'`]+", "", item).strip().strip("\"'` ")
+        if not tag or len(tag) > 12 or tag in seen:
+            continue
+        seen.add(tag)
+        tags.append(tag)
+        if len(tags) >= 6:
+            break
+    return tags
+
+
+async def generate_tags(
+    summary_md: str,
+    options: JobOptions,
+    *,
+    api_key: str | None = None,
+    raise_on_error: bool = False,
+) -> list[str]:
+    """从已生成的笔记里提炼 3-6 个主题标签。
+
+    没配 key / 空笔记 → []。LLM 报错时默认返回 []（主流程非致命）；回填场景传
+    raise_on_error=True，让调用方区分「确实没标签」与「这次调用失败、下次再试」。
+    """
+    resolved_api_key = api_key or settings.llm_api_key
+    text = (summary_md or "").strip()
+    if not resolved_api_key or not text:
+        return []
+    client = openai_client(
+        api_key=resolved_api_key,
+        base_url=options.llm_base_url or settings.llm_base_url,
+        timeout=settings.llm_timeout_seconds,
+        max_retries=settings.llm_max_retries,
+    )
+    model = options.llm_model or settings.llm_model
+    prompt = TAGS_PROMPT.replace("{{summary}}", text[:4000])  # 截断省 token
+    try:
+        content = await _complete(
+            client, model=model, messages=[{"role": "user", "content": prompt}], temperature=0
+        )
+    except Exception as exc:
+        logger.warning("生成标签失败 model=%s: %s", model, _format_llm_error(exc))
+        if raise_on_error:
+            raise
+        return []
+    return _parse_tags(content)

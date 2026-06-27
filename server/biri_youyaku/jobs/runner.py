@@ -11,6 +11,7 @@ from biri_youyaku.jobs.pipeline import (
     download_audio,
     fetch_meta,
     fetch_platform_transcript,
+    generate_tags,
     send_email,
     summarize,
     transcribe_audio,
@@ -417,6 +418,13 @@ async def run_after_resume(job_id: str) -> None:
             )
         _raise_if_canceled(job_id)
 
+        # 主题标签：从笔记提炼，失败返回 [] 不阻断完成。
+        tags = await generate_tags(
+            fresh_job, summary_md, llm_api_key=_registry.llm_api_keys.get(job_id)
+        )
+        if tags:
+            repo.set_tags(job_id, tags)
+
         # 邮件失败（含 EMAILING 阶段 timeout = StageTimeoutError(RuntimeError)）一律
         # 不阻断 COMPLETED：summary 已经落盘，用户可手动 ↻ 重发。
         # - 与旧契约不同：之前任何邮件异常会把整个 job 置 FAILED。新契约把失败原因
@@ -441,6 +449,7 @@ async def run_after_resume(job_id: str) -> None:
             JobStatus.COMPLETED,
             summary=summary_md,
             email_error=email_error,
+            tags=tags,
         )
 
 
