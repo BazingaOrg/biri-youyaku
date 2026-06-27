@@ -11,6 +11,10 @@ Paste a Bilibili video link, fetch subtitles when available, fall back to audio
 transcription, and generate a Markdown summary in one click. Optionally email the
 result.
 
+Each summary offers: Markdown notes (with a table of contents) / mind map / topic
+tags / clickable transcript that jumps back into the video. You can also browse an
+uploader's full catalog, see which videos are already summarized, and one-click the rest.
+
 ## 60-second quickstart
 
 You need Python 3.11+, Node.js 22+ (see `.nvmrc`), [uv](https://docs.astral.sh/uv/), and `npm`.

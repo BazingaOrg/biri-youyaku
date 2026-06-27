@@ -6,6 +6,19 @@
 ## [Unreleased]
 
 ### Added
+- **按 UP 主浏览投稿**：`GET /v1/up/{mid}/videos`（WBI 签名 + 匿名 buvid/dm 指纹 + cookie jar
+  规避风控）列出某 UP 全部投稿并标记哪些已总结，未总结可一键建任务（留在列表、乐观标「进行中」）；
+  `GET /v1/up/resolve` 把主页链接 / UID / 视频链接解析成 mid。支持 最新/最热 排序、标题搜索、滚动加载。
+  入口：视频页作者名 chip、历史每条作者名、首页「按 UP 主浏览投稿」。
+- **主题标签**：总结完成后用一次轻量 LLM 调用提炼 3-6 个标签（`generate_tags` + `TAGS_PROMPT`），
+  存 `tags_json` 列、完成页 chip 展示、历史页按标签筛选；启动时后台幂等回填历史无标签任务。
+- **思维导图**：完成页「脑图」tab，用 mind-elixir 把已存 markdown 实时解析成只读导图（历史也能出图、
+  不额外调 LLM），可导出 SVG/PNG，懒加载。
+- **字幕原文 + 跳转**：完成页「字幕原文」tab，时间戳点击用 B 站 `?t=秒` 深链跳到对应时间；带行内搜索。
+- **下载字幕（SRT）**：完成页新增按钮，导出标准 .srt（兜底缺失时间戳、清洗搜索高亮 HTML）。
+- **完成页改版**：笔记 / 脑图 / 字幕原文 三 tab；笔记 tab 桌面端 TOC 目录侧边栏（滚动高亮 + 点击跳转）；
+  全局「回到顶部」浮标；分段总结进度条；成本/耗时（tokens）一行。
+- **`jobs` 加 `mid` 列**：抓 meta 时落 UP 的 uid，并回填同作者的历史任务，作者名可直接点开「全部投稿」。
 - `GET /v1/version` 返回后端版本号，方便用户报 bug 时贴版本。
 - `docker-compose.dev.yml`：开发模式带 hot reload。
 - `scripts/dev.ps1`：Windows PowerShell 一键启动脚本。

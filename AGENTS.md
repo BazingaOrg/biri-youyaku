@@ -6,6 +6,7 @@
 ## 项目一句话
 
 粘 B 站视频 URL，后端拉字幕或转写音频，调 LLM 出 Markdown 摘要；前端实时流式显示，可选转邮件。
+另支持：按 UP 主浏览全部投稿并标记是否总结过、主题标签、思维导图、字幕原文点击跳转。
 
 ## 技术栈
 
@@ -27,34 +28,44 @@ server/
     db.py             # SQLite 连接 + schema 迁移
     events.py         # SSE 事件总线
     logging.py        # 日志配置
-    routes/           # FastAPI router：jobs / config / healthz
-    jobs/             # 业务核心：repo / runner / pipeline / cleanup / model
+    routes/           # FastAPI router：jobs / config / healthz / up（UP 投稿列表）
+    jobs/             # 业务核心：repo / runner / pipeline / cleanup / model / tags_backfill
     modules/
-      bilibili/       # 抓视频元信息、字幕、音频
+      bilibili/       # 抓视频元信息、字幕、音频；wbi.py(WBI 签名) + space.py(UP 投稿列表)
       asr/            # ASR 后端抽象（sensevoice / parakeet / faster-whisper）
-      llm/            # LLM client + 分段总结 + 流式合并
+      llm/            # LLM client + 分段总结 + 流式合并 + 标签提炼（generate_tags）
       email/          # 转发到 Cloudflare Worker
       storage/        # 文件落盘（summaries / audio）
       transcript.py   # 字幕 / 转写结果的统一表示
-  tests/              # pytest，asyncio_mode=auto
+  tests/              # pytest，asyncio_mode=auto（conftest.py 关掉 slowapi 限流器）
 
 web/
   src/
-    App.tsx
-    pages/            # 各页面
-    components/       # UI 组件
-    hooks/            # 自定义 hooks（SSE 订阅、轮询等）
-    lib/              # API client、工具
+    App.tsx           # 路由：/ (Workspace) / /jobs/:id / /history / /up[/:mid]
+    pages/            # Workspace / HistoryPage / UpPage（按 UP 浏览）+ workspace/*（视图分片）
+    components/       # UI 组件（Spinner / AuthorLink / ScrollToTop / StepCarousel 等）
+    hooks/            # 自定义 hooks（SSE 订阅、自动 resume、轮询等）
+    lib/              # API client、工具（biliUrl / markdown(TOC+脑图) / subtitle(SRT) 等）
 ```
 
 ## 数据流（一个任务从 PENDING 到 COMPLETED）
 
 1. `POST /v1/jobs`（`routes/jobs.py`）→ `jobs/repo.create_job` 入库 → `jobs/runner.start_job`。
-2. `runner.run_until_transcript`：调 `modules/bilibili` 取元信息 + 字幕；没字幕则下音频 + 调 `modules/asr` 转写。
-3. 拿到 transcript → `pipeline.summarize` → `modules/llm/client` 分段并流式输出。
-4. 流过程中通过 `events.publish` 推 SSE chunk → 前端订阅 `GET /v1/jobs/{id}/stream`。
-5. 完成后写 `data/summaries/<id>.md`，可选触发 `modules/email`。
-6. `jobs/cleanup` 后台循环：清孤儿文件、checkpoint WAL、置僵尸任务。
+2. `runner.run_until_transcript`：取元信息 + 字幕；没字幕则下音频 + 调 `modules/asr` 转写，
+   **停在 `TRANSCRIPT_READY`**（一个暂停点）。
+3. ⚠️ **续跑由前端驱动**：前端 `hooks/useAutoResume` 在 `TRANSCRIPT_READY` 时自动调
+   `POST /v1/jobs/{id}/resume` → `runner.run_after_resume`。后端**不会**自动从
+   `TRANSCRIPT_READY` 往下走，重启恢复（`recover_unfinished_jobs`）也跳过该状态——
+   即没有浏览器驱动时，总结/邮件不会发生。
+4. `run_after_resume`：`pipeline.summarize` → `modules/llm/client` 分段并流式输出（SSE chunk）；
+   随后 `generate_tags` 提炼主题标签（失败不阻断）；可选 `modules/email`；置 `COMPLETED`。
+5. 流过程中通过 `events.publish` 推 SSE → 前端订阅 `GET /v1/jobs/{id}/stream`。
+6. 完成后总结落 `data/summaries/<id>.md`，标签存 `tags_json`。
+7. 启动期 `app.py` 后台跑 `jobs/tags_backfill.backfill_missing_tags`：给历史无标签的已完成任务补标签（幂等、限速）。
+8. `jobs/cleanup` 后台循环：清孤儿文件、checkpoint WAL、置僵尸任务。
+
+> 思维导图不在后端：前端 `lib/markdown.summaryToMindmap` 把已存的 markdown 实时解析成
+> mind-elixir 数据，不调 LLM、不入库。
 
 ## 关键约束
 
