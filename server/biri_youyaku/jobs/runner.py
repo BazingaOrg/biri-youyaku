@@ -24,13 +24,9 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# 单进程内的 job 运行时态。
-#
-# 历史包袱：原来散在 4 个模块级 dict 里（_tasks / _cancel_requested /
-# _job_llm_api_keys / _stage_started_at），每加一个状态都得在 5 处 pop 维护，
-# 极易踩到「忘清一个就内存常驻」的坑。统一收成 _JobRegistry 之后，job 结束的
-# 一次性清理走 `_registry.forget(job_id)`；外部公开 API（clear_job_state /
-# cancel_job / start_job 等）保持向后兼容。
+# 单进程内的 job 运行时态：在跑的 task、取消请求、临时 LLM key、阶段起始时间。
+# 统一收在 _JobRegistry 里，job 结束时 `_registry.forget(job_id)` 一次性清掉，
+# 避免分散在多处忘清导致内存常驻。
 # ---------------------------------------------------------------------------
 
 
