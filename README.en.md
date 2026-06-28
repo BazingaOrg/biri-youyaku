@@ -4,6 +4,10 @@
 
 Paste a Bilibili video link and get a readable Markdown summary, a mind map, and a clickable transcript. Local-first, self-hosted, no telemetry.
 
+<!-- Demo: drop a screenshot/GIF in assets/ then uncomment the line below
+![demo](assets/demo.gif)
+-->
+
 > `要約` (yōyaku) is Japanese for "summary"; the homophone also means "finally". `biri` comes from `ビリビリ`, the Japanese nickname for Bilibili.
 > Inspired by [linzzzzzz/openclip](https://github.com/linzzzzzz/openclip) and [IndieKKY/bilibili-subtitle](https://github.com/IndieKKY/bilibili-subtitle).
 

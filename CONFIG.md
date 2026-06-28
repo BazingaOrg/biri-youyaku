@@ -35,7 +35,7 @@
 | 邮件 | `EMAIL_ENABLED` | `false` | |
 | 邮件 | `EMAIL_WEBHOOK_URL` | 空 | 收 webhook 的 URL（如 Cloudflare Worker） |
 | 邮件 | `EMAIL_WEBHOOK_TOKEN` | 空 | 启用邮件时必填；后端 → Worker 的鉴权 token，与 Worker 端 `BIRI_YOUYAKU_TOKEN` 一致 |
-| 邮件 | `EMAIL_DEFAULT_RECIPIENT` | 空 | **唯一**收件人；后端永远只发到这里，忽略 job 里的 recipient |
+| 邮件 | `EMAIL_DEFAULT_RECIPIENT` | 空 | **唯一**收件人；后端永远只发到这里（无 per-job 收件人，防滥发） |
 | 邮件 | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | 支持 `{{title}}` / `{{author}}` |
 | 存储 | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DB_PATH` | `data/...` | |
 | 清理 | `AUDIO_RETENTION_DAYS` | `7` | |
@@ -83,7 +83,7 @@ All tunable settings live in `server/.env`; defaults are in
 | Email | `EMAIL_ENABLED` | `false` | |
 | Email | `EMAIL_WEBHOOK_URL` | empty | the webhook receiver URL (e.g. a Cloudflare Worker) |
 | Email | `EMAIL_WEBHOOK_TOKEN` | empty | required when email is enabled; auth token from backend → worker; must match the worker's `BIRI_YOUYAKU_TOKEN` |
-| Email | `EMAIL_DEFAULT_RECIPIENT` | empty | **only** recipient; backend ignores per-job recipient and always sends here |
+| Email | `EMAIL_DEFAULT_RECIPIENT` | empty | the **only** recipient; backend always sends here (no per-job recipient, anti-abuse) |
 | Email | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | `{{title}}` / `{{author}}` allowed |
 | Storage | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DB_PATH` | `data/...` | |
 | Cleanup | `AUDIO_RETENTION_DAYS` | `7` | |

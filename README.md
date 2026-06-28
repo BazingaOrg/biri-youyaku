@@ -4,6 +4,10 @@
 
 粘贴 B 站视频链接，自动生成可读的 Markdown 摘要、思维导图与可跳转字幕。本地优先、自托管、无遥测。
 
+<!-- 演示图：把截图/GIF 放到 assets/，再取消下面这行注释
+![demo](assets/demo.gif)
+-->
+
 > `要約`（ようやく / yōyaku）日语里是「摘要、总结」，同音又有「终于」之意；`biri` 取自 Bilibili 的日语叫法 `ビリビリ`。
 > 灵感：[linzzzzzz/openclip](https://github.com/linzzzzzz/openclip) · [IndieKKY/bilibili-subtitle](https://github.com/IndieKKY/bilibili-subtitle)
 
