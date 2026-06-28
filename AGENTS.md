@@ -80,7 +80,7 @@ web/
 
 - **加一个 LLM 供应商**：通常只改 `LLM_BASE_URL_ALLOWED_HOSTS` 默认值 + README 的供应商表。代码层 OpenAI 兼容就不用动。
 - **加一个 ASR 后端**：在 `modules/asr/` 加新文件 + 注册到 `get_transcriber`，env 用 `ASR_MODEL=xxx` 切换。
-- **加一个 API endpoint**：在 `routes/` 对应文件加路由，注意 `Depends(require_token)` 和 `@limiter.limit`。同时更新 README API 列表 + `CHANGELOG.md`。
+- **加一个 API endpoint**：在 `routes/` 对应文件加路由，注意 `Depends(require_token)` 和 `@limiter.limit`。API 在 `/docs` 自动暴露，无需手动维护列表；用户可见的话在 `CHANGELOG.md` 加一行。
 - **加一个 env 配置**：`config.py` 加字段 → `.env.example` 加注释行 → `CONFIG.md` 加一行。
 - **改 schema**：`db.py` 的 `SCHEMA` + `migrations` 字典里加 ALTER，记得允许旧库继续打开。
 

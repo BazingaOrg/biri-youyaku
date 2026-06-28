@@ -2,44 +2,102 @@
 
 [中文](README.md) | [English](README.en.md)
 
-> `要約`（ようやく / yōyaku）在日语里是「摘要、总结」，同音 `ようやく` 又有「终于」之意。
-> `biri` 来自 Bilibili 的日语口语叫法 `ビリビリ`。
->
+粘贴 B 站视频链接，自动生成可读的 Markdown 摘要、思维导图与可跳转字幕。本地优先、自托管、无遥测。
+
+> `要約`（ようやく / yōyaku）日语里是「摘要、总结」，同音又有「终于」之意；`biri` 取自 Bilibili 的日语叫法 `ビリビリ`。
 > 灵感：[linzzzzzz/openclip](https://github.com/linzzzzzz/openclip) · [IndieKKY/bilibili-subtitle](https://github.com/IndieKKY/bilibili-subtitle)
 
-粘贴 B 站视频链接，先取字幕；没字幕则下载音频转写。一键生成摘要，也可以发到邮箱。
+## ✨ 特性
 
-摘要支持：Markdown 笔记（带目录） / 思维导图 / 主题标签 / 字幕原文点击跳转回视频；
-还能按 UP 主浏览全部投稿、标记哪些已总结、未总结的一键补总结。
+- **字幕优先**：先取官方字幕，没有则下载音频本地转写（ASR）。
+- **多视图摘要**：Markdown 笔记（带目录）/ 思维导图（可导出 SVG·PNG）/ 主题标签 / 字幕原文（点时间戳跳回视频）。
+- **任意 LLM**：任何 OpenAI 兼容接口（默认 DeepSeek，OpenAI / Gemini / 本地 ollama 等都行）。
+- **按 UP 主浏览**：列出某 UP 全部投稿、标记已/未总结、未总结一键补。
+- **去重省钱**：同一视频已总结过就直接复用，不重复烧 token。
+- **本地优先**：数据全落本地、无遥测；可选邮件推送、可选 API Token 鉴权。
 
-## 60 秒快速开始
+## 🚀 快速开始
 
-需要 Python 3.11+、Node.js 22+（见 `.nvmrc`）、[uv](https://docs.astral.sh/uv/)、`npm`。
+前置：Python 3.11+、Node.js 22+（见 `.nvmrc`）、[uv](https://docs.astral.sh/uv/)、`npm`。
 
 ```bash
-# 1. 拷一份配置 + 填你的 LLM_API_KEY（默认 DeepSeek；OpenAI / 通义 / Gemini 等 OpenAI 兼容接口都行）
-cp server/.env.example server/.env
-$EDITOR server/.env
-
-# 2. 一键起前后端 dev server（脚本会自动 cp server/.env + web/.env、装依赖）
-bash scripts/dev.sh
-# Windows PowerShell：powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
+cp server/.env.example server/.env   # 填 LLM_API_KEY（默认走 DeepSeek）
+bash scripts/dev.sh                  # 一键起前后端（自动 cp .env、装依赖）
 ```
 
 打开 <http://127.0.0.1:5173>，粘贴一个 B 站视频链接即可。
 
-> 想用 Docker？`cp server/.env.example server/.env` 之后 `docker compose up --build`（开发模式带 hot reload：`docker compose -f docker-compose.dev.yml up --build`）。
+> Windows：`powershell -ExecutionPolicy Bypass -File scripts\dev.ps1`
+> Docker：`docker compose up --build`（热重载用 `docker compose -f docker-compose.dev.yml up --build`）。
 
----
+<details>
+<summary>不用脚本，手动分别起</summary>
 
-## 项目结构
+```bash
+# 后端
+cd server && cp .env.example .env && uv sync
+uv run uvicorn biri_youyaku.app:app --reload --host 0.0.0.0 --port 17821
 
-- `web/`：前端（Vite + React）。
-- `server/`：后端（FastAPI + SQLite）。
-- `examples/email-worker/`：可选的 Cloudflare Worker 模板，把总结发到邮箱。
-- `scripts/dev.sh`、`docker-compose.yml`：本地一键启动。
+# 前端（新终端）
+cd web && cp .env.example .env && npm install && npm run dev   # http://localhost:5173
+```
 
-## 架构
+</details>
+
+## ⚙️ LLM 配置
+
+任何 OpenAI 兼容接口都行，`server/.env` 里至少填 `LLM_API_KEY`：
+
+| 供应商 | `LLM_BASE_URL` |
+| --- | --- |
+| **DeepSeek**（默认） | `https://api.deepseek.com/v1` |
+| OpenAI | `https://api.openai.com/v1` |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` |
+| 本地 ollama / vLLM | `http://localhost:11434/v1` |
+
+`LLM_MODEL` 填供应商支持的模型名（默认 `deepseek-v4-flash`）。更多供应商与全部可调项见 [`CONFIG.md`](CONFIG.md)。
+
+> **成本参考**：默认模型总结一个 20 分钟视频约 ¥0.02；想完全免费走下面的本地 ollama。
+
+<details>
+<summary>完全本地 / 免费 / 离线（ollama）</summary>
+
+```bash
+ollama pull qwen2.5:3b        # 4GB 内存可跑，中文摘要够用；内存够可换 qwen2.5:7b
+```
+
+```env
+# server/.env
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_MODEL=qwen2.5:3b
+LLM_API_KEY=ollama            # ollama 不校验，但不能为空
+LLM_BASE_URL_ALLOWED_HOSTS=   # 仅本地留空；公网部署不要放开白名单
+```
+
+配合下面的本地 ASR，即可端到端零联网（B 站抓数据除外）。
+
+</details>
+
+## 🧩 可选功能
+
+- **本地 ASR 转写**（无字幕的视频）：需 `ffmpeg`。跨平台 `cd server && uv sync --extra asr`；Apple Silicon 用 `--extra asr-mlx`（GPU/ANE 加速 15-30×）。用 `ASR_MODEL` 切换后端（见下表）。
+- **B 站登录态**（取私享视频 / 高画质字幕）：浏览器登录后复制 cookie 里的 `SESSDATA`，填到 `server/.env` 的 `BILI_SESSDATA`。
+- **邮件推送**（默认关闭）：用仓库自带的 Cloudflare Worker 模板，跟着 [`examples/email-worker/README.md`](examples/email-worker/README.md) 走，再在 `server/.env` 开 `EMAIL_ENABLED` 等。
+
+<details>
+<summary>ASR 后端对比</summary>
+
+| `ASR_MODEL` | 适合 | 备注 |
+| --- | --- | --- |
+| `sensevoice`（默认） | 跨平台、Docker | funasr CPU，慢但兼容 |
+| `sensevoice-mlx` | M 系列 Mac、中日韩 | 同模型同精度，吃 GPU/ANE |
+| `parakeet-mlx` | M 系列 Mac、英语/欧语 | NVIDIA Parakeet TDT v3 |
+| `auto` | 不想纠结 | CJK → sensevoice-mlx，其余 → parakeet-mlx |
+| `faster-whisper` | 已有 whisper 工作流 | CTranslate2 优化版 |
+
+</details>
+
+## 🏗️ 架构
 
 ```mermaid
 flowchart LR
@@ -51,164 +109,20 @@ flowchart LR
     asr --> llm[LLM<br/>OpenAI 兼容]
     llm -->|流式 chunk| api
     api --> db[(SQLite)]
-    api --> fs[/data/summaries<br/>data/audio/]
     api -. 可选 .-> mail[Cloudflare Worker → Resend]
 ```
 
-> 数据全部落在本地（`server/data/`）。除了主动调用的 LLM 接口和 B 站，
-> 项目不向任何第三方上报数据，无遥测、无统计。
+> 数据全部落在本地（`server/data/`）；除主动调用的 LLM 接口和 B 站外，不向任何第三方上报，无遥测、无统计。
 
----
+## 📦 部署与文档
 
-## 准备一份 LLM API Key
+- [`DEPLOY.md`](DEPLOY.md) — 公网部署（Vercel + Cloudflare Tunnel）
+- [`CONFIG.md`](CONFIG.md) — `server/.env` 全部可调项
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — 开发 / 测试 / 提交
+- [`AGENTS.md`](AGENTS.md) — 给 AI 编程助手的代码库导览
+- [`CHANGELOG.md`](CHANGELOG.md) — 版本变更
 
-任何 OpenAI 兼容接口都行。常见选择：
-
-| 供应商 | `LLM_BASE_URL` 示例 | 备注 |
-| --- | --- | --- |
-| **DeepSeek**（默认） | `https://api.deepseek.com/v1` | 模型 `deepseek-v4-flash`；思考模式见 `LLM_THINKING_ENABLED` |
-| Moonshot / Kimi | `https://api.moonshot.cn/v1` | |
-| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | |
-| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | OpenAI 兼容端点 |
-| OpenAI | `https://api.openai.com/v1` | |
-| Anthropic Claude | `https://api.anthropic.com/v1` | |
-| xAI Grok | `https://api.x.ai/v1` | |
-| 本地 ollama / vLLM | `http://localhost:11434/v1` | 模型名按本地实际 |
-
-`LLM_MODEL` 填供应商支持的模型名（默认 `deepseek-v4-flash`）。
-
-**成本参考**：用默认 `deepseek-v4-flash` 总结一个 20 分钟视频大约 ¥0.02（输入 1 元/M、输出 2 元/M）。
-长视频按 token 线性增加；想完全免费走下面的本地 ollama 即可。
-
-### 完全本地：ollama（免费 / 离线 / 隐私）
-
-```bash
-# 1. 装 ollama（macOS / Linux 都有官方安装包）：https://ollama.com
-ollama pull qwen2.5:3b   # 3B 模型，4GB 内存可跑；中文摘要够用
-# ollama pull qwen2.5:7b # 内存够建议这个，质量更好
-
-# 2. server/.env
-LLM_BASE_URL=http://localhost:11434/v1
-LLM_MODEL=qwen2.5:3b
-LLM_API_KEY=ollama       # ollama 不校验，但不能为空
-LLM_BASE_URL_ALLOWED_HOSTS=  # 仅本地这样留空；公网部署不要放开白名单
-```
-
-跑通后，所有摘要本地推理、不出网。配合下面「本地 ASR 转写」就能做到端到端零联网（B 站抓数据除外）。
-
----
-
-## 本地开发（手动）
-
-不想用 `scripts/dev.sh`？分别起：
-
-```bash
-# 后端
-cd server
-cp .env.example .env       # 填 LLM_API_KEY
-uv sync
-uv run uvicorn biri_youyaku.app:app --reload --host 0.0.0.0 --port 17821
-
-# 前端（新终端）
-cd web
-cp .env.example .env
-npm install
-npm run dev                # http://localhost:5173
-```
-
----
-
-## 可选功能
-
-### B 站登录态（取私享视频 / 高画质字幕）
-
-浏览器登录 B 站后，从 cookie 复制 `SESSDATA`，写到 `server/.env`：
-
-```env
-BILI_SESSDATA=你的-sessdata
-# 大多数情况只配 SESSDATA 就够；某些接口需要再补
-# BILI_BUVID3=
-# BILI_BILI_JCT=
-```
-
-### 本地 ASR 转写（无字幕的视频）
-
-需要 `ffmpeg` / `ffprobe`；Mac `brew install ffmpeg`，Ubuntu `apt install ffmpeg`。
-
-**跨平台（默认）—— funasr CPU 后端**：
-
-```bash
-cd server
-uv sync --extra asr     # 装 funasr + torch
-# server/.env
-ASR_MODEL=sensevoice    # 默认就是这个，可省
-```
-
-**Apple Silicon Mac（M1+）—— MLX 后端（推荐，15-30× 加速）**：
-
-```bash
-cd server
-uv sync --extra asr-mlx # 装 mlx-audio + parakeet-mlx
-```
-
-可选 ASR 后端：
-
-| `ASR_MODEL` | 适合 | 备注 |
-| --- | --- | --- |
-| `sensevoice` | 跨平台、Docker | funasr CPU，慢但兼容 |
-| `sensevoice-mlx` | M 系列 Mac、中日韩视频 | 同模型同精度，吃 GPU/ANE |
-| `parakeet-mlx` | M 系列 Mac、英语 / 欧语 | NVIDIA Parakeet TDT v3，WER 6.34%（超 Whisper-Large-v3） |
-| `auto` | 不想纠结 | 按任务语言路由：CJK → sensevoice-mlx，其余 → parakeet-mlx |
-| `faster-whisper` | 已有 whisper 工作流 | CTranslate2 优化版 |
-
-Mac mini M4 推荐：`ASR_MODEL=auto`。
-
-### 邮件发送
-
-> 邮件**默认关闭**，需要自己起一个 webhook。仓库里给了一个 Cloudflare Worker 模板：
-
-```bash
-cd examples/email-worker
-# 跟着 examples/email-worker/README.md 走，5 分钟部完
-```
-
-部完后到 `server/.env`：
-
-```env
-EMAIL_ENABLED=true
-EMAIL_WEBHOOK_URL=https://biri-youyaku-mail.<account>.workers.dev
-EMAIL_WEBHOOK_TOKEN=与 Worker 的 BIRI_YOUYAKU_TOKEN 一致
-EMAIL_DEFAULT_RECIPIENT=you@example.com
-```
-
-启动时若开了 `EMAIL_ENABLED` 但 `EMAIL_WEBHOOK_URL` / `EMAIL_WEBHOOK_TOKEN` /
-`EMAIL_DEFAULT_RECIPIENT` 任一为空，后端会打 WARN；创建任务时也会拒绝，避免发到错误地址。
-使用仓库自带 Worker 时，`EMAIL_WEBHOOK_TOKEN` 要和 Worker 的 `BIRI_YOUYAKU_TOKEN` 保持一致。
-
----
-
-## 更多文档
-
-- [`DEPLOY.md`](DEPLOY.md)：公网部署（Vercel + Cloudflare Tunnel）。
-- [`CONFIG.md`](CONFIG.md)：`server/.env` 所有可调项的完整表。
-- [`CONTRIBUTING.md`](CONTRIBUTING.md)：开发流程、测试、commit 规范。
-- [`AGENTS.md`](AGENTS.md)：给 AI 编程助手的代码库导览。
-- [`CHANGELOG.md`](CHANGELOG.md)：版本变更。
-
-完整 API 列表见 `GET /docs`（FastAPI 自动生成）。常用：
-
-```
-GET  /healthz                       后端存活
-GET  /v1/version                    后端版本号
-GET  /v1/config/runtime             各能力是否已配置
-POST /v1/jobs                       建任务
-GET  /v1/jobs                       历史列表
-GET  /v1/jobs/{id}/stream           SSE 流式订阅
-GET  /v1/up/{mid}/videos            某 UP 的投稿列表（标记哪些已总结）
-GET  /v1/up/resolve                 主页链接 / UID / 视频链接 → mid
-```
-
----
+完整 API 见后端运行后的 `/docs`（FastAPI 自动生成）。
 
 ## License
 

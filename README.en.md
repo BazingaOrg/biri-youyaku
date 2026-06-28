@@ -2,220 +2,127 @@
 
 [中文](README.md) | [English](README.en.md)
 
-> `要約` (ようやく / yōyaku) means "summary" in Japanese; the same pronunciation
-> also means "at last". `biri` comes from `ビリビリ`, Japanese for Bilibili.
->
-> Inspired by [linzzzzzz/openclip](https://github.com/linzzzzzz/openclip) · [IndieKKY/bilibili-subtitle](https://github.com/IndieKKY/bilibili-subtitle)
+Paste a Bilibili video link and get a readable Markdown summary, a mind map, and a clickable transcript. Local-first, self-hosted, no telemetry.
 
-Paste a Bilibili video link, fetch subtitles when available, fall back to audio
-transcription, and generate a Markdown summary in one click. Optionally email the
-result.
+> `要約` (yōyaku) is Japanese for "summary"; the homophone also means "finally". `biri` comes from `ビリビリ`, the Japanese nickname for Bilibili.
+> Inspired by [linzzzzzz/openclip](https://github.com/linzzzzzz/openclip) and [IndieKKY/bilibili-subtitle](https://github.com/IndieKKY/bilibili-subtitle).
 
-Each summary offers: Markdown notes (with a table of contents) / mind map / topic
-tags / clickable transcript that jumps back into the video. You can also browse an
-uploader's full catalog, see which videos are already summarized, and one-click the rest.
+## ✨ Features
 
-## 60-second quickstart
+- **Subtitles first**: use official subtitles when present, otherwise download audio and transcribe locally (ASR).
+- **Multi-view summary**: Markdown notes (with a table of contents) / mind map (export SVG·PNG) / topic tags / transcript (click a timestamp to jump back into the video).
+- **Any LLM**: any OpenAI-compatible endpoint (DeepSeek by default; OpenAI / Gemini / local ollama all work).
+- **Browse by uploader**: list an uploader's whole catalog, see which are summarized, one-click the rest.
+- **Dedup to save tokens**: re-pasting an already-summarized video reuses the old result.
+- **Local-first**: all data stays local, no telemetry; optional email delivery and optional API-token auth.
 
-You need Python 3.11+, Node.js 22+ (see `.nvmrc`), [uv](https://docs.astral.sh/uv/), and `npm`.
+## 🚀 Quick start
+
+Requires Python 3.11+, Node.js 22+ (see `.nvmrc`), [uv](https://docs.astral.sh/uv/), and `npm`.
 
 ```bash
-# 1. Copy the env template and fill LLM_API_KEY (any OpenAI-compatible endpoint works)
-cp server/.env.example server/.env
-$EDITOR server/.env
-
-# 2. Spin up backend + frontend dev servers (the script handles server/.env + web/.env + deps)
-bash scripts/dev.sh
-# Windows PowerShell: powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
+cp server/.env.example server/.env   # set LLM_API_KEY (DeepSeek by default)
+bash scripts/dev.sh                  # starts both servers (auto-copies .env, installs deps)
 ```
 
-Open <http://127.0.0.1:5173> and paste any Bilibili video URL.
+Open <http://127.0.0.1:5173> and paste a Bilibili link.
 
-> Prefer Docker? `cp server/.env.example server/.env` then `docker compose up --build` (for hot-reload dev mode: `docker compose -f docker-compose.dev.yml up --build`).
+> Windows: `powershell -ExecutionPolicy Bypass -File scripts\dev.ps1`
+> Docker: `docker compose up --build` (hot-reload via `docker compose -f docker-compose.dev.yml up --build`).
 
----
+<details>
+<summary>Run the two servers manually</summary>
 
-## Project layout
+```bash
+# backend
+cd server && cp .env.example .env && uv sync
+uv run uvicorn biri_youyaku.app:app --reload --host 0.0.0.0 --port 17821
 
-- `web/` — Vite + React frontend.
-- `server/` — FastAPI + SQLite backend.
-- `examples/email-worker/` — optional Cloudflare Worker template for emailing summaries.
-- `scripts/dev.sh`, `docker-compose.yml` — one-command local startup.
+# frontend (new terminal)
+cd web && cp .env.example .env && npm install && npm run dev   # http://localhost:5173
+```
 
-## Architecture
+</details>
+
+## ⚙️ LLM configuration
+
+Any OpenAI-compatible endpoint works. Set at least `LLM_API_KEY` in `server/.env`:
+
+| Provider | `LLM_BASE_URL` |
+| --- | --- |
+| **DeepSeek** (default) | `https://api.deepseek.com/v1` |
+| OpenAI | `https://api.openai.com/v1` |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` |
+| Local ollama / vLLM | `http://localhost:11434/v1` |
+
+Set `LLM_MODEL` to a model the provider supports (default `deepseek-v4-flash`). See [`CONFIG.md`](CONFIG.md) for more providers and every option.
+
+> **Cost**: the default model summarizes a 20-minute video for about ¥0.02; go fully free with local ollama below.
+
+<details>
+<summary>Fully local / free / offline (ollama)</summary>
+
+```bash
+ollama pull qwen2.5:3b        # runs in 4GB RAM, fine for summaries; use qwen2.5:7b if you can
+```
+
+```env
+# server/.env
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_MODEL=qwen2.5:3b
+LLM_API_KEY=ollama            # ollama ignores it but it must be non-empty
+LLM_BASE_URL_ALLOWED_HOSTS=   # leave empty for local only; never open the allowlist in production
+```
+
+Combined with local ASR below, this is fully offline (except fetching from Bilibili).
+
+</details>
+
+## 🧩 Optional features
+
+- **Local ASR** (videos without subtitles): needs `ffmpeg`. Cross-platform `cd server && uv sync --extra asr`; on Apple Silicon use `--extra asr-mlx` (15-30× GPU/ANE speedup). Switch backends with `ASR_MODEL` (see table below).
+- **Bilibili login** (private videos / better subtitles): copy `SESSDATA` from your browser cookies into `BILI_SESSDATA` in `server/.env`.
+- **Email delivery** (off by default): use the bundled Cloudflare Worker template — follow [`examples/email-worker/README.md`](examples/email-worker/README.md), then enable `EMAIL_ENABLED` etc. in `server/.env`.
+
+<details>
+<summary>ASR backends</summary>
+
+| `ASR_MODEL` | Best for | Notes |
+| --- | --- | --- |
+| `sensevoice` (default) | cross-platform, Docker | funasr CPU, slow but portable |
+| `sensevoice-mlx` | Apple Silicon, CJK | same model/accuracy, uses GPU/ANE |
+| `parakeet-mlx` | Apple Silicon, EN/EU | NVIDIA Parakeet TDT v3 |
+| `auto` | don't want to choose | CJK → sensevoice-mlx, else → parakeet-mlx |
+| `faster-whisper` | existing whisper setup | CTranslate2 build |
+
+</details>
+
+## 🏗️ Architecture
 
 ```mermaid
 flowchart LR
     user([Browser]) -->|paste BV link| web[Vite + React]
     web -->|REST + SSE| api[FastAPI]
-    api --> ytdlp[yt-dlp<br/>subs / audio]
-    ytdlp -->|subs found| llm
-    ytdlp -->|no subs| asr[Local ASR<br/>SenseVoice / Parakeet]
+    api --> ytdlp[yt-dlp<br/>subtitles/audio]
+    ytdlp -->|has subtitles| llm
+    ytdlp -->|no subtitles| asr[local ASR<br/>SenseVoice / Parakeet]
     asr --> llm[LLM<br/>OpenAI-compatible]
     llm -->|streamed chunks| api
     api --> db[(SQLite)]
-    api --> fs[/data/summaries<br/>data/audio/]
     api -. optional .-> mail[Cloudflare Worker → Resend]
 ```
 
-> All data stays in `server/data/` on your machine. No telemetry, no analytics —
-> the only outbound traffic is to the LLM endpoint you configured and Bilibili.
+> All data stays local (`server/data/`); nothing is reported to third parties besides the LLM endpoint and Bilibili. No telemetry.
 
----
+## 📦 Deploy & docs
 
-## Pick an LLM API key
+- [`DEPLOY.md`](DEPLOY.md) — public deployment (Vercel + Cloudflare Tunnel)
+- [`CONFIG.md`](CONFIG.md) — every `server/.env` option
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — develop / test / commit
+- [`AGENTS.md`](AGENTS.md) — codebase tour for AI coding assistants
+- [`CHANGELOG.md`](CHANGELOG.md) — changes
 
-Any OpenAI-compatible endpoint works:
-
-| Provider | Sample `LLM_BASE_URL` | Notes |
-| --- | --- | --- |
-| **DeepSeek** (default) | `https://api.deepseek.com/v1` | Model `deepseek-v4-flash`; thinking mode via `LLM_THINKING_ENABLED` |
-| Moonshot / Kimi | `https://api.moonshot.cn/v1` | |
-| Zhipu GLM | `https://open.bigmodel.cn/api/paas/v4` | |
-| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | OpenAI-compatible endpoint |
-| OpenAI | `https://api.openai.com/v1` | |
-| Anthropic Claude | `https://api.anthropic.com/v1` | |
-| xAI Grok | `https://api.x.ai/v1` | |
-| Local ollama / vLLM | `http://localhost:11434/v1` | |
-
-Set `LLM_MODEL` to whatever your provider supports (default `deepseek-v4-flash`).
-
-**Cost ballpark**: a 20-minute video with the default `deepseek-v4-flash` costs about ¥0.02
-(input ¥1/M tokens, output ¥2/M).
-Longer videos scale linearly with tokens. For fully free / offline, see the ollama recipe below.
-
-### Fully local: ollama (free / offline / private)
-
-```bash
-# 1. Install ollama (https://ollama.com — macOS/Linux installers available).
-ollama pull qwen2.5:3b   # 3B, runs in ~4 GB RAM; OK quality for summaries
-# ollama pull qwen2.5:7b # better quality if you have the RAM
-
-# 2. server/.env
-LLM_BASE_URL=http://localhost:11434/v1
-LLM_MODEL=qwen2.5:3b
-LLM_API_KEY=ollama       # ollama ignores the key but it must be non-empty
-LLM_BASE_URL_ALLOWED_HOSTS=  # local only; do not disable the allowlist in public deployments
-```
-
-All summarization now runs locally, no outbound traffic. Combine with the local ASR
-section below for an end-to-end offline pipeline (except for the Bilibili fetch itself).
-
----
-
-## Manual local dev
-
-If you'd rather not use `scripts/dev.sh`:
-
-```bash
-# Backend
-cd server
-cp .env.example .env       # fill LLM_API_KEY
-uv sync
-uv run uvicorn biri_youyaku.app:app --reload --host 0.0.0.0 --port 17821
-
-# Frontend (new terminal)
-cd web
-cp .env.example .env
-npm install
-npm run dev                # http://localhost:5173
-```
-
----
-
-## Optional features
-
-### Bilibili login cookies (private / high-quality subtitles)
-
-Log in on bilibili.com in your browser, copy `SESSDATA`, paste into `server/.env`:
-
-```env
-BILI_SESSDATA=your-sessdata
-# Usually SESSDATA alone is enough; some endpoints want these too
-# BILI_BUVID3=
-# BILI_BILI_JCT=
-```
-
-### Local ASR (videos without subtitles)
-
-You need `ffmpeg` / `ffprobe`; macOS `brew install ffmpeg`, Ubuntu `apt install ffmpeg`.
-
-**Cross-platform (default) — funasr CPU backend:**
-
-```bash
-cd server
-uv sync --extra asr     # installs funasr + torch
-# server/.env
-ASR_MODEL=sensevoice    # the default; can be omitted
-```
-
-**Apple Silicon Mac (M1+) — MLX backend (recommended, 15-30× faster):**
-
-```bash
-cd server
-uv sync --extra asr-mlx # installs mlx-audio + parakeet-mlx
-```
-
-Available `ASR_MODEL` values:
-
-| `ASR_MODEL` | Best for | Notes |
-| --- | --- | --- |
-| `sensevoice` | Cross-platform, Docker | funasr CPU, slow but portable |
-| `sensevoice-mlx` | M-series Mac, CJK videos | Same weights, runs on GPU/ANE |
-| `parakeet-mlx` | M-series Mac, English / European | NVIDIA Parakeet TDT v3, 6.34% WER (beats Whisper-Large-v3) |
-| `auto` | Don't want to choose | Routes by job language: CJK → sensevoice-mlx, else → parakeet-mlx |
-| `faster-whisper` | Existing whisper workflow | CTranslate2-optimized |
-
-Mac mini M4 recommendation: `ASR_MODEL=auto`.
-
-### Email delivery
-
-> Email is **disabled by default** — you bring your own webhook. The repo ships a
-> Cloudflare Worker template:
-
-```bash
-cd examples/email-worker
-# Follow examples/email-worker/README.md, ~5 minutes
-```
-
-Then in `server/.env`:
-
-```env
-EMAIL_ENABLED=true
-EMAIL_WEBHOOK_URL=https://biri-youyaku-mail.<account>.workers.dev
-EMAIL_WEBHOOK_TOKEN=must match the Worker's BIRI_YOUYAKU_TOKEN
-EMAIL_DEFAULT_RECIPIENT=you@example.com
-```
-
-If `EMAIL_ENABLED=true` but any of `EMAIL_WEBHOOK_URL` / `EMAIL_WEBHOOK_TOKEN` /
-`EMAIL_DEFAULT_RECIPIENT` is empty, the server logs a WARN and refuses to create
-jobs to avoid sending to the wrong address. When using the bundled Worker,
-`EMAIL_WEBHOOK_TOKEN` must match the Worker's `BIRI_YOUYAKU_TOKEN`.
-
----
-
-## More docs
-
-- [`DEPLOY.md`](DEPLOY.md) — public deployment (Vercel + Cloudflare Tunnel).
-- [`CONFIG.md`](CONFIG.md) — full `server/.env` reference.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — dev flow, tests, commit conventions.
-- [`AGENTS.md`](AGENTS.md) — codebase tour for AI coding tools.
-- [`CHANGELOG.md`](CHANGELOG.md) — release notes.
-
-Full API list is at `GET /docs` (FastAPI auto-generated). Most-used:
-
-```
-GET  /healthz                       liveness
-GET  /v1/version                    backend version
-GET  /v1/config/runtime             which capabilities are configured
-POST /v1/jobs                       create a job
-GET  /v1/jobs                       history
-GET  /v1/jobs/{id}/stream           SSE stream
-GET  /v1/up/{mid}/videos            an uploader's videos (flags which are summarized)
-GET  /v1/up/resolve                 space URL / UID / video URL → mid
-```
-
----
+Full API at `/docs` once the backend is running (auto-generated by FastAPI).
 
 ## License
 

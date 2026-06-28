@@ -1,6 +1,6 @@
 # 贡献指南
 
-欢迎 PR / issue。这是一个个人维护的开源项目，规则尽量轻。
+欢迎 PR / issue（中文或英文都行）。这是一个个人维护的开源项目，规则尽量轻。
 
 ## 环境
 
@@ -37,10 +37,9 @@ CI（`.github/workflows/ci.yml`）会在 PR 上跑同一套，挂红就别 merge
 - 改后端路由签名或对外 JSON 契约（尤其是加/改 `request: Request` 形参、增删响应字段）
   务必本地 `uv run pytest -q` 再提。`tests/` 里多数路由用例是**直接调用路由函数**的
   单测，签名漂移不会在类型层暴露，只会被 pytest 抓到。
-- Commit message 用现在时祈使句即可，无强制规范（`fix: ...` / `feat: ...` 都欢迎，不用也行）。
-- 涉及配置项变更，记得同步改 `server/.env.example` 和 README 的「配置参考」表。
-- 加新的 API endpoint，记得在 README 的 API 列表里加一行。
-- 改了用户可见行为，请在 `CHANGELOG.md` 的 `[Unreleased]` 段加一行。
+- Commit message 现在时祈使句即可，中英文皆可，无强制规范（`fix: ...` / `feat: ...` 欢迎但不强求）。
+- 涉及配置项变更，记得同步改 `server/.env.example` 和 [`CONFIG.md`](CONFIG.md) 的配置表。
+- 改了用户可见行为，请在 `CHANGELOG.md` 加一行。
 
 ## 风格
 
