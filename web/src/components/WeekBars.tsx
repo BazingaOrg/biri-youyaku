@@ -48,7 +48,7 @@ export function WeekBars({weeks}: {weeks: WeekBar[]}) {
                 x={x + barWidth / 2}
                 y={height - 10}
                 textAnchor="middle"
-                className="fill-muted text-[10px]"
+                className="fill-current text-[10px] text-muted"
               >
                 {index % 2 === 0 || weeks.length <= 8 ? week.label : ''}
               </text>
@@ -57,7 +57,7 @@ export function WeekBars({weeks}: {weeks: WeekBar[]}) {
                   x={x + barWidth / 2}
                   y={Math.max(10, y - 5)}
                   textAnchor="middle"
-                  className="fill-ink text-[10px] font-medium"
+                  className="fill-current text-[10px] font-medium text-ink"
                 >
                   {week.count}
                 </text>
