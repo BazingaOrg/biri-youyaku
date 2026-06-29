@@ -50,6 +50,49 @@ async def test_deepseek_balance_is_normalized_and_cached(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_zero_balance_is_reported_not_dropped(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"available_balance": 0}})
+
+    transport = httpx.MockTransport(handler)
+    async_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        balance.httpx, "AsyncClient", lambda **kwargs: async_client(transport=transport, **kwargs)
+    )
+
+    result = await balance.fetch_balance(
+        base_url="https://api.moonshot.cn/v1", api_key="secret-key"
+    )
+
+    assert result == balance.Balance(provider="Moonshot", balance=0.0, currency="CNY")
+
+
+@pytest.mark.asyncio
+async def test_transient_failure_is_not_cached(monkeypatch):
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(500, json={})
+        return httpx.Response(200, json={"balance_infos": [{"currency": "CNY", "total_balance": "5"}]})
+
+    transport = httpx.MockTransport(handler)
+    async_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        balance.httpx, "AsyncClient", lambda **kwargs: async_client(transport=transport, **kwargs)
+    )
+
+    first = await balance.fetch_balance(base_url="https://api.deepseek.com/v1", api_key="secret-key")
+    second = await balance.fetch_balance(base_url="https://api.deepseek.com/v1", api_key="secret-key")
+
+    assert first is None
+    assert second == balance.Balance(provider="DeepSeek", balance=5.0, currency="CNY")
+    assert calls == 2
+
+
+@pytest.mark.asyncio
 async def test_unsupported_provider_returns_none():
     result = await balance.fetch_balance(base_url="https://api.openai.com/v1", api_key="secret-key")
 

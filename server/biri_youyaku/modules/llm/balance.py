@@ -50,6 +50,17 @@ def _safe_float(value: object) -> float | None:
         return None
 
 
+def _first_amount(data: dict, *keys: str) -> float | None:
+    # 取第一个「存在且可解析」的字段——不能用 `a or b`，否则真实余额 0 会被当 falsy 跳过
+    # （余额恰好为 0 正是用户最该看到的状态）。
+    for key in keys:
+        if key in data:
+            amount = _safe_float(data[key])
+            if amount is not None:
+                return amount
+    return None
+
+
 def _deepseek_balance(payload: dict) -> Balance | None:
     infos = payload.get("balance_infos")
     if not isinstance(infos, list):
@@ -71,7 +82,7 @@ def _moonshot_balance(payload: dict) -> Balance | None:
     data = payload.get("data")
     if not isinstance(data, dict):
         return None
-    amount = _safe_float(data.get("available_balance") or data.get("balance"))
+    amount = _first_amount(data, "available_balance", "balance")
     return (
         Balance(provider="Moonshot", balance=amount, currency="CNY") if amount is not None else None
     )
@@ -81,9 +92,7 @@ def _siliconflow_balance(payload: dict) -> Balance | None:
     data = payload.get("data")
     if not isinstance(data, dict):
         return None
-    amount = _safe_float(
-        data.get("balance") or data.get("totalBalance") or data.get("chargeBalance")
-    )
+    amount = _first_amount(data, "balance", "totalBalance", "chargeBalance")
     return (
         Balance(provider="SiliconFlow", balance=amount, currency="CNY")
         if amount is not None
@@ -143,7 +152,10 @@ async def fetch_balance(
     else:
         value = parser(payload) if isinstance(payload, dict) else None
 
-    _CACHE[cache_key] = _CacheEntry(value=value, expires_at=now + _TTL_SECONDS)
+    # 只缓存成功结果：临时失败（网络抖动 / 401）不写缓存，否则会把余额卡隐藏整整 5 分钟，
+    # 下次进统计页也不会重试。失败就让下次打开重新探测。
+    if value is not None:
+        _CACHE[cache_key] = _CacheEntry(value=value, expires_at=now + _TTL_SECONDS)
     return value
 
 
