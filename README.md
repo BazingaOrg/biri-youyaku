@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-粘贴 B 站视频链接，自动生成可读的 Markdown 摘要、思维导图与可跳转字幕。本地优先、自托管、无遥测。
+粘贴 B 站视频链接，自动生成可读的 Markdown 总结、思维导图与可跳转字幕。本地优先、自托管、无遥测。
 
 <!-- 演示图：把截图/GIF 放到 assets/，再取消下面这行注释
 ![demo](assets/demo.gif)
@@ -14,7 +14,7 @@
 ## ✨ 特性
 
 - **字幕优先**：先取官方字幕，没有则下载音频本地转写（ASR）。
-- **多视图摘要**：Markdown 笔记（带目录）/ 思维导图（可导出 SVG·PNG）/ 主题标签 / 字幕原文（点时间戳跳回视频）。
+- **多视图总结**：Markdown 笔记（带目录）/ 思维导图（可导出 SVG·PNG）/ 主题标签 / 字幕原文（点时间戳跳回视频）。
 - **任意 LLM**：任何 OpenAI 兼容接口（默认 DeepSeek，OpenAI / Gemini / 本地 ollama 等都行）。
 - **按 UP 主浏览**：列出某 UP 全部投稿、标记已/未总结、未总结一键补。
 - **去重省钱**：同一视频已总结过就直接复用，不重复烧 token。
@@ -67,7 +67,7 @@ cd web && cp .env.example .env && npm install && npm run dev   # http://localhos
 <summary>完全本地 / 免费 / 离线（ollama）</summary>
 
 ```bash
-ollama pull qwen2.5:3b        # 4GB 内存可跑，中文摘要够用；内存够可换 qwen2.5:7b
+ollama pull qwen2.5:3b        # 4GB 内存可跑，中文总结够用；内存够可换 qwen2.5:7b
 ```
 
 ```env

@@ -199,6 +199,19 @@ export function getRuntimeConfig() {
   return request<RuntimeConfig>('/v1/config/runtime')
 }
 
+export interface LlmBalanceResponse {
+  ok: true
+  supported: boolean
+  provider?: string
+  balance?: number
+  currency?: string
+}
+
+export function getLlmBalance(refresh = false) {
+  const suffix = refresh ? '?refresh=true' : ''
+  return request<LlmBalanceResponse>(`/v1/llm/balance${suffix}`)
+}
+
 export function createJob(url: string, options: JobOptionOverrides) {
   // deduped: 后端发现这条视频之前已总结完成，直接复用了旧任务（没有新建、没有再烧 token）。
   return request<{ok: true; job_id: string; deduped?: boolean}>('/v1/jobs', {

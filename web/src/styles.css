@@ -47,6 +47,41 @@
   box-sizing: border-box;
 }
 
+@media (pointer: fine) {
+  * {
+    scrollbar-color: var(--color-border) transparent;
+    scrollbar-width: thin;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background-color: var(--color-border);
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--color-border), var(--color-fg-muted) 35%);
+  }
+}
+
+@media (pointer: fine) and (prefers-color-scheme: dark) {
+  * {
+    scrollbar-color: color-mix(in srgb, var(--color-border), var(--color-fg-muted) 28%) transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--color-border), var(--color-fg-muted) 28%);
+  }
+}
+
 html,
 body {
   /* 兜底：任何漏网的宽元素都不会让整页横向滚动 */

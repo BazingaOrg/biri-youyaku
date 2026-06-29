@@ -1,5 +1,5 @@
 import {useState} from 'react'
-import {History, RotateCw, Sparkles, Users} from 'lucide-react'
+import {BarChart3, History, RotateCw, Sparkles, Users} from 'lucide-react'
 import {Link} from 'wouter'
 import {IconButton} from '../../components/IconButton'
 import {UrlInput} from '../../components/UrlInput'
@@ -70,6 +70,13 @@ export function IdleView({onSubmit, onOpenHistory}: IdleViewProps) {
         >
           <Users size={13} />
           或按 UP 主浏览投稿
+        </Link>
+        <Link
+          href="/stats"
+          className="inline-flex items-center justify-center gap-1.5 text-xs text-muted underline-offset-2 transition hover:text-brand hover:underline"
+        >
+          <BarChart3 size={13} />
+          查看统计
         </Link>
       </div>
     </div>

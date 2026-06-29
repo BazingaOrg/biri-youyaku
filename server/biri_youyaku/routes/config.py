@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from biri_youyaku.auth import require_token
 from biri_youyaku.config import settings
 from biri_youyaku.jobs.model import JobOptions
+from biri_youyaku.modules.llm.balance import fetch_balance
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_token)])
 # Routes that are intentionally not protected by API_TOKEN — they only expose
@@ -57,6 +58,24 @@ async def get_config_defaults() -> dict:
             "asr_language": settings.asr_language_default,
             "audio_download_enabled": True,
         },
+    }
+
+
+@router.get("/llm/balance")
+async def get_llm_balance(refresh: bool = False) -> dict:
+    balance = await fetch_balance(
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key,
+        force_refresh=refresh,
+    )
+    if balance is None:
+        return {"ok": True, "supported": False}
+    return {
+        "ok": True,
+        "supported": True,
+        "provider": balance.provider,
+        "balance": balance.balance,
+        "currency": balance.currency,
     }
 
 

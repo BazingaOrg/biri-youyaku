@@ -31,7 +31,7 @@
 | LLM | `LLM_CHUNK_TOKEN_THRESHOLD` | `30000` | 长字幕分段阈值 |
 | LLM | `LLM_SEGMENT_CONCURRENCY` | `3` | 段级总结并发数；长视频实际 LLM 并发约为 `MAX_CONCURRENT_SUMMARIES * LLM_SEGMENT_CONCURRENCY` |
 | LLM | `LLM_BASE_URL_ALLOWED_HOSTS` | 内置常见供应商列表 | SSRF 白名单；空 = 不限制（仅本地） |
-| 摘要 | `SUMMARY_LANGUAGE` | `中文简体` | 输出语言 |
+| 总结 | `SUMMARY_LANGUAGE` | `中文简体` | 输出语言 |
 | 邮件 | `EMAIL_ENABLED` | `false` | |
 | 邮件 | `EMAIL_WEBHOOK_URL` | 空 | 收 webhook 的 URL（如 Cloudflare Worker） |
 | 邮件 | `EMAIL_WEBHOOK_TOKEN` | 空 | 启用邮件时必填；后端 → Worker 的鉴权 token，与 Worker 端 `BIRI_YOUYAKU_TOKEN` 一致 |

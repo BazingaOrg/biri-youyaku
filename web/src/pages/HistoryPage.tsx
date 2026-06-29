@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import type {ReactNode} from 'react'
-import {ArrowLeft, Plus, RotateCw, Search, Tag, Trash, Trash2} from 'lucide-react'
+import {ArrowLeft, BarChart3, Plus, RotateCw, Search, Tag, Trash, Trash2} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
 import {ApiError, deleteAllJobs, deleteJob, listJobs, type Job} from '../lib/api'
 import {formatDate, formatDuration, formatStatus} from '../lib/format'
@@ -26,6 +26,90 @@ function IconTooltip({label, children, className = ''}: {label: string; children
         {label}
       </span>
     </span>
+  )
+}
+
+interface ChipFilterItem {
+  key: string
+  label: string
+  count: number
+}
+
+function ChipFilter({
+  label,
+  items,
+  selected,
+  total,
+  onSelect,
+  variant = 'neutral',
+}: {
+  label: string
+  items: ChipFilterItem[]
+  selected: string | null
+  total?: number
+  onSelect: (value: string | null) => void
+  variant?: 'neutral' | 'tag'
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const shouldCollapse = items.length > 6
+  const itemClass = (active: boolean) => {
+    if (active) return 'bg-brand text-white shadow-card'
+    if (variant === 'tag') return 'bg-brandSoft/50 text-brand hover:bg-brandSoft'
+    return 'bg-lift text-muted hover:bg-line/70 hover:text-ink'
+  }
+
+  return (
+    <div className="grid gap-2 border-b border-line/60 py-3" aria-label={`${label}筛选`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted">
+          {variant === 'tag' && <Tag size={13} className="shrink-0" />}
+          <span>{label}</span>
+        </div>
+        {shouldCollapse && (
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            className="shrink-0 rounded-full px-2 py-1 text-xs text-muted transition-[transform,color,background-color] hover:bg-lift hover:text-ink active:scale-95"
+          >
+            {expanded ? '收起' : `展开全部（${items.length}）`}
+          </button>
+        )}
+      </div>
+      <div className={`relative ${shouldCollapse && !expanded ? 'max-h-[4.5rem] overflow-hidden' : ''}`}>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => onSelect(null)}
+            className={`inline-flex min-h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-[transform,background-color,color] active:scale-95 ${itemClass(selected == null)}`}
+          >
+            全部
+            {total != null && (
+              <span className={selected == null ? 'text-white/80' : 'text-muted'}>{total}</span>
+            )}
+          </button>
+          {items.map((item) => {
+            const active = selected === item.key
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => onSelect(active ? null : item.key)}
+                className={`inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-[transform,background-color,color] active:scale-95 ${itemClass(active)}`}
+                title={`${item.label} · ${item.count}`}
+              >
+                <span className="truncate">{item.label}</span>
+                <span className={active ? 'text-white/80' : variant === 'tag' ? 'text-brand/60' : 'text-muted'}>
+                  {item.count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        {shouldCollapse && !expanded && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-canvas to-transparent" />
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -275,18 +359,30 @@ export function HistoryPage() {
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-[-0.012em] text-ink sm:text-3xl">历史记录</h1>
-            <p className="mt-1 text-sm text-muted">查看、搜索和清理已经创建的摘要任务。</p>
+            <p className="mt-1 text-sm text-muted">查看、搜索和清理已经创建的总结任务。</p>
           </div>
-          <IconTooltip label="新建" className="shrink-0">
-            <Link
-              href="/"
-              aria-label="新建"
-              title="新建"
-              className="grid h-11 w-11 place-items-center rounded-2xl bg-brand text-white shadow-card transition-[transform,filter] hover:brightness-105 active:scale-95"
-            >
-              <Plus size={18} />
-            </Link>
-          </IconTooltip>
+          <div className="flex shrink-0 gap-2">
+            <IconTooltip label="统计">
+              <Link
+                href="/stats"
+                aria-label="统计"
+                title="统计"
+                className="grid h-11 w-11 place-items-center rounded-2xl bg-lift text-muted transition-[transform,background-color,color] hover:bg-line/70 hover:text-ink active:scale-95"
+              >
+                <BarChart3 size={18} />
+              </Link>
+            </IconTooltip>
+            <IconTooltip label="新建">
+              <Link
+                href="/"
+                aria-label="新建"
+                title="新建"
+                className="grid h-11 w-11 place-items-center rounded-2xl bg-brand text-white shadow-card transition-[transform,filter] hover:brightness-105 active:scale-95"
+              >
+                <Plus size={18} />
+              </Link>
+            </IconTooltip>
+          </div>
         </div>
       </header>
 
@@ -320,64 +416,23 @@ export function HistoryPage() {
         </div>
 
         {!loading && !loadError && authorStats.length > 0 && (
-          <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 pt-3 sm:-mx-5 sm:px-5">
-            <button
-              type="button"
-              onClick={() => setSelectedAuthor(null)}
-              className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-[transform,background-color,color] active:scale-95 ${
-                selectedAuthor == null
-                  ? 'bg-brand text-white shadow-card'
-                  : 'bg-lift text-muted hover:bg-line/70 hover:text-ink'
-              }`}
-            >
-              全部
-              <span className={selectedAuthor == null ? 'text-white/80' : 'text-muted'}>
-                {jobs.length}
-              </span>
-            </button>
-            {authorStats.map((item) => (
-              <button
-                key={item.author}
-                type="button"
-                onClick={() => setSelectedAuthor((current) => (current === item.author ? null : item.author))}
-                className={`inline-flex min-h-9 max-w-[14rem] shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-[transform,background-color,color] active:scale-95 ${
-                  selectedAuthor === item.author
-                    ? 'bg-brand text-white shadow-card'
-                    : 'bg-lift text-muted hover:bg-line/70 hover:text-ink'
-                }`}
-                title={`${item.author} · ${item.count}`}
-              >
-                <span className="truncate">{item.author}</span>
-                <span className={selectedAuthor === item.author ? 'text-white/80' : 'text-muted'}>
-                  {item.count}
-                </span>
-              </button>
-            ))}
-          </div>
+          <ChipFilter
+            label="UP 主"
+            items={authorStats.map((item) => ({key: item.author, label: item.author, count: item.count}))}
+            selected={selectedAuthor}
+            total={jobs.length}
+            onSelect={setSelectedAuthor}
+          />
         )}
 
         {!loading && !loadError && tagStats.length > 0 && (
-          <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-1 pt-2 sm:-mx-5 sm:px-5">
-            <Tag size={13} className="shrink-0 text-muted" />
-            {tagStats.map((item) => (
-              <button
-                key={item.tag}
-                type="button"
-                onClick={() => setSelectedTag((current) => (current === item.tag ? null : item.tag))}
-                className={`inline-flex min-h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs transition-[transform,background-color,color] active:scale-95 ${
-                  selectedTag === item.tag
-                    ? 'bg-brand text-white shadow-card'
-                    : 'bg-brandSoft/50 text-brand hover:bg-brandSoft'
-                }`}
-                title={`${item.tag} · ${item.count}`}
-              >
-                <span className="truncate">{item.tag}</span>
-                <span className={selectedTag === item.tag ? 'text-white/80' : 'text-brand/60'}>
-                  {item.count}
-                </span>
-              </button>
-            ))}
-          </div>
+          <ChipFilter
+            label="标签"
+            items={tagStats.map((item) => ({key: item.tag, label: item.tag, count: item.count}))}
+            selected={selectedTag}
+            onSelect={setSelectedTag}
+            variant="tag"
+          />
         )}
 
         <div className="py-3">
