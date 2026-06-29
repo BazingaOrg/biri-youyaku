@@ -79,7 +79,7 @@ function WeeklyCompare({current, previous}: {current: WeeklyStats; previous: Wee
       <div className="grid gap-2 sm:grid-cols-2">
         {[
           ['总结数', `${current.count}`, `${previous.count}`],
-          ['Tokens', formatTokens(current.tokens), formatTokens(previous.tokens)],
+          ['tokens', formatTokens(current.tokens), formatTokens(previous.tokens)],
           ['估算花费', formatMoney(current.estimatedCostCny), formatMoney(previous.estimatedCostCny)],
           ['视频时长', formatDuration(current.durationSeconds), formatDuration(previous.durationSeconds)],
         ].map(([label, now, before]) => (
@@ -228,7 +228,7 @@ export function StatsPage() {
 
         {!loading && error && (
           <div className="grid justify-items-center gap-3 rounded-3xl bg-panel py-12 text-center shadow-card">
-            <p className="text-sm text-muted">加载失败，请稍后重试</p>
+            <p className="text-sm text-muted">加载失败，请检查网络后重试</p>
             <button
               type="button"
               onClick={() => void load()}

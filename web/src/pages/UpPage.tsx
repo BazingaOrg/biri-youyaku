@@ -139,7 +139,7 @@ function UpList({mid}: {mid: number}) {
         setHasMore(res.has_more)
         setVideos((current) => (mode === 'reset' ? res.videos : [...current, ...res.videos]))
       } catch (err) {
-        setError(err instanceof Error ? err.message : '加载失败，请稍后再试')
+        setError(err instanceof Error ? err.message : '加载失败，请检查网络后重试')
         if (mode === 'reset') setVideos([])
       } finally {
         setLoading(false)
