@@ -22,9 +22,6 @@ export default function App() {
           <Route path="/up/:mid">
             {(params) => <UpPage mid={params.mid} />}
           </Route>
-          <Route path="/up">
-            <UpPage mid={null} />
-          </Route>
           <Route path="/jobs/:jobId">
             {(params) => <Workspace jobId={params.jobId} />}
           </Route>

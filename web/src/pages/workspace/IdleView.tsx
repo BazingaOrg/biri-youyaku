@@ -1,6 +1,6 @@
 import {useState} from 'react'
-import {BarChart3, History, RotateCw, Sparkles, Users} from 'lucide-react'
-import {Link} from 'wouter'
+import {BarChart3, History, RotateCw, Sparkles} from 'lucide-react'
+import {useLocation} from 'wouter'
 import {IconButton} from '../../components/IconButton'
 import {UrlInput} from '../../components/UrlInput'
 import {isValidBiliUrl, sanitizeBiliInput} from '../../lib/biliUrl'
@@ -12,6 +12,7 @@ interface IdleViewProps {
 
 /** 空闲态：粘 URL → 校验 → 提交。任何已识别为「在飞 / 历史」的视图都不走这里。 */
 export function IdleView({onSubmit, onOpenHistory}: IdleViewProps) {
+  const [, navigate] = useLocation()
   const [url, setUrl] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -63,21 +64,13 @@ export function IdleView({onSubmit, onOpenHistory}: IdleViewProps) {
             size="lg"
           />
           <IconButton icon={<History size={20} />} label="历史" onClick={onOpenHistory} size="lg" />
+          <IconButton
+            icon={<BarChart3 size={20} />}
+            label="统计"
+            onClick={() => navigate('/stats')}
+            size="lg"
+          />
         </div>
-        <Link
-          href="/up"
-          className="inline-flex items-center justify-center gap-1.5 text-xs text-muted underline-offset-2 transition hover:text-brand hover:underline"
-        >
-          <Users size={13} />
-          或按 UP 主浏览投稿
-        </Link>
-        <Link
-          href="/stats"
-          className="inline-flex items-center justify-center gap-1.5 text-xs text-muted underline-offset-2 transition hover:text-brand hover:underline"
-        >
-          <BarChart3 size={13} />
-          查看统计
-        </Link>
       </div>
     </div>
   )

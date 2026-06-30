@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import {ArrowLeft, Check, RotateCw, Search, Sparkles} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
-import {createJob, getUpVideos, resolveUp, type JobStatus, type UpOrder, type UpVideo} from '../lib/api'
+import {createJob, getUpVideos, type JobStatus, type UpOrder, type UpVideo} from '../lib/api'
 import {formatDay, formatDuration} from '../lib/format'
 import {isRunning} from '../lib/jobStatus'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
@@ -11,12 +11,11 @@ import {useToast} from '../components/ToastProvider'
 type Filter = 'all' | 'todo' | 'done'
 
 interface UpPageProps {
-  /** /up/:mid 为 uid 字符串；/up 为 null（展示输入入口）。 */
-  mid: string | null
+  /** /up/:mid 的 uid 字符串。入口保留在历史作者名点击，不再提供独立 /up 搜索页。 */
+  mid: string
 }
 
 export function UpPage({mid}: UpPageProps) {
-  if (!mid) return <UpEntry />
   const numeric = Number(mid)
   if (!Number.isInteger(numeric) || numeric <= 0) {
     return (
@@ -27,60 +26,6 @@ export function UpPage({mid}: UpPageProps) {
     )
   }
   return <UpList key={mid} mid={numeric} />
-}
-
-/** /up：粘贴主页链接 / UID → 解析 → 跳 /up/:mid。 */
-function UpEntry() {
-  const [, navigate] = useLocation()
-  const [value, setValue] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const submit = async () => {
-    const input = value.trim()
-    if (!input) return
-    setBusy(true)
-    setError(null)
-    try {
-      const {mid} = await resolveUp(input)
-      navigate(`/up/${mid}`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '解析失败，换个链接或直接填 UID')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="grid min-h-[60vh] place-items-center px-4">
-      <div className="grid w-full max-w-md gap-4">
-        <BackButton />
-        <h1 className="text-2xl font-semibold tracking-[-0.012em] text-ink">按 UP 主浏览投稿</h1>
-        <p className="text-sm text-muted">粘贴 UP 主页链接（space.bilibili.com/…）、UID，或任意一条该 UP 的视频链接。</p>
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => {
-            setValue(e.target.value)
-            setError(null)
-          }}
-          onKeyDown={(e) => e.key === 'Enter' && void submit()}
-          placeholder="https://space.bilibili.com/123456 或 123456"
-          className="min-h-11 w-full rounded-2xl bg-lift px-4 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30"
-        />
-        {error && <p className="text-sm text-danger">{error}</p>}
-        <button
-          type="button"
-          onClick={() => void submit()}
-          disabled={busy || value.trim().length === 0}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-brand px-4 text-sm font-medium text-white shadow-card transition-[transform,filter] hover:brightness-105 active:scale-95 disabled:opacity-40"
-        >
-          {busy ? <RotateCw size={16} className="animate-spin" /> : <Search size={16} />}
-          查看投稿
-        </button>
-      </div>
-    </div>
-  )
 }
 
 function BackButton() {
