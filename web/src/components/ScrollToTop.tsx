@@ -18,7 +18,7 @@ export function ScrollToTop() {
       type="button"
       onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})}
       aria-label="回到顶部"
-      className="fixed bottom-5 left-5 z-30 grid h-11 w-11 place-items-center rounded-full border border-line bg-panel text-muted shadow-card transition hover:text-brand"
+      className="fixed bottom-5 right-5 z-30 grid h-11 w-11 place-items-center rounded-full border border-line bg-panel text-muted shadow-card transition hover:text-brand"
     >
       <ArrowUp size={20} />
     </button>
