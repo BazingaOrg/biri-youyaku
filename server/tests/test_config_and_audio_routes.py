@@ -157,6 +157,64 @@ async def test_create_job_can_bypass_dedupe(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_resummarize_creates_transcript_ready_job(monkeypatch):
+    source = Job(
+        id="job-source",
+        url="https://www.bilibili.com/video/BV123",
+        status=JobStatus.COMPLETED,
+        options=JobOptions(),
+        created_at=1,
+        updated_at=1,
+        transcript=[{"start": 0, "end": 1, "text": "hello"}],
+    )
+    created = Job(
+        id="job-new",
+        url=source.url,
+        status=JobStatus.TRANSCRIPT_READY,
+        options=JobOptions(),
+        created_at=2,
+        updated_at=2,
+        transcript=source.transcript,
+    )
+    calls = {}
+
+    def create_resummary(job, options, option_overrides=None):
+        calls["source"] = job
+        return created
+
+    monkeypatch.setattr(jobs_route.repo, "get_job", lambda job_id: source if job_id == "job-source" else None)
+    monkeypatch.setattr(jobs_route.repo, "count_jobs_excluding_status", lambda statuses: 0)
+    monkeypatch.setattr(jobs_route.repo, "create_resummary_job", create_resummary)
+    monkeypatch.setattr(jobs_route, "resume_job", lambda job_id, llm_api_key=None: calls.update(resumed=job_id))
+
+    response = await jobs_route.resummarize(
+        None, "job-source", jobs_route.ResummarizeJobPayload(options=jobs_route.JobOptionsPayload(task_type="summary"))
+    )
+
+    assert response == {"ok": True, "job_id": "job-new"}
+    assert calls["source"] is source
+    assert calls["resumed"] == "job-new"
+
+
+@pytest.mark.asyncio
+async def test_resummarize_rejects_job_without_transcript(monkeypatch):
+    source = Job(
+        id="job-source",
+        url="https://www.bilibili.com/video/BV123",
+        status=JobStatus.COMPLETED,
+        options=JobOptions(),
+        created_at=1,
+        updated_at=1,
+    )
+    monkeypatch.setattr(jobs_route.repo, "get_job", lambda job_id: source)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await jobs_route.resummarize(None, "job-source")
+
+    assert exc_info.value.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_resume_updates_summary_options_before_start(monkeypatch):
     job = Job(
         id="job-1",

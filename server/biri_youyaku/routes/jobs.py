@@ -69,6 +69,10 @@ class RetryJobPayload(BaseModel):
     options: JobOptionsPayload = Field(default_factory=JobOptionsPayload)
 
 
+class ResummarizeJobPayload(BaseModel):
+    options: JobOptionsPayload = Field(default_factory=JobOptionsPayload)
+
+
 def _has_audio(job: Job) -> bool:
     if job.audio_path is None:
         return False
@@ -154,6 +158,19 @@ def _ensure_email_ready() -> None:
     )
 
 
+def _ensure_inflight_capacity() -> None:
+    # 容量保护：单 IP 限流挡不住多 IP 协同灌任务；这里看全局在飞总数兜底。
+    # 注意这是「近似/软上限」——count 与下面的 create_job 不在同一事务里，并发请求
+    # 可能都通过检查再各自 insert，短暂越过 max_inflight_jobs。单用户场景下足够；要硬
+    # 上限需把 SELECT COUNT + INSERT 收进一个 BEGIN IMMEDIATE 事务。
+    inflight = repo.count_jobs_excluding_status(TERMINAL_JOB_STATUSES)
+    if inflight >= settings.max_inflight_jobs:
+        raise HTTPException(
+            status_code=503,
+            detail=f"服务器忙不过来（在飞任务 {inflight}/{settings.max_inflight_jobs}），请稍后重试",
+        )
+
+
 @router.post("/jobs")
 @limiter.limit("10/minute")
 async def create_job(request: Request, payload: CreateJobPayload) -> dict:
@@ -168,16 +185,7 @@ async def create_job(request: Request, payload: CreateJobPayload) -> dict:
         if existing is not None:
             return {"ok": True, "job_id": existing.id, "deduped": True}
 
-    # 容量保护：单 IP 限流挡不住多 IP 协同灌任务；这里看全局在飞总数兜底。
-    # 注意这是「近似/软上限」——count 与下面的 create_job 不在同一事务里，并发请求
-    # 可能都通过检查再各自 insert，短暂越过 max_inflight_jobs。单用户场景下足够；要硬
-    # 上限需把 SELECT COUNT + INSERT 收进一个 BEGIN IMMEDIATE 事务。
-    inflight = repo.count_jobs_excluding_status(TERMINAL_JOB_STATUSES)
-    if inflight >= settings.max_inflight_jobs:
-        raise HTTPException(
-            status_code=503,
-            detail=f"服务器忙不过来（在飞任务 {inflight}/{settings.max_inflight_jobs}），请稍后重试",
-        )
+    _ensure_inflight_capacity()
     option_overrides, llm_api_key = _extract_option_overrides(payload.options)
     options = _job_options_from_overrides(option_overrides)
     # 早失败：开了邮件却没有有效收件人 → 直接拒，别让任务跑完才在 EMAILING 阶段 fail。
@@ -185,6 +193,25 @@ async def create_job(request: Request, payload: CreateJobPayload) -> dict:
         _ensure_email_ready()
     job = repo.create_job(payload.url, options, option_overrides=option_overrides)
     start_job(job.id, llm_api_key=llm_api_key)
+    return {"ok": True, "job_id": job.id}
+
+
+@router.post("/jobs/{job_id}/resummarize")
+@limiter.limit("10/minute")
+async def resummarize(request: Request, job_id: str, payload: ResummarizeJobPayload | None = None) -> dict:
+    source = repo.get_job(job_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not source.transcript:
+        raise HTTPException(status_code=409, detail="该任务没有可复用的字幕，无法重新总结")
+
+    _ensure_inflight_capacity()
+    option_overrides, llm_api_key = _extract_option_overrides(payload.options if payload else None)
+    options = _job_options_from_overrides(option_overrides)
+    if options.email_enabled:
+        _ensure_email_ready()
+    job = repo.create_resummary_job(source, options, option_overrides=option_overrides)
+    resume_job(job.id, llm_api_key=llm_api_key)
     return {"ok": True, "job_id": job.id}
 
 

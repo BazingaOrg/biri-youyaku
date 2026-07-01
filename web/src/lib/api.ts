@@ -220,6 +220,13 @@ export function createJob(url: string, options: JobOptionOverrides, params: {ded
   })
 }
 
+export function resummarizeJob(jobId: string, options: JobOptionOverrides) {
+  return request<{ok: true; job_id: string}>(`/v1/jobs/${jobId}/resummarize`, {
+    method: 'POST',
+    body: JSON.stringify({options}),
+  })
+}
+
 // 注：后端还有这些 endpoint 前端零调用、对应 client 函数已删（留着会被当成「半成品 API」误用）：
 // POST /v1/jobs/preview、POST /v1/llm/models、POST /v1/jobs/{id}/transcript、
 // POST /v1/jobs/{id}/resume（总结改为服务端自动续跑后不再需要前端驱动）、GET /v1/usage。

@@ -17,7 +17,6 @@ export function MindmapView({markdown, title}: {markdown: string; title?: string
   const meRef = useRef<MindElixirInstance | null>(null)
   const [zoom, setZoom] = useState(1)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [canFullscreen, setCanFullscreen] = useState(false)
 
   useEffect(() => {
     const el = elRef.current
@@ -42,17 +41,29 @@ export function MindmapView({markdown, title}: {markdown: string; title?: string
   }, [markdown, title])
 
   useEffect(() => {
-    setCanFullscreen(Boolean(document.fullscreenEnabled))
-    const onFullscreenChange = () => {
-      const active = document.fullscreenElement === panelRef.current
-      setIsFullscreen(active)
-      window.setTimeout(() => {
-        meRef.current?.toCenter()
-      }, 0)
+    if (!isFullscreen) {
+      window.setTimeout(() => meRef.current?.toCenter(), 0)
+      return
     }
-    document.addEventListener('fullscreenchange', onFullscreenChange)
-    return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
-  }, [])
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const recenter = () => {
+      window.setTimeout(() => meRef.current?.toCenter(), 0)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsFullscreen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('resize', recenter)
+    window.addEventListener('orientationchange', recenter)
+    recenter()
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('resize', recenter)
+      window.removeEventListener('orientationchange', recenter)
+    }
+  }, [isFullscreen])
 
   const applyZoom = (next: number) => {
     const me = meRef.current
@@ -65,14 +76,8 @@ export function MindmapView({markdown, title}: {markdown: string; title?: string
   const zoomIn = () => applyZoom((meRef.current?.scaleVal ?? zoom) + ZOOM_STEP)
   const zoomOut = () => applyZoom((meRef.current?.scaleVal ?? zoom) - ZOOM_STEP)
 
-  const toggleFullscreen = async () => {
-    const panel = panelRef.current
-    if (!panel || !document.fullscreenEnabled) return
-    if (document.fullscreenElement === panel) {
-      await document.exitFullscreen()
-    } else {
-      await panel.requestFullscreen()
-    }
+  const toggleFullscreen = () => {
+    setIsFullscreen((value) => !value)
   }
 
   const fileBase = (title || 'mindmap').replace(/[\\/:*?"<>|]+/g, '_')
@@ -88,7 +93,19 @@ export function MindmapView({markdown, title}: {markdown: string; title?: string
   return (
     <div
       ref={panelRef}
-      className={`grid gap-2 ${isFullscreen ? 'h-screen bg-panel p-3 sm:p-4' : ''}`}
+      style={
+        isFullscreen
+          ? {
+              paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+              paddingRight: 'max(0.75rem, env(safe-area-inset-right))',
+              paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+              paddingLeft: 'max(0.75rem, env(safe-area-inset-left))',
+            }
+          : undefined
+      }
+      className={`grid gap-2 ${
+        isFullscreen ? 'fixed inset-0 z-50 grid-rows-[auto_minmax(0,1fr)] overscroll-contain bg-panel' : ''
+      }`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1 rounded-2xl bg-lift p-1">
@@ -97,7 +114,7 @@ export function MindmapView({markdown, title}: {markdown: string; title?: string
             onClick={zoomOut}
             title="缩小"
             aria-label="缩小脑图"
-            className="grid h-8 w-8 place-items-center rounded-xl text-muted transition hover:bg-line/70 hover:text-ink active:scale-95 disabled:opacity-40"
+            className="grid h-10 w-10 place-items-center rounded-xl text-muted transition hover:bg-line/70 hover:text-ink active:scale-95 disabled:opacity-40"
             disabled={zoom <= MIN_ZOOM}
           >
             <ZoomOut size={15} />
@@ -110,18 +127,17 @@ export function MindmapView({markdown, title}: {markdown: string; title?: string
             onClick={zoomIn}
             title="放大"
             aria-label="放大脑图"
-            className="grid h-8 w-8 place-items-center rounded-xl text-muted transition hover:bg-line/70 hover:text-ink active:scale-95 disabled:opacity-40"
+            className="grid h-10 w-10 place-items-center rounded-xl text-muted transition hover:bg-line/70 hover:text-ink active:scale-95 disabled:opacity-40"
             disabled={zoom >= MAX_ZOOM}
           >
             <ZoomIn size={15} />
           </button>
           <button
             type="button"
-            onClick={() => void toggleFullscreen()}
+            onClick={toggleFullscreen}
             title={isFullscreen ? '退出全屏' : '全屏查看'}
             aria-label={isFullscreen ? '退出全屏查看脑图' : '全屏查看脑图'}
-            className="grid h-8 w-8 place-items-center rounded-xl text-muted transition hover:bg-line/70 hover:text-ink active:scale-95 disabled:opacity-40"
-            disabled={!canFullscreen}
+            className="grid h-10 w-10 place-items-center rounded-xl text-muted transition hover:bg-line/70 hover:text-ink active:scale-95"
           >
             {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
           </button>
@@ -131,14 +147,14 @@ export function MindmapView({markdown, title}: {markdown: string; title?: string
           <button
             type="button"
             onClick={exportSvg}
-            className="inline-flex items-center gap-1 rounded-xl bg-lift px-3 py-1.5 text-xs text-muted transition hover:bg-line/70 hover:text-ink active:scale-95"
+            className="inline-flex min-h-10 items-center gap-1 rounded-xl bg-lift px-3 text-xs text-muted transition hover:bg-line/70 hover:text-ink active:scale-95"
           >
             <FileDown size={14} /> SVG
           </button>
           <button
             type="button"
             onClick={() => void exportPng()}
-            className="inline-flex items-center gap-1 rounded-xl bg-lift px-3 py-1.5 text-xs text-muted transition hover:bg-line/70 hover:text-ink active:scale-95"
+            className="inline-flex min-h-10 items-center gap-1 rounded-xl bg-lift px-3 text-xs text-muted transition hover:bg-line/70 hover:text-ink active:scale-95"
           >
             <FileImage size={14} /> PNG
           </button>
@@ -147,7 +163,7 @@ export function MindmapView({markdown, title}: {markdown: string; title?: string
       <div
         ref={elRef}
         className={`w-full overflow-hidden bg-lift ${
-          isFullscreen ? 'h-[calc(100vh-5rem)] rounded-xl' : 'h-[60vh] rounded-2xl'
+          isFullscreen ? 'h-full min-h-0 rounded-xl' : 'h-[60vh] rounded-2xl'
         }`}
       />
     </div>

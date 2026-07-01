@@ -41,7 +41,9 @@ interface DoneViewProps {
   onDownloadMarkdown: () => void
   onDownloadSubtitle: () => void
   onResendEmail: () => void
+  onResummarize: () => void
   emailBusy: boolean
+  resummarizeBusy?: boolean
 }
 
 export function DoneView({
@@ -53,12 +55,20 @@ export function DoneView({
   onDownloadMarkdown,
   onDownloadSubtitle,
   onResendEmail,
+  onResummarize,
   emailBusy,
+  resummarizeBusy = false,
 }: DoneViewProps) {
   return (
     <div className="grid min-w-0 gap-4 py-4">
       <div className="flex flex-wrap items-center justify-center gap-2">
         <IconButton icon={<Plus size={18} />} label="新建" onClick={onNew} />
+        <IconButton
+          icon={<RotateCw size={18} />}
+          label="重新总结"
+          onClick={onResummarize}
+          disabled={resummarizeBusy || !job.transcript?.length}
+        />
         <IconButton
           icon={<Music size={18} />}
           label="下载音频"

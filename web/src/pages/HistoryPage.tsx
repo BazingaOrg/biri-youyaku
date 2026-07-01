@@ -2,7 +2,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import type {ReactNode} from 'react'
 import {ArrowLeft, BarChart3, Plus, RotateCw, Search, Tag, Trash, Trash2} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
-import {ApiError, createJob, deleteAllJobs, deleteJob, listJobs, type Job, type JobOptionOverrides} from '../lib/api'
+import {ApiError, deleteAllJobs, deleteJob, listJobs, resummarizeJob, type Job, type JobOptionOverrides} from '../lib/api'
 import {writeActive} from '../lib/activeJob'
 import {formatDate, formatDuration, formatStatus} from '../lib/format'
 import {isRunning} from '../lib/jobStatus'
@@ -128,8 +128,8 @@ export function HistoryPage() {
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE)
   const [confirmClearOpen, setConfirmClearOpen] = useState(false)
   const [clearing, setClearing] = useState(false)
-  const [reprocessTarget, setReprocessTarget] = useState<Job | null>(null)
-  const [reprocessing, setReprocessing] = useState(false)
+  const [resummaryTarget, setResummaryTarget] = useState<Job | null>(null)
+  const [resummarizing, setResummarizing] = useState(false)
   const toast = useToast()
   const runtime = useRuntimeConfig()
 
@@ -356,21 +356,21 @@ export function HistoryPage() {
     return options
   }, [runtime?.email_configured])
 
-  const handleReprocess = async () => {
-    const target = reprocessTarget
+  const handleResummarize = async () => {
+    const target = resummaryTarget
     if (!target) return
-    setReprocessing(true)
+    setResummarizing(true)
     const taskName = target.title || undefined
     try {
-      const response = await createJob(target.url, newSummaryOptions(), {dedupe: false})
+      const response = await resummarizeJob(target.id, newSummaryOptions())
       writeActive({jobId: response.job_id, url: target.url})
-      setReprocessTarget(null)
-      toast.success('已开始重新识别', undefined, {taskName})
+      setResummaryTarget(null)
+      toast.success('已开始重新总结', undefined, {taskName})
       navigate(`/jobs/${response.job_id}`)
     } catch (err) {
-      toast.error('重新识别失败', err instanceof Error ? err.message : '请重试', {taskName})
+      toast.error('重新总结失败', err instanceof Error ? err.message : '请重试', {taskName})
     } finally {
-      setReprocessing(false)
+      setResummarizing(false)
     }
   }
 
@@ -543,12 +543,12 @@ export function HistoryPage() {
                       </div>
                       <div className="flex shrink-0 gap-1 sm:opacity-0 sm:group-hover/item:opacity-100 sm:focus-within:opacity-100">
                         {!running && (
-                          <IconTooltip label="重新识别">
+                          <IconTooltip label="重新总结">
                             <button
                               type="button"
-                              aria-label="重新识别"
-                              title="重新识别"
-                              onClick={() => setReprocessTarget(job)}
+                              aria-label="重新总结"
+                              title="重新总结"
+                              onClick={() => setResummaryTarget(job)}
                               className="grid h-11 w-11 place-items-center rounded-xl text-muted transition-[transform,background-color,color] hover:bg-panel hover:text-brand active:scale-95"
                             >
                               <RotateCw size={16} />
@@ -588,13 +588,13 @@ export function HistoryPage() {
         onCancel={() => setConfirmClearOpen(false)}
       />
       <ConfirmDialog
-        open={reprocessTarget != null}
-        title="重新识别这个视频？"
-        description="会创建一条新的总结任务，原总结会继续保留在历史记录中。"
-        confirmLabel="重新识别"
-        loading={reprocessing}
-        onConfirm={() => void handleReprocess()}
-        onCancel={() => setReprocessTarget(null)}
+        open={resummaryTarget != null}
+        title="重新总结这个视频？"
+        description="会复用这条记录的字幕创建一条新的总结任务，原总结会继续保留在历史记录中。"
+        confirmLabel="重新总结"
+        loading={resummarizing}
+        onConfirm={() => void handleResummarize()}
+        onCancel={() => setResummaryTarget(null)}
       />
     </div>
   )

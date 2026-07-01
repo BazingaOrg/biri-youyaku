@@ -36,6 +36,38 @@ def test_repo_persists_chapters_and_transcript(monkeypatch, tmp_path):
     assert loaded.transcript == [{"start": 1, "end": 2, "text": "hello"}]
 
 
+def test_create_resummary_job_reuses_transcript_and_meta(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    source = repo.create_job("https://www.bilibili.com/video/BV123", JobOptions(email_enabled=False))
+    repo.update_meta(source.id, bvid="BV123", cid=7, title="Title", author="UP", duration=12.0, mid=42)
+    repo.set_subtitle_source(source.id, "platform")
+    repo.set_chapters(source.id, [Chapter(start=1, end=5, title="Intro")])
+    repo.set_transcript(source.id, [TranscriptItem(start=1, end=2, text="hello")])
+    source = repo.get_job(source.id)
+
+    created = repo.create_resummary_job(
+        source,
+        JobOptions(llm_model="model-b", email_enabled=False),
+        option_overrides={"llm_model": "model-b", "email_enabled": False},
+    )
+
+    assert created.id != source.id
+    assert created.status == JobStatus.TRANSCRIPT_READY
+    assert created.url == source.url
+    assert created.bvid == "BV123"
+    assert created.cid == 7
+    assert created.mid == 42
+    assert created.title == "Title"
+    assert created.author == "UP"
+    assert created.duration == 12.0
+    assert created.subtitle_source == "platform"
+    assert created.chapters == [{"start": 1, "end": 5, "title": "Intro"}]
+    assert created.transcript == [{"start": 1, "end": 2, "text": "hello"}]
+    assert created.option_overrides == {"llm_model": "model-b", "email_enabled": False}
+    assert created.options.llm_model == "model-b"
+
+
 def test_delete_job_removes_row(monkeypatch, tmp_path):
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
     db.init_db()

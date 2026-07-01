@@ -123,6 +123,49 @@ def create_job(url: str, options: JobOptions, option_overrides: dict[str, Any] |
     return job
 
 
+def create_resummary_job(
+    source: Job,
+    options: JobOptions,
+    option_overrides: dict[str, Any] | None = None,
+) -> Job:
+    timestamp = now_ms()
+    option_overrides = option_overrides or {}
+    job_id = str(uuid.uuid4())
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO jobs (
+              id, url, bvid, cid, mid, title, author, duration, status,
+              subtitle_source, chapters_json, transcript_json,
+              options_json, effective_options_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                job_id,
+                source.url,
+                source.bvid,
+                source.cid,
+                source.mid,
+                source.title,
+                source.author,
+                source.duration,
+                JobStatus.TRANSCRIPT_READY.value,
+                source.subtitle_source,
+                json.dumps(source.chapters or [], ensure_ascii=False),
+                json.dumps(source.transcript or [], ensure_ascii=False),
+                json.dumps(option_overrides, ensure_ascii=False),
+                json.dumps(options.as_dict(), ensure_ascii=False),
+                timestamp,
+                timestamp,
+            ),
+        )
+    job = get_job(job_id)
+    if job is None:
+        raise RuntimeError("Created job not found")
+    return job
+
+
 def get_job(job_id: str) -> Job | None:
     with connect() as connection:
         row = connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()

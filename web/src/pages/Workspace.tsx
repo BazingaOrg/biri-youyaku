@@ -7,6 +7,7 @@ import {
   downloadJobAudio,
   getConfigDefaults,
   getJob,
+  resummarizeJob,
   resendEmail,
   retryJob,
 } from '../lib/api'
@@ -45,6 +46,7 @@ export function Workspace({jobId}: WorkspaceProps) {
   const [emailBusy, setEmailBusy] = useState(false)
   const [duplicateJob, setDuplicateJob] = useState<{url: string; jobId: string} | null>(null)
   const [duplicateBusy, setDuplicateBusy] = useState(false)
+  const [resummaryConfirmOpen, setResummaryConfirmOpen] = useState(false)
 
   // 拉一次后端默认值；retry/resume 时把 llm_model + llm_base_url 作为 overrides
   // 传过去，避免历史 job 里残留的旧供应商快照（比如老 Kimi job）继续使用过期配置。
@@ -193,20 +195,37 @@ export function Workspace({jobId}: WorkspaceProps) {
     navigate(`/jobs/${jobId}`)
   }
 
-  const rerunDuplicate = async () => {
+  const resummarizeDuplicate = async () => {
     if (!duplicateJob) return
     setDuplicateBusy(true)
-    const {url} = duplicateJob
+    const {url, jobId: sourceJobId} = duplicateJob
     try {
-      const response = await createJob(url, newSummaryOptions(), {dedupe: false})
+      const response = await resummarizeJob(sourceJobId, newSummaryOptions())
       writeActive({jobId: response.job_id, url})
       setDuplicateJob(null)
-      toast.success('已开始重新识别')
+      toast.success('已开始重新总结')
       navigate(`/jobs/${response.job_id}`)
     } catch (err) {
-      toast.error('重新识别失败', err instanceof Error ? err.message : '请重试')
+      toast.error('重新总结失败', err instanceof Error ? err.message : '请重试')
     } finally {
       setDuplicateBusy(false)
+    }
+  }
+
+  const resummarizeCurrent = async () => {
+    if (!job) return
+    setActionBusy(true)
+    const taskName = job.title || undefined
+    try {
+      const response = await resummarizeJob(job.id, newSummaryOptions())
+      writeActive({jobId: response.job_id, url: job.url})
+      setResummaryConfirmOpen(false)
+      toast.success('已开始重新总结', undefined, {taskName})
+      navigate(`/jobs/${response.job_id}`)
+    } catch (err) {
+      toast.error('重新总结失败', err instanceof Error ? err.message : '请重试', {taskName})
+    } finally {
+      setActionBusy(false)
     }
   }
 
@@ -326,13 +345,13 @@ export function Workspace({jobId}: WorkspaceProps) {
         <ConfirmDialog
           open={duplicateJob != null}
           title="这条视频之前总结过"
-          description="可以直接查看原总结；重新识别会创建一条新的总结任务，原记录会保留在历史中。"
+          description="可以直接查看原总结；重新总结会复用已有字幕创建一条新总结任务，原记录会保留在历史中。"
           cancelLabel="取消"
           secondaryLabel="查看原总结"
-          confirmLabel="重新识别"
+          confirmLabel="重新总结"
           loading={duplicateBusy}
           onSecondary={viewDuplicateSummary}
-          onConfirm={() => void rerunDuplicate()}
+          onConfirm={() => void resummarizeDuplicate()}
           onCancel={() => setDuplicateJob(null)}
         />
       </>
@@ -369,17 +388,30 @@ export function Workspace({jobId}: WorkspaceProps) {
 
   if (job.status === 'COMPLETED') {
     return (
-      <DoneView
-        job={job}
-        onNew={goNew}
-        onOpenHistory={openHistory}
-        onDownloadAudio={downloadAudio}
-        onCopy={copySummary}
-        onDownloadMarkdown={downloadMarkdown}
-        onDownloadSubtitle={downloadSubtitle}
-        onResendEmail={resendCurrentEmail}
-        emailBusy={emailBusy}
-      />
+      <>
+        <DoneView
+          job={job}
+          onNew={goNew}
+          onOpenHistory={openHistory}
+          onDownloadAudio={downloadAudio}
+          onCopy={copySummary}
+          onDownloadMarkdown={downloadMarkdown}
+          onDownloadSubtitle={downloadSubtitle}
+          onResendEmail={resendCurrentEmail}
+          onResummarize={() => setResummaryConfirmOpen(true)}
+          emailBusy={emailBusy}
+          resummarizeBusy={actionBusy}
+        />
+        <ConfirmDialog
+          open={resummaryConfirmOpen}
+          title="重新总结这个视频？"
+          description="会复用当前字幕创建一条新的总结任务，原总结会继续保留在历史记录中。"
+          confirmLabel="重新总结"
+          loading={actionBusy}
+          onConfirm={() => void resummarizeCurrent()}
+          onCancel={() => setResummaryConfirmOpen(false)}
+        />
+      </>
     )
   }
 
