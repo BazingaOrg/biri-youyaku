@@ -125,6 +125,38 @@ async def test_create_job_dedupes_completed_bvid(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_job_can_bypass_dedupe(monkeypatch):
+    existing = Job(
+        id="job-existing",
+        url="https://www.bilibili.com/video/BV123",
+        status=JobStatus.COMPLETED,
+        options=JobOptions(),
+        created_at=1,
+        updated_at=1,
+    )
+    created = Job(
+        id="job-new",
+        url="https://www.bilibili.com/video/BV123",
+        status=JobStatus.PENDING,
+        options=JobOptions(),
+        created_at=2,
+        updated_at=2,
+    )
+    calls = {}
+    monkeypatch.setattr(jobs_route.repo, "find_completed_by_bvid", lambda bvid: existing if bvid == "BV123" else None)
+    monkeypatch.setattr(jobs_route.repo, "count_jobs_excluding_status", lambda statuses: 0)
+    monkeypatch.setattr(jobs_route.repo, "create_job", lambda url, options, option_overrides=None: created)
+    monkeypatch.setattr(jobs_route, "start_job", lambda job_id, llm_api_key=None: calls.update(started=job_id))
+
+    response = await jobs_route.create_job(
+        None, jobs_route.CreateJobPayload(url="https://www.bilibili.com/video/BV123", dedupe=False)
+    )
+
+    assert response == {"ok": True, "job_id": "job-new"}
+    assert calls == {"started": "job-new"}
+
+
+@pytest.mark.asyncio
 async def test_resume_updates_summary_options_before_start(monkeypatch):
     job = Job(
         id="job-1",

@@ -7,11 +7,13 @@ interface ConfirmDialogProps {
   description?: ReactNode
   confirmLabel?: string
   cancelLabel?: string
+  secondaryLabel?: string
   /** 危险操作（删除 / 清空）时确认按钮走 danger 配色。 */
   danger?: boolean
   /** 确认动作进行中：禁用按钮、确认文案可加 loading 态。 */
   loading?: boolean
   onConfirm: () => void
+  onSecondary?: () => void
   onCancel: () => void
 }
 
@@ -25,9 +27,11 @@ export function ConfirmDialog({
   description,
   confirmLabel = '确认',
   cancelLabel = '取消',
+  secondaryLabel,
   danger = false,
   loading = false,
   onConfirm,
+  onSecondary,
   onCancel,
 }: ConfirmDialogProps) {
   useEffect(() => {
@@ -60,7 +64,7 @@ export function ConfirmDialog({
           {title}
         </h2>
         {description && <p className="mt-2 text-sm leading-6 text-muted">{description}</p>}
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
@@ -69,6 +73,16 @@ export function ConfirmDialog({
           >
             {cancelLabel}
           </button>
+          {secondaryLabel && onSecondary && (
+            <button
+              type="button"
+              onClick={onSecondary}
+              disabled={loading}
+              className="inline-flex min-h-10 items-center rounded-2xl bg-lift px-4 text-sm font-medium text-ink transition-[transform,background-color,color] hover:bg-line/70 active:scale-95 disabled:opacity-40"
+            >
+              {secondaryLabel}
+            </button>
+          )}
           <button
             type="button"
             onClick={onConfirm}

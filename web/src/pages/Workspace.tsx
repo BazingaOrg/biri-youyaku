@@ -21,6 +21,7 @@ import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
 import {useStickToBottom} from '../hooks/useStickToBottom'
 import {useTerminalToast} from '../hooks/useTerminalToast'
 import {useToast} from '../components/ToastProvider'
+import {ConfirmDialog} from '../components/ConfirmDialog'
 import {IconButton} from '../components/IconButton'
 import {PageLoading} from '../components/Spinner'
 import {IdleView} from './workspace/IdleView'
@@ -42,6 +43,8 @@ export function Workspace({jobId}: WorkspaceProps) {
   const [actionBusy, setActionBusy] = useState(false)
   const [cancelPending, setCancelPending] = useState(false)
   const [emailBusy, setEmailBusy] = useState(false)
+  const [duplicateJob, setDuplicateJob] = useState<{url: string; jobId: string} | null>(null)
+  const [duplicateBusy, setDuplicateBusy] = useState(false)
 
   // 拉一次后端默认值；retry/resume 时把 llm_model + llm_base_url 作为 overrides
   // 传过去，避免历史 job 里残留的旧供应商快照（比如老 Kimi job）继续使用过期配置。
@@ -166,13 +169,45 @@ export function Workspace({jobId}: WorkspaceProps) {
   // 默认行为：邮件能用就发，不能用就别传 email_enabled=true，
   // 否则后端会因为 EMAIL_DEFAULT_RECIPIENT 没配直接 400 拒。
   const runtime = useRuntimeConfig()
-  const submitNew = async (url: string) => {
+  const newSummaryOptions = useCallback((): Partial<JobOptionOverrides> => {
     const options: Partial<JobOptionOverrides> = {task_type: 'summary'}
     if (runtime?.email_configured) options.email_enabled = true
-    const response = await createJob(url, options)
+    return options
+  }, [runtime?.email_configured])
+
+  const submitNew = async (url: string) => {
+    const response = await createJob(url, newSummaryOptions())
+    if (response.deduped) {
+      setDuplicateJob({url, jobId: response.job_id})
+      return
+    }
     writeActive({jobId: response.job_id, url})
-    toast.success(response.deduped ? '这条之前总结过，已复用' : '已开始总结')
+    toast.success('已开始总结')
     navigate(`/jobs/${response.job_id}`)
+  }
+
+  const viewDuplicateSummary = () => {
+    if (!duplicateJob) return
+    const {jobId} = duplicateJob
+    setDuplicateJob(null)
+    navigate(`/jobs/${jobId}`)
+  }
+
+  const rerunDuplicate = async () => {
+    if (!duplicateJob) return
+    setDuplicateBusy(true)
+    const {url} = duplicateJob
+    try {
+      const response = await createJob(url, newSummaryOptions(), {dedupe: false})
+      writeActive({jobId: response.job_id, url})
+      setDuplicateJob(null)
+      toast.success('已开始重新识别')
+      navigate(`/jobs/${response.job_id}`)
+    } catch (err) {
+      toast.error('重新识别失败', err instanceof Error ? err.message : '请重试')
+    } finally {
+      setDuplicateBusy(false)
+    }
   }
 
   const cancel = async () => {
@@ -285,7 +320,23 @@ export function Workspace({jobId}: WorkspaceProps) {
     if (recovering) {
       return <PageLoading label="恢复上次任务…" />
     }
-    return <IdleView onSubmit={submitNew} onOpenHistory={openHistory} />
+    return (
+      <>
+        <IdleView onSubmit={submitNew} onOpenHistory={openHistory} />
+        <ConfirmDialog
+          open={duplicateJob != null}
+          title="这条视频之前总结过"
+          description="可以直接查看原总结；重新识别会创建一条新的总结任务，原记录会保留在历史中。"
+          cancelLabel="取消"
+          secondaryLabel="查看原总结"
+          confirmLabel="重新识别"
+          loading={duplicateBusy}
+          onSecondary={viewDuplicateSummary}
+          onConfirm={() => void rerunDuplicate()}
+          onCancel={() => setDuplicateJob(null)}
+        />
+      </>
+    )
   }
 
   if (error) {

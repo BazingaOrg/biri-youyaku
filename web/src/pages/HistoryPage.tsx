@@ -2,13 +2,15 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import type {ReactNode} from 'react'
 import {ArrowLeft, BarChart3, Plus, RotateCw, Search, Tag, Trash, Trash2} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
-import {ApiError, deleteAllJobs, deleteJob, listJobs, type Job} from '../lib/api'
+import {ApiError, createJob, deleteAllJobs, deleteJob, listJobs, type Job, type JobOptionOverrides} from '../lib/api'
+import {writeActive} from '../lib/activeJob'
 import {formatDate, formatDuration, formatStatus} from '../lib/format'
 import {isRunning} from '../lib/jobStatus'
 import {AuthorLink} from '../components/AuthorLink'
 import {PageLoading} from '../components/Spinner'
 import {useToast} from '../components/ToastProvider'
 import {ConfirmDialog} from '../components/ConfirmDialog'
+import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
 
 const PAGE_SIZE = 200
 // 增量渲染：首屏只渲染 INITIAL 行，滚到底再补 STEP 行。零依赖地把 DOM 节点数压住，
@@ -126,7 +128,10 @@ export function HistoryPage() {
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE)
   const [confirmClearOpen, setConfirmClearOpen] = useState(false)
   const [clearing, setClearing] = useState(false)
+  const [reprocessTarget, setReprocessTarget] = useState<Job | null>(null)
+  const [reprocessing, setReprocessing] = useState(false)
   const toast = useToast()
+  const runtime = useRuntimeConfig()
 
   // 待提交的删除：id -> {timer, job}。撤销时清 timer 并恢复；到点 commitDelete 真正删后端。
   const pendingDeletes = useRef<Map<string, {timer: number; job: Job}>>(new Map())
@@ -345,6 +350,30 @@ export function HistoryPage() {
     }
   }
 
+  const newSummaryOptions = useCallback((): Partial<JobOptionOverrides> => {
+    const options: Partial<JobOptionOverrides> = {task_type: 'summary'}
+    if (runtime?.email_configured) options.email_enabled = true
+    return options
+  }, [runtime?.email_configured])
+
+  const handleReprocess = async () => {
+    const target = reprocessTarget
+    if (!target) return
+    setReprocessing(true)
+    const taskName = target.title || undefined
+    try {
+      const response = await createJob(target.url, newSummaryOptions(), {dedupe: false})
+      writeActive({jobId: response.job_id, url: target.url})
+      setReprocessTarget(null)
+      toast.success('已开始重新识别', undefined, {taskName})
+      navigate(`/jobs/${response.job_id}`)
+    } catch (err) {
+      toast.error('重新识别失败', err instanceof Error ? err.message : '请重试', {taskName})
+    } finally {
+      setReprocessing(false)
+    }
+  }
+
   return (
     <div className="grid min-h-[calc(100dvh-3rem)] content-start gap-5 sm:min-h-[calc(100dvh-5rem)]">
       <header className="grid gap-4 px-4 sm:px-5">
@@ -479,7 +508,7 @@ export function HistoryPage() {
                   return (
                     <li
                       key={job.id}
-                      className="group/item grid grid-cols-[minmax(0,1fr)_2.75rem] items-start gap-2 rounded-2xl bg-lift/55 p-2 transition-[background-color,box-shadow] hover:bg-brandSoft/30"
+                      className="group/item grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-2xl bg-lift/55 p-2 transition-[background-color,box-shadow] hover:bg-brandSoft/30"
                     >
                       <div className="min-w-0 px-2 py-1.5">
                         <Link
@@ -512,17 +541,32 @@ export function HistoryPage() {
                           <span className="text-muted">{formatDate(job.created_at)}</span>
                         </Link>
                       </div>
-                      <IconTooltip label="删除">
-                        <button
-                          type="button"
-                          aria-label="删除"
-                          title="删除"
-                          onClick={() => handleDelete(job.id)}
-                          className="grid h-11 w-11 place-items-center rounded-xl text-muted transition-[transform,background-color,color] hover:bg-panel hover:text-danger active:scale-95 sm:opacity-0 sm:group-hover/item:opacity-100 sm:focus-visible:opacity-100"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </IconTooltip>
+                      <div className="flex shrink-0 gap-1 sm:opacity-0 sm:group-hover/item:opacity-100 sm:focus-within:opacity-100">
+                        {!running && (
+                          <IconTooltip label="重新识别">
+                            <button
+                              type="button"
+                              aria-label="重新识别"
+                              title="重新识别"
+                              onClick={() => setReprocessTarget(job)}
+                              className="grid h-11 w-11 place-items-center rounded-xl text-muted transition-[transform,background-color,color] hover:bg-panel hover:text-brand active:scale-95"
+                            >
+                              <RotateCw size={16} />
+                            </button>
+                          </IconTooltip>
+                        )}
+                        <IconTooltip label="删除">
+                          <button
+                            type="button"
+                            aria-label="删除"
+                            title="删除"
+                            onClick={() => handleDelete(job.id)}
+                            className="grid h-11 w-11 place-items-center rounded-xl text-muted transition-[transform,background-color,color] hover:bg-panel hover:text-danger active:scale-95"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </IconTooltip>
+                      </div>
                     </li>
                   )
                 })}
@@ -542,6 +586,15 @@ export function HistoryPage() {
         loading={clearing}
         onConfirm={() => void handleClearCompleted()}
         onCancel={() => setConfirmClearOpen(false)}
+      />
+      <ConfirmDialog
+        open={reprocessTarget != null}
+        title="重新识别这个视频？"
+        description="会创建一条新的总结任务，原总结会继续保留在历史记录中。"
+        confirmLabel="重新识别"
+        loading={reprocessing}
+        onConfirm={() => void handleReprocess()}
+        onCancel={() => setReprocessTarget(null)}
       />
     </div>
   )

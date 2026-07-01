@@ -58,6 +58,7 @@ class JobOptionsPayload(BaseModel):
 class CreateJobPayload(BaseModel):
     url: str
     options: JobOptionsPayload = Field(default_factory=JobOptionsPayload)
+    dedupe: bool = True
 
 
 class ResumeJobPayload(BaseModel):
@@ -162,7 +163,7 @@ async def create_job(request: Request, payload: CreateJobPayload) -> dict:
         bvid = bili_meta.extract_bvid(payload.url)
     except ValueError:
         bvid = None
-    if bvid:
+    if payload.dedupe and bvid:
         existing = repo.find_completed_by_bvid(bvid)
         if existing is not None:
             return {"ok": True, "job_id": existing.id, "deduped": True}
