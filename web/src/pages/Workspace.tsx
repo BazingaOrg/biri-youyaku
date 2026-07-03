@@ -332,6 +332,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     navigate('/')
   }
   const openHistory = () => navigate('/history')
+  const openStats = () => navigate('/stats')
 
   // ---- render ----
 
@@ -393,6 +394,7 @@ export function Workspace({jobId}: WorkspaceProps) {
           job={job}
           onNew={goNew}
           onOpenHistory={openHistory}
+          onOpenStats={openStats}
           onDownloadAudio={downloadAudio}
           onCopy={copySummary}
           onDownloadMarkdown={downloadMarkdown}
@@ -423,6 +425,7 @@ export function Workspace({jobId}: WorkspaceProps) {
         onRetry={retry}
         onNew={goNew}
         onOpenHistory={openHistory}
+        onOpenStats={openStats}
         busy={actionBusy}
         cancelPending={cancelPending}
       />

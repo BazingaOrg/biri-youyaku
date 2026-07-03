@@ -1,5 +1,5 @@
 import {useMemo} from 'react'
-import {Copy, History, Plus, RotateCw, XCircle} from 'lucide-react'
+import {BarChart3, Copy, History, Plus, RotateCw, XCircle} from 'lucide-react'
 import type {Job} from '../../lib/api'
 import {isRunning} from '../../lib/jobStatus'
 import {friendlyError} from '../../lib/errorMap'
@@ -15,6 +15,7 @@ interface RunningViewProps {
   onRetry: () => void
   onNew: () => void
   onOpenHistory: () => void
+  onOpenStats: () => void
   busy: boolean
   cancelPending: boolean
 }
@@ -25,6 +26,7 @@ export function RunningView({
   onRetry,
   onNew,
   onOpenHistory,
+  onOpenStats,
   busy,
   cancelPending,
 }: RunningViewProps) {
@@ -62,6 +64,7 @@ export function RunningView({
       <div className="flex flex-wrap items-center justify-center gap-2">
         <IconButton icon={<Plus size={18} />} label="新建" onClick={onNew} />
         <IconButton icon={<History size={18} />} label="历史" onClick={onOpenHistory} />
+        <IconButton icon={<BarChart3 size={18} />} label="统计" onClick={onOpenStats} />
       </div>
       <MetaBar job={job} />
       <StepCarousel steps={steps} currentIndex={currentIdx} followKey={job.summary?.length ?? 0} />

@@ -1,4 +1,4 @@
-import {Captions, Clock, Copy, FileDown, History, Mail, Music, Plus, RotateCw, Tag} from 'lucide-react'
+import {BarChart3, Captions, Clock, Copy, FileDown, History, Mail, Music, Plus, RotateCw, Tag} from 'lucide-react'
 import type {Job} from '../../lib/api'
 import {formatStageTimings, formatTokenCount} from '../../lib/format'
 import {IconButton} from '../../components/IconButton'
@@ -36,6 +36,7 @@ interface DoneViewProps {
   job: Job
   onNew: () => void
   onOpenHistory: () => void
+  onOpenStats: () => void
   onDownloadAudio: () => void
   onCopy: () => void
   onDownloadMarkdown: () => void
@@ -50,6 +51,7 @@ export function DoneView({
   job,
   onNew,
   onOpenHistory,
+  onOpenStats,
   onDownloadAudio,
   onCopy,
   onDownloadMarkdown,
@@ -89,6 +91,7 @@ export function DoneView({
           disabled={!job.transcript?.length}
         />
         <IconButton icon={<History size={18} />} label="历史" onClick={onOpenHistory} />
+        <IconButton icon={<BarChart3 size={18} />} label="统计" onClick={onOpenStats} />
       </div>
       <MetaBar job={job} />
       <JobStats job={job} />
