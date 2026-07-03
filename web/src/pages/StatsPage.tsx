@@ -129,23 +129,23 @@ function BalanceCard() {
   if (!balance?.supported || balance.balance == null) return null
 
   return (
-    <section className="grid gap-3 rounded-3xl bg-ink p-4 text-canvas shadow-card">
+    <section className="grid gap-3 rounded-3xl bg-panel p-4 shadow-card">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs text-canvas/70">API Key 余额</p>
-          <p className="mt-1 truncate text-sm font-medium">{balance.provider}</p>
+          <p className="text-xs text-muted">API Key 余额</p>
+          <p className="mt-1 truncate text-sm font-medium text-ink">{balance.provider}</p>
         </div>
         <button
           type="button"
           onClick={() => void load(true)}
           disabled={loading}
           aria-label="刷新余额"
-          className="grid h-10 w-10 place-items-center rounded-2xl bg-canvas/10 text-canvas transition-[transform,background-color] hover:bg-canvas/16 active:scale-95 disabled:opacity-50"
+          className="grid h-10 w-10 place-items-center rounded-2xl bg-lift text-muted transition-[transform,background-color,color] hover:bg-line/70 hover:text-ink active:scale-95 disabled:opacity-50"
         >
           <RotateCw size={16} className={loading ? 'animate-spin' : undefined} />
         </button>
       </div>
-      <p className="font-serif text-4xl leading-none tracking-[-0.012em]">
+      <p className="font-serif text-4xl leading-none tracking-[-0.012em] text-ink">
         {formatMoney(balance.balance, balance.currency)}
       </p>
     </section>

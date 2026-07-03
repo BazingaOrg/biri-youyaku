@@ -508,7 +508,7 @@ export function HistoryPage() {
                   return (
                     <li
                       key={job.id}
-                      className="group/item grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-2xl bg-lift/55 p-2 transition-[background-color,box-shadow] hover:bg-brandSoft/30"
+                      className="group/item grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-2xl bg-lift/55 transition-[background-color,box-shadow] hover:bg-brandSoft/30"
                     >
                       <div className="min-w-0 px-2 py-1.5">
                         <Link
