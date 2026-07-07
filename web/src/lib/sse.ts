@@ -24,9 +24,35 @@ export function openJobStream(
   onError: (error: Error) => void,
   onClose?: () => void,
 ): JobStreamSubscription {
+  return openStream(`/v1/jobs/${jobId}/stream`, onMessage, onError, onClose)
+}
+
+// 作者蒸馏进度：同一套 SSE 帧格式，事件只有 `status`（见 routes/distill.py）。
+export type DistillStreamEvent = 'status'
+
+export interface DistillStreamMessage {
+  event: DistillStreamEvent
+  data: string
+}
+
+export function openDistillStream(
+  runId: string,
+  onMessage: (message: DistillStreamMessage) => void,
+  onError: (error: Error) => void,
+  onClose?: () => void,
+): JobStreamSubscription {
+  return openStream(`/v1/distill/${runId}/events`, onMessage, onError, onClose)
+}
+
+function openStream<TMessage extends {event: string; data: string}>(
+  path: string,
+  onMessage: (message: TMessage) => void,
+  onError: (error: Error) => void,
+  onClose?: () => void,
+): JobStreamSubscription {
   const controller = new AbortController()
 
-  void readStream(jobId, controller.signal, onMessage).catch((error) => {
+  void readStream(path, controller.signal, onMessage).catch((error) => {
     if (!controller.signal.aborted) {
       onError(error instanceof Error ? error : new Error('SSE stream failed'))
     }
@@ -41,10 +67,10 @@ export function openJobStream(
   }
 }
 
-async function readStream(
-  jobId: string,
+async function readStream<TMessage extends {event: string; data: string}>(
+  path: string,
   signal: AbortSignal,
-  onMessage: (message: JobStreamMessage) => void,
+  onMessage: (message: TMessage) => void,
 ) {
   const headers = new Headers()
   const token = getApiToken()
@@ -52,7 +78,7 @@ async function readStream(
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  const response = await fetch(`${API_BASE_URL}/v1/jobs/${jobId}/stream`, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     headers,
     signal,
     credentials: 'include',
@@ -64,14 +90,14 @@ async function readStream(
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  let eventName: JobStreamEvent = 'status'
+  let eventName = 'status'
   let dataLines: string[] = []
 
   const flush = () => {
     if (dataLines.length === 0) {
       return
     }
-    onMessage({event: eventName, data: dataLines.join('\n')})
+    onMessage({event: eventName, data: dataLines.join('\n')} as TMessage)
     eventName = 'status'
     dataLines = []
   }
@@ -94,7 +120,7 @@ async function readStream(
       } else if (line.startsWith(':')) {
         // SSE heartbeat/comment line.
       } else if (line.startsWith('event:')) {
-        eventName = line.slice(6).trim() as JobStreamEvent
+        eventName = line.slice(6).trim()
       } else if (line.startsWith('data:')) {
         dataLines.push(line.slice(5).trimStart())
       }

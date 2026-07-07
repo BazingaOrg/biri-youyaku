@@ -306,6 +306,83 @@ export function resolveUp(input: string) {
   return request<{ok: true; mid: number}>(`/v1/up/resolve?input=${encodeURIComponent(input)}`)
 }
 
+// ---------------------------------------------------------------------------
+// 作者蒸馏语料（distill）
+// ---------------------------------------------------------------------------
+
+export type DistillRunStatus =
+  | 'PENDING'
+  | 'FETCHING_DYNAMICS'
+  | 'PREPARING_TRANSCRIPTS'
+  | 'EXTRACTING'
+  | 'ASSEMBLING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED'
+
+export interface DistillCounters {
+  videos_total: number
+  videos_transcribed: number
+  videos_extracted: number
+  videos_failed: number
+  dynamics_count: number
+  failed_bvids: string[]
+}
+
+export interface DistillRun {
+  id: string
+  mid: number
+  up_name?: string | null
+  status: DistillRunStatus
+  video_limit: number
+  /** null=未抓取，'ok'=正常，'unavailable'=动态接口降级（只用投稿语料）。 */
+  dynamics_status?: string | null
+  counters: DistillCounters
+  error?: string | null
+  dir_path: string
+  created_at: number
+  updated_at: number
+}
+
+/**
+ * SSE `status` 事件的负载。两种形状都可能出现（见 routes/distill.py）：
+ * - 订阅后的第一条：完整快照，计数字段嵌在 `counters` 里；
+ * - 之后 orchestrator 推的增量事件：只带本次变化的字段，摊平在顶层，不含 `counters`。
+ */
+export interface DistillStatusPayload {
+  status: DistillRunStatus
+  dynamics_status?: string
+  dynamics_count?: number
+  videos_total?: number
+  videos_transcribed?: number
+  videos_extracted?: number
+  error?: string
+  counters?: Partial<DistillCounters>
+}
+
+export function startDistill(mid: number, videoLimit: number) {
+  return request<{ok: true; run: DistillRun}>(`/v1/up/${mid}/distill`, {
+    method: 'POST',
+    body: JSON.stringify({video_limit: videoLimit}),
+  })
+}
+
+export function getDistillRun(runId: string) {
+  return request<{ok: true; run: DistillRun}>(`/v1/distill/${runId}`)
+}
+
+export function cancelDistill(runId: string) {
+  return request<{ok: true}>(`/v1/distill/${runId}/cancel`, {method: 'POST'})
+}
+
+export function getDistillCorpus(runId: string) {
+  return request<{ok: true; run_id: string; corpus: string}>(`/v1/distill/${runId}/corpus`)
+}
+
+export function getLatestDistillRun(mid: number) {
+  return request<{ok: true; run: DistillRun | null}>(`/v1/up/${mid}/distill/latest`)
+}
+
 export type UpOrder = 'pubdate' | 'click'
 
 export function getUpVideos(

@@ -1,11 +1,23 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
-import {ArrowLeft, Check, RotateCw, Search, Sparkles} from 'lucide-react'
+import {ArrowLeft, Boxes, Check, RotateCw, Search, Sparkles} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
-import {createJob, getUpVideos, type JobStatus, type UpOrder, type UpVideo} from '../lib/api'
+import {
+  ApiError,
+  createJob,
+  getLatestDistillRun,
+  getUpVideos,
+  startDistill,
+  type DistillRun,
+  type JobStatus,
+  type UpOrder,
+  type UpVideo,
+} from '../lib/api'
 import {formatDay, formatDuration} from '../lib/format'
 import {isRunning} from '../lib/jobStatus'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
 import {PageLoading, Spinner} from '../components/Spinner'
+import {ConfirmDialog} from '../components/ConfirmDialog'
+import {DistillPanel} from '../components/DistillPanel'
 import {useToast} from '../components/ToastProvider'
 
 type Filter = 'all' | 'todo' | 'done'
@@ -46,6 +58,81 @@ function BackButton() {
   )
 }
 
+/** 头部「蒸馏语料」按钮 + 确认层：说明耗时预期 + 可改视频范围，确认后 POST 启动。 */
+function DistillButton({mid, onStarted}: {mid: number; onStarted: (run: DistillRun) => void}) {
+  const toast = useToast()
+  const [open, setOpen] = useState(false)
+  const [videoLimit, setVideoLimit] = useState('50')
+  const [starting, setStarting] = useState(false)
+
+  const start = async () => {
+    const parsed = Number(videoLimit)
+    const limit = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 50
+    setStarting(true)
+    try {
+      const res = await startDistill(mid, limit)
+      onStarted(res.run)
+      setOpen(false)
+      toast.success('已开始蒸馏语料')
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        // 已有进行中的 run（比如另一个标签页刚启动）：拉一次最新状态直接展示面板。
+        try {
+          const latest = await getLatestDistillRun(mid)
+          if (latest.run) onStarted(latest.run)
+        } catch {
+          // 忽略；用户可以刷新页面重试
+        }
+        setOpen(false)
+        toast.error('已有进行中的蒸馏任务', '已为你展示进度')
+      } else {
+        toast.error('启动蒸馏失败', err instanceof Error ? err.message : '请稍后再试')
+      }
+    } finally {
+      setStarting(false)
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex min-h-10 w-fit shrink-0 items-center gap-2 rounded-2xl bg-lift px-3 text-sm text-ink transition-[transform,background-color,color] hover:bg-line/70 active:scale-95"
+      >
+        <Boxes size={15} />
+        蒸馏语料
+      </button>
+      <ConfirmDialog
+        open={open}
+        title="蒸馏该 UP 的语料"
+        description={
+          <div className="grid gap-3">
+            <p>
+              会抓取该 UP 的历史动态，并为尚未转写的投稿补齐转写。ASR 在本地跑，视频数量多时可能
+              耗时很久（几小时到几天），可以随时取消，重进页面也能看到进度。
+            </p>
+            <label className="grid gap-1 text-left">
+              <span className="text-xs text-muted">视频范围（默认 50；数量越大越耗时，建议不超过 200）</span>
+              <input
+                type="number"
+                min={1}
+                value={videoLimit}
+                onChange={(e) => setVideoLimit(e.target.value)}
+                className="min-h-10 w-full rounded-xl bg-lift px-3 text-sm text-ink outline-none focus:ring-2 focus:ring-brand/30"
+              />
+            </label>
+          </div>
+        }
+        confirmLabel="开始蒸馏"
+        loading={starting}
+        onConfirm={() => void start()}
+        onCancel={() => setOpen(false)}
+      />
+    </>
+  )
+}
+
 function UpList({mid}: {mid: number}) {
   const toast = useToast()
   const runtime = useRuntimeConfig()
@@ -64,6 +151,10 @@ function UpList({mid}: {mid: number}) {
   // 一键总结后的乐观覆盖：bvid -> {status, job_id}，不刷新就能立刻显示「进行中」。
   const [overrides, setOverrides] = useState<Record<string, {status: JobStatus; job_id: string}>>({})
   const [summarizing, setSummarizing] = useState<Set<string>>(new Set())
+  // 蒸馏语料：null=没有 run（展示按钮），非 null=展示进度面板。distillChecked 之前
+  // 先不渲染按钮/面板，避免"先闪一下按钮再切成面板"。
+  const [distillRun, setDistillRun] = useState<DistillRun | null>(null)
+  const [distillChecked, setDistillChecked] = useState(false)
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 300)
@@ -98,6 +189,26 @@ function UpList({mid}: {mid: number}) {
   useEffect(() => {
     void fetchPage(1, debouncedQuery, order, 'reset')
   }, [fetchPage, debouncedQuery, order])
+
+  // 进页面先查一次有没有正在跑（或已跑完/失败）的蒸馏 run，有就直接展示面板而不是按钮。
+  useEffect(() => {
+    let cancelled = false
+    setDistillChecked(false)
+    setDistillRun(null)
+    void getLatestDistillRun(mid)
+      .then((res) => {
+        if (!cancelled) setDistillRun(res.run)
+      })
+      .catch(() => {
+        // 查询失败就当没有 run 处理，回退成按钮；真要启动时后端仍会用 409 兜底。
+      })
+      .finally(() => {
+        if (!cancelled) setDistillChecked(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [mid])
 
   // 滚到底自动加载下一页。
   const sentinelRef = useRef<HTMLDivElement | null>(null)
@@ -171,14 +282,20 @@ function UpList({mid}: {mid: number}) {
     <div className="grid content-start gap-5">
       <header className="grid gap-4 px-4 sm:px-5">
         <BackButton />
-        <div className="min-w-0">
-          <h1 className="truncate text-2xl font-semibold tracking-[-0.012em] text-ink sm:text-3xl">
-            {author || `UP ${mid}`}
-          </h1>
-          <p className="mt-1 text-sm text-muted">
-            共 {total} 条投稿{videos.length > 0 && ` · 已加载 ${videos.length}`}
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="truncate text-2xl font-semibold tracking-[-0.012em] text-ink sm:text-3xl">
+              {author || `UP ${mid}`}
+            </h1>
+            <p className="mt-1 text-sm text-muted">
+              共 {total} 条投稿{videos.length > 0 && ` · 已加载 ${videos.length}`}
+            </p>
+          </div>
+          {distillChecked && !distillRun && <DistillButton mid={mid} onStarted={setDistillRun} />}
         </div>
+        {distillChecked && distillRun && (
+          <DistillPanel key={distillRun.id} mid={mid} run={distillRun} onRunChange={setDistillRun} />
+        )}
       </header>
 
       <section className="min-w-0 px-4 sm:px-5">

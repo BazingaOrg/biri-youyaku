@@ -63,7 +63,9 @@ export function ConfirmDialog({
         <h2 id="confirm-dialog-title" className="text-base font-semibold text-ink">
           {title}
         </h2>
-        {description && <p className="mt-2 text-sm leading-6 text-muted">{description}</p>}
+        {/* div 而非 p：调用方偶尔需要塞输入框等块级元素（如蒸馏确认层的数量输入），
+            p 标签会被浏览器强制截断成非法嵌套。 */}
+        {description && <div className="mt-2 text-sm leading-6 text-muted">{description}</div>}
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <button
             type="button"
