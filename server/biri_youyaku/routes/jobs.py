@@ -43,7 +43,7 @@ router = APIRouter(prefix="/v1", dependencies=[Depends(require_token)])
 
 
 class JobOptionsPayload(BaseModel):
-    task_type: Literal["summary", "audio"] | None = None
+    task_type: Literal["summary", "audio", "distill"] | None = None
     language: str | None = None
     force_asr: bool | None = None
     summary_language: str | None = None
@@ -198,7 +198,9 @@ async def create_job(request: Request, payload: CreateJobPayload) -> dict:
 
 @router.post("/jobs/{job_id}/resummarize")
 @limiter.limit("10/minute")
-async def resummarize(request: Request, job_id: str, payload: ResummarizeJobPayload | None = None) -> dict:
+async def resummarize(
+    request: Request, job_id: str, payload: ResummarizeJobPayload | None = None
+) -> dict:
     source = repo.get_job(job_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -223,7 +225,11 @@ async def list_jobs(
 ) -> dict:
     jobs = repo.list_jobs(limit=limit, offset=offset, cursor=cursor)
     next_cursor = jobs[-1].created_at if len(jobs) == limit else None
-    return {"ok": True, "jobs": [serialize_job(job, lite=True) for job in jobs], "next_cursor": next_cursor}
+    return {
+        "ok": True,
+        "jobs": [serialize_job(job, lite=True) for job in jobs],
+        "next_cursor": next_cursor,
+    }
 
 
 @router.get("/jobs/{job_id}")
@@ -274,7 +280,10 @@ async def stream_job(job_id: str):
                 except asyncio.TimeoutError:
                     yield {"comment": "keepalive"}
                     continue
-                yield {"event": message["event"], "data": json.dumps(message["data"], ensure_ascii=False)}
+                yield {
+                    "event": message["event"],
+                    "data": json.dumps(message["data"], ensure_ascii=False),
+                }
                 if (
                     message["event"] == "status"
                     and message["data"].get("status") in TERMINAL_JOB_STATUS_VALUES
@@ -405,7 +414,9 @@ async def resend_email(request: Request, job_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Job not found")
     summary = repo.read_summary(job)
     if job.status != JobStatus.COMPLETED or not summary:
-        raise HTTPException(status_code=409, detail="Only completed jobs with a summary can be emailed")
+        raise HTTPException(
+            status_code=409, detail="Only completed jobs with a summary can be emailed"
+        )
     try:
         await send_email(_video_meta_from_job(job), summary, job.options)
     except Exception as exc:
@@ -418,5 +429,7 @@ async def resend_email(request: Request, job_id: str) -> dict:
         raise HTTPException(status_code=502, detail=message) from exc
     # 重发成功 → 把上次记下的 email_error 清掉
     repo.set_email_error(job_id, None)
-    await event_bus.publish(job_id, "status", {"status": JobStatus.COMPLETED.value, "email_error": None})
+    await event_bus.publish(
+        job_id, "status", {"status": JobStatus.COMPLETED.value, "email_error": None}
+    )
     return {"ok": True}

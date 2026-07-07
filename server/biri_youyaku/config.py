@@ -71,6 +71,7 @@ class Settings(BaseSettings):
 
     audio_storage_dir: Path = Path("data/audio")
     summary_storage_dir: Path = Path("data/summaries")
+    distill_storage_dir: Path = Path("data/distill")
     db_path: Path = Path("data/biri_youyaku.db")
 
     audio_retention_days: int = 7
@@ -94,9 +95,15 @@ class Settings(BaseSettings):
 
     @property
     def llm_allowed_hosts(self) -> list[str]:
-        return [item.strip().lower() for item in self.llm_base_url_allowed_hosts.split(",") if item.strip()]
+        return [
+            item.strip().lower()
+            for item in self.llm_base_url_allowed_hosts.split(",")
+            if item.strip()
+        ]
 
-    @field_validator("audio_storage_dir", "summary_storage_dir", "db_path", mode="before")
+    @field_validator(
+        "audio_storage_dir", "summary_storage_dir", "distill_storage_dir", "db_path", mode="before"
+    )
     @classmethod
     def default_paths(cls, value: object, info):
         if value not in (None, ""):
@@ -104,6 +111,7 @@ class Settings(BaseSettings):
         defaults = {
             "audio_storage_dir": Path("data/audio"),
             "summary_storage_dir": Path("data/summaries"),
+            "distill_storage_dir": Path("data/distill"),
             "db_path": Path("data/biri_youyaku.db"),
         }
         return defaults[info.field_name]

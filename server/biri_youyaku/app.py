@@ -21,12 +21,14 @@ from biri_youyaku.jobs.cleanup import (
     fail_stale_running_once,
     scan_orphans_once,
 )
+from biri_youyaku.distill.orchestrator import recover_unfinished_runs
 from biri_youyaku.jobs.runner import recover_unfinished_jobs
 from biri_youyaku.logging import configure_logging
 from biri_youyaku.modules._http import aclose_all
 from biri_youyaku.routes import (
     config_public_router,
     config_router,
+    distill_router,
     healthz_router,
     jobs_router,
     up_router,
@@ -72,6 +74,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await fail_stale_running_once()
     await scan_orphans_once()
     recover_unfinished_jobs()
+    recover_unfinished_runs()
     cleanup_task = asyncio.create_task(cleanup_loop())
     warmup_task = asyncio.create_task(_warmup_asr())
     tags_task = asyncio.create_task(_backfill_tags())
@@ -115,7 +118,9 @@ async def _warmup_asr() -> None:
         transcriber = get_transcriber(settings.asr_model)
         warmup = getattr(transcriber, "warmup", None)
         if warmup is None:
-            log.info("ASR warmup skipped: transcriber %s has no warmup hook", type(transcriber).__name__)
+            log.info(
+                "ASR warmup skipped: transcriber %s has no warmup hook", type(transcriber).__name__
+            )
             return
         await asyncio.to_thread(warmup)
         log.info("ASR warmup completed: %s", type(transcriber).__name__)
@@ -152,6 +157,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(config_public_router)
     app.include_router(config_router)
+    app.include_router(distill_router)
     app.include_router(healthz_router)
     app.include_router(jobs_router)
     app.include_router(up_router)

@@ -39,6 +39,26 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_bvid ON jobs(bvid) WHERE bvid IS NOT NULL;
+
+-- 作者蒸馏语料（distill）跑的独立记录：与 jobs 表数据隔离，一个 run 对应
+-- data/distill/<mid>/ 下的一份语料包。task_type="distill" 的 job 仍住在 jobs 表，
+-- 只是不进主历史列表（见 jobs/repo.py list_jobs 的 json_extract 过滤）。
+CREATE TABLE IF NOT EXISTS distill_runs (
+  id                TEXT PRIMARY KEY,
+  mid               INTEGER NOT NULL,
+  up_name           TEXT,
+  status            TEXT NOT NULL,
+  video_limit       INTEGER NOT NULL,
+  dynamics_status   TEXT,
+  counters_json     TEXT,
+  error             TEXT,
+  dir_path          TEXT NOT NULL,
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_distill_runs_mid ON distill_runs(mid);
+CREATE INDEX IF NOT EXISTS idx_distill_runs_status ON distill_runs(status);
 """
 
 # 已废弃的旧列：去重改走 bvid 查询（不再用 content_hash），旧 SELECT * 兼容列也不再需要。
@@ -72,10 +92,7 @@ def connect() -> sqlite3.Connection:
 def init_db() -> None:
     with connect() as connection:
         connection.executescript(SCHEMA)
-        columns = {
-            row["name"]
-            for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
-        }
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(jobs)").fetchall()}
         migrations = {
             "mid": "ALTER TABLE jobs ADD COLUMN mid INTEGER",
             "chapters_json": "ALTER TABLE jobs ADD COLUMN chapters_json TEXT",

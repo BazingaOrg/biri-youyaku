@@ -194,7 +194,12 @@ def recover_unfinished_jobs() -> None:
         if job.status in {JobStatus.PENDING, JobStatus.FETCHING_META, JobStatus.DOWNLOADING_AUDIO}:
             start_job(job.id)
         else:
-            repo.set_error(job.id, job.status.value, "服务重启时任务处于不可安全恢复的中间状态", "RECOVERY_UNSAFE")
+            repo.set_error(
+                job.id,
+                job.status.value,
+                "服务重启时任务处于不可安全恢复的中间状态",
+                "RECOVERY_UNSAFE",
+            )
             repo.update_status(job.id, JobStatus.FAILED)
     # 字幕已就绪但还没总结的任务：重启时自动续跑（正常流程已服务端自动续，这里兜底
     # 历史遗留 / 上传字幕 等停在 TRANSCRIPT_READY 的任务，确保总结/邮件不丢）。
@@ -335,14 +340,18 @@ async def run_until_transcript(job_id: str) -> None:
         if fresh_job.options.task_type == "audio":
             stage.value = JobStatus.DOWNLOADING_AUDIO.value
             await transition(job_id, JobStatus.DOWNLOADING_AUDIO)
-            async with _semaphore_with_queue_notice(job_id, JobStatus.DOWNLOADING_AUDIO, _io_semaphore):
+            async with _semaphore_with_queue_notice(
+                job_id, JobStatus.DOWNLOADING_AUDIO, _io_semaphore
+            ):
                 await _with_timeout(
                     JobStatus.DOWNLOADING_AUDIO,
                     1800,
                     download_audio(
                         fresh_job,
                         video_meta,
-                        on_progress=lambda payload: event_bus.publish(job_id, "download_progress", payload),
+                        on_progress=lambda payload: event_bus.publish(
+                            job_id, "download_progress", payload
+                        ),
                     ),
                 )
             await transition(job_id, JobStatus.COMPLETED)
@@ -350,18 +359,24 @@ async def run_until_transcript(job_id: str) -> None:
             return
 
         if video_meta.has_subtitle and not fresh_job.options.force_asr:
-            items = await _with_timeout(JobStatus.DOWNLOADING_AUDIO, 120, fetch_platform_transcript(fresh_job, video_meta))
+            items = await _with_timeout(
+                JobStatus.DOWNLOADING_AUDIO, 120, fetch_platform_transcript(fresh_job, video_meta)
+            )
         else:
             stage.value = JobStatus.DOWNLOADING_AUDIO.value
             await transition(job_id, JobStatus.DOWNLOADING_AUDIO)
-            async with _semaphore_with_queue_notice(job_id, JobStatus.DOWNLOADING_AUDIO, _io_semaphore):
+            async with _semaphore_with_queue_notice(
+                job_id, JobStatus.DOWNLOADING_AUDIO, _io_semaphore
+            ):
                 audio_path = await _with_timeout(
                     JobStatus.DOWNLOADING_AUDIO,
                     1800,
                     download_audio(
                         fresh_job,
                         video_meta,
-                        on_progress=lambda payload: event_bus.publish(job_id, "download_progress", payload),
+                        on_progress=lambda payload: event_bus.publish(
+                            job_id, "download_progress", payload
+                        ),
                     ),
                 )
             _raise_if_canceled(job_id)
@@ -398,8 +413,18 @@ async def run_until_transcript(job_id: str) -> None:
             job_id,
             JobStatus.TRANSCRIPT_READY,
             transcript_preview=transcript_preview,
-            subtitle_source="platform" if (video_meta.has_subtitle and not fresh_job.options.force_asr) else "asr",
+            subtitle_source="platform"
+            if (video_meta.has_subtitle and not fresh_job.options.force_asr)
+            else "asr",
         )
+        if fresh_job.options.task_type == "distill":
+            # 蒸馏用的 job（作者语料抓转写）只需要 transcript，到这里就该收尾——
+            # 不总结、不生成标签、不发邮件。复用 COMPLETED 而非新增终态，和上面
+            # task_type=="audio" 提前收尾的写法保持一致（最小改动）；distill
+            # orchestrator 靠 job.transcript 非空 + status==COMPLETED 判定「转写可用」。
+            await transition(job_id, JobStatus.COMPLETED)
+            clear_job_state(job_id)
+            return
         # 自动续跑：拿到字幕后服务端**直接**进入总结，不依赖前端 /resume。
         # 否则用户一关浏览器，任务就永远停在 TRANSCRIPT_READY，总结和邮件都不会发生。
         await _do_summarize(job_id, stage)
@@ -454,7 +479,9 @@ async def _do_summarize(job_id: str, stage: _RunStage) -> None:
         stage.value = JobStatus.EMAILING.value
         await transition(job_id, JobStatus.EMAILING)
         try:
-            await _with_timeout(JobStatus.EMAILING, 120, send_email(video_meta, summary_md, fresh_job.options))
+            await _with_timeout(
+                JobStatus.EMAILING, 120, send_email(video_meta, summary_md, fresh_job.options)
+            )
         except (asyncio.CancelledError, CanceledError):
             raise
         except Exception as exc:
@@ -478,6 +505,14 @@ async def run_after_resume(job_id: str) -> None:
             raise RuntimeError("Job not found")
         if fresh_job.status != JobStatus.TRANSCRIPT_READY:
             raise RuntimeError(f"Job is {fresh_job.status.value}, cannot resume")
+        if fresh_job.options.task_type == "distill":
+            # 兜底一个极窄的崩溃窗口：进程恰好在 TRANSCRIPT_READY→COMPLETED 两次
+            # transition 之间死掉，重启后 recover_unfinished_jobs() 会把它当成普通
+            # TRANSCRIPT_READY 任务走 resume_job()。镜像 run_until_transcript 里的
+            # 同名分支，避免误对 distill job 生成摘要。
+            await transition(job_id, JobStatus.COMPLETED)
+            clear_job_state(job_id)
+            return
         await _do_summarize(job_id, stage)
 
 

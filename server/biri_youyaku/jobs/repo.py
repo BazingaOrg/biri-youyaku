@@ -90,7 +90,9 @@ def _row_to_job_lite(row: Any) -> Job:
     return _row_to_job(row, lite=True)
 
 
-def create_job(url: str, options: JobOptions, option_overrides: dict[str, Any] | None = None) -> Job:
+def create_job(
+    url: str, options: JobOptions, option_overrides: dict[str, Any] | None = None
+) -> Job:
     timestamp = now_ms()
     option_overrides = option_overrides or {}
     job = Job(
@@ -172,17 +174,31 @@ def get_job(job_id: str) -> Job | None:
     return _row_to_job(row) if row else None
 
 
+# 蒸馏建的 job（task_type="distill"）走同一张 jobs 表复用转写/并发限流，但不该出现
+# 在主历史列表里——它没有笔记、也不是用户主动发起的「一条总结任务」。task_type 不是
+# 独立列（住在 effective_options_json 里），用 json_extract 过滤，不加新列/迁移。
+_EXCLUDE_DISTILL_CLAUSE = "AND json_extract(effective_options_json, '$.task_type') IS NOT 'distill'"
+
+
 def list_jobs(limit: int = 50, offset: int = 0, cursor: int | None = None) -> list[Job]:
-    """列表页接口：走 lite 投影，不拉 transcript/chapters/stage_timings。"""
+    """列表页接口：走 lite 投影，不拉 transcript/chapters/stage_timings；默认排除 distill 任务。"""
     with connect() as connection:
         if cursor is not None:
             rows = connection.execute(
-                f"SELECT {_LITE_COLUMNS} FROM jobs WHERE created_at < ? ORDER BY created_at DESC LIMIT ?",
+                f"""
+                SELECT {_LITE_COLUMNS} FROM jobs
+                WHERE created_at < ? {_EXCLUDE_DISTILL_CLAUSE}
+                ORDER BY created_at DESC LIMIT ?
+                """,
                 (cursor, limit),
             ).fetchall()
         else:
             rows = connection.execute(
-                f"SELECT {_LITE_COLUMNS} FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                f"""
+                SELECT {_LITE_COLUMNS} FROM jobs
+                WHERE 1=1 {_EXCLUDE_DISTILL_CLAUSE}
+                ORDER BY created_at DESC LIMIT ? OFFSET ?
+                """,
                 (limit, offset),
             ).fetchall()
     return [_row_to_job_lite(row) for row in rows]
@@ -403,7 +419,9 @@ def set_summary_path(job_id: str, summary_path: Path) -> None:
 def add_stage_timing(job_id: str, stage: str, started_at: int, ended_at: int) -> None:
     duration_ms = max(0, ended_at - started_at)
     with connect() as connection:
-        row = connection.execute("SELECT stage_timings_json FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        row = connection.execute(
+            "SELECT stage_timings_json FROM jobs WHERE id = ?", (job_id,)
+        ).fetchone()
         timings = json.loads(row["stage_timings_json"]) if row and row["stage_timings_json"] else []
         timings.append(
             {
@@ -421,7 +439,9 @@ def add_stage_timing(job_id: str, stage: str, started_at: int, ended_at: int) ->
 
 def add_token_usage(job_id: str, usage: dict[str, Any]) -> None:
     with connect() as connection:
-        row = connection.execute("SELECT token_usage_json FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        row = connection.execute(
+            "SELECT token_usage_json FROM jobs WHERE id = ?", (job_id,)
+        ).fetchone()
         current = json.loads(row["token_usage_json"]) if row and row["token_usage_json"] else {}
         next_usage = dict(current)
         for key in ("input_tokens", "output_tokens", "total_tokens"):
@@ -461,7 +481,7 @@ def summary_status_for_bvids(bvids: list[str]) -> dict[str, dict[str, Any]]:
     with connect() as connection:
         rows = connection.execute(
             f"SELECT id, bvid, status, created_at FROM jobs "
-            f"WHERE bvid IN ({placeholders}) ORDER BY created_at ASC",
+            f"WHERE bvid IN ({placeholders}) {_EXCLUDE_DISTILL_CLAUSE} ORDER BY created_at ASC",
             unique,
         ).fetchall()
 
@@ -484,15 +504,20 @@ def summary_status_for_bvids(bvids: list[str]) -> dict[str, dict[str, Any]]:
     return {bvid: {"status": value[2], "job_id": value[3]} for bvid, value in best.items()}
 
 
-def find_completed_by_bvid(bvid: str) -> Job | None:
-    """同一 BV 号最近一条「已完成」任务，用于创建时去重（命中就复用、不重复总结）。"""
+def find_completed_by_bvid(bvid: str, *, include_distill: bool = False) -> Job | None:
+    """同一 BV 号最近一条「已完成」任务，用于创建时去重（命中就复用、不重复总结）。
+
+    默认排除 distill 任务：它们 COMPLETED 但只有转写、没有总结，普通总结流程若复用
+    等于拿到一条空结果。蒸馏编排器复用转写时传 include_distill=True。
+    """
     if not bvid:
         return None
+    clause = "" if include_distill else _EXCLUDE_DISTILL_CLAUSE
     with connect() as connection:
         row = connection.execute(
-            """
+            f"""
             SELECT * FROM jobs
-            WHERE bvid = ? AND status = ?
+            WHERE bvid = ? AND status = ? {clause}
             ORDER BY created_at DESC
             LIMIT 1
             """,

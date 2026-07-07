@@ -58,6 +58,7 @@ class UpVideo:
     cover: str
     pubdate: int  # unix 秒
     duration: float  # 秒
+    play: int = 0  # 播放量；蒸馏语料 frontmatter 要用，原列表接口不需要就留默认值
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,14 @@ def _parse_length(value: str) -> float:
     if len(nums) == 3:
         return float(nums[0] * 3600 + nums[1] * 60 + nums[2])
     return 0.0
+
+
+def _parse_play(value: object) -> int:
+    """vlist.play 偶尔是 "--"（转码中/播放数隐藏），容错为 0，别让整页列表炸掉。"""
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _clean_title(raw: str) -> str:
@@ -198,6 +207,7 @@ async def fetch_up_videos(
             cover=_https(str(item.get("pic") or "")),
             pubdate=int(item.get("created") or 0),
             duration=_parse_length(str(item.get("length") or "")),
+            play=_parse_play(item.get("play")),
         )
         for item in vlist
         if item.get("bvid")
