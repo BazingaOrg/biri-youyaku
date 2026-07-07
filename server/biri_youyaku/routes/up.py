@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from biri_youyaku.auth import require_token
 from biri_youyaku.jobs import repo
-from biri_youyaku.modules.bilibili import space
+from biri_youyaku.modules.bilibili import dynamic, space
 from biri_youyaku.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
@@ -69,3 +69,19 @@ async def up_videos(
         "has_more": result.has_more,
         "videos": videos,
     }
+
+
+@router.get("/{mid}/dynamics")
+@limiter.limit("30/minute")
+async def up_dynamics(request: Request, mid: int, offset: str = Query(default="")) -> dict:
+    try:
+        result = await dynamic.fetch_dynamics_page(mid, offset)
+    except dynamic.DynamicRateLimited as exc:
+        # 频控 / 风控。风格与 up_videos 一致：503 让前端拿到 detail 并提示配置 SESSDATA。
+        raise HTTPException(
+            status_code=503,
+            detail=f"B 站风控拦截（{exc}）。稍后重试；在 server/.env 配置 BILI_SESSDATA 可显著提升成功率。",
+        ) from exc
+    except dynamic.DynamicFetchError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "mid": mid, **result}
