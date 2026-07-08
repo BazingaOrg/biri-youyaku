@@ -9,11 +9,31 @@ Routing:
 - Reasoning-heavy phases → deep-reasoner
 - Mechanical work → fast-worker
 - After any code change → qa-runner (verification only; it never judges or fixes)
-- Codex (/codex:rescue --background) is a peer engineer with a different
-  perspective. Treat as a peer, not a reviewer.
+- Codex (invoke via the codex-rescue subagent) is a peer engineer with a
+  different perspective. Treat as a peer, not a reviewer.
 
-High-stakes decisions: task deep-reasoner + Codex on the same problem in
-parallel, synthesize the best of both, without showing either the other's answer.
+Dispatch codex-rescue WITHOUT waiting for me to ask when any of these hold:
+- You have made 2+ failed attempts at the same problem (rescue)
+- The change touches a public interface, data schema/migration, auth or
+  security logic, or a core algorithm (adversarial second opinion — run it
+  in parallel with deep-reasoner, don't show either the other's answer,
+  synthesize and tell me which parts came from whom)
+- I say "high-stakes", "对垒", or "second opinion"
+
+For substantial implementation work best suited to Codex (not a quick
+consult), you may invoke it directly via Bash instead of the subagent:
+
+  P=$(mktemp); cat >"$P" <<'EOF'
+  <goal, exact paths, constraints, expected proof (test command), output shape>
+  EOF
+  codex exec -C . -o /tmp/codex-last.md - <"$P"
+
+Read the result from /tmp/codex-last.md, not the raw stream. Always verify
+yourself afterwards (git diff, run the proof command) — Codex's own claims
+are advisory, not verified.
+
+Do NOT dispatch Codex for mechanical work or trivial fixes — it costs a
+separate quota. When unsure, propose it in your plan and let me decide.
 
 For non-trivial tasks (touching 3+ files, or involving design decisions),
 show me your plan before executing. Trivial fixes: just do it.
