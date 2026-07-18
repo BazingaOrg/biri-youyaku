@@ -17,7 +17,11 @@ Paste a Bilibili video link and get a readable Markdown summary, a mind map, and
 - **Multi-view summary**: Markdown notes (with a table of contents) / mind map (export SVG·PNG) / topic tags / transcript (click a timestamp to jump back into the video).
 - **Any LLM**: any OpenAI-compatible endpoint (DeepSeek by default; OpenAI / Gemini / local ollama all work).
 - **Browse by uploader**: list an uploader's whole catalog, see which are summarized, one-click the rest.
+- **Uploader corpus distillation**: scrape an uploader's video transcripts and dynamic posts, LLM-clean and compile them into a persona corpus (e.g. for roleplay).
+- **Stats page**: token usage and per-stage timing dashboard.
 - **Dedup to save tokens**: re-pasting an already-summarized video reuses the old result.
+- **Per-job fixes**: resummarize (reuse existing transcript), force re-transcription (ignore existing transcript/subtitles and redo ASR), resend email for a failed job.
+- **Audio download**: download the audio file used for transcription.
 - **Local-first**: all data stays local, no telemetry; optional email delivery and optional API-token auth.
 
 ## 🚀 Quick start
@@ -107,12 +111,16 @@ Combined with local ASR below, this is fully offline (except fetching from Bilib
 flowchart LR
     user([Browser]) -->|paste BV link| web[Vite + React]
     web -->|REST + SSE| api[FastAPI]
+    web -->|browse-by-uploader/distill/stats| api
     api --> ytdlp[yt-dlp<br/>subtitles/audio]
     ytdlp -->|has subtitles| llm
     ytdlp -->|no subtitles| asr[local ASR<br/>SenseVoice / Parakeet]
     asr --> llm[LLM<br/>OpenAI-compatible]
+    api --> distill[distill<br/>transcripts+dynamics → corpus]
+    distill --> llm
     llm -->|streamed chunks| api
     api --> db[(SQLite)]
+    api --> stats[stats<br/>tokens/timing]
     api -. optional .-> mail[Cloudflare Worker → Resend]
 ```
 

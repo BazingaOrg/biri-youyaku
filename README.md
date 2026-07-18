@@ -17,7 +17,11 @@
 - **多视图总结**：Markdown 笔记（带目录）/ 思维导图（可导出 SVG·PNG）/ 主题标签 / 字幕原文（点时间戳跳回视频）。
 - **任意 LLM**：任何 OpenAI 兼容接口（默认 DeepSeek，OpenAI / Gemini / 本地 ollama 等都行）。
 - **按 UP 主浏览**：列出某 UP 全部投稿、标记已/未总结、未总结一键补。
+- **UP 主蒸馏语料**：抓取某 UP 的视频字幕 + 动态，LLM 清洗后编译成一份人设语料（corpus），可用于角色扮演等场景。
+- **数据统计页**：Token 用量、各阶段耗时等统计看板。
 - **去重省钱**：同一视频已总结过就直接复用，不重复烧 token。
+- **单任务补救**：重新总结（复用已有字幕）、强制重新转写（忽略已有字幕/转写重新走 ASR）、失败任务重发邮件。
+- **音频下载**：转写用到的音频文件可直接下载。
 - **本地优先**：数据全落本地、无遥测；可选邮件推送、可选 API Token 鉴权。
 
 ## 🚀 快速开始
@@ -107,12 +111,16 @@ LLM_BASE_URL_ALLOWED_HOSTS=   # 仅本地留空；公网部署不要放开白名
 flowchart LR
     user([浏览器]) -->|粘贴 BV 链接| web[Vite + React]
     web -->|REST + SSE| api[FastAPI]
+    web -->|按 UP 浏览/蒸馏/统计| api
     api --> ytdlp[yt-dlp<br/>抓字幕/音频]
     ytdlp -->|有字幕| llm
     ytdlp -->|无字幕| asr[本地 ASR<br/>SenseVoice / Parakeet]
     asr --> llm[LLM<br/>OpenAI 兼容]
+    api --> distill[蒸馏 distill<br/>字幕+动态 → 语料]
+    distill --> llm
     llm -->|流式 chunk| api
     api --> db[(SQLite)]
+    api --> stats[统计<br/>Token/耗时]
     api -. 可选 .-> mail[Cloudflare Worker → Resend]
 ```
 

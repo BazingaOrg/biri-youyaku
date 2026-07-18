@@ -37,7 +37,7 @@
 | 邮件 | `EMAIL_WEBHOOK_TOKEN` | 空 | 启用邮件时必填；后端 → Worker 的鉴权 token，与 Worker 端 `BIRI_YOUYAKU_TOKEN` 一致 |
 | 邮件 | `EMAIL_DEFAULT_RECIPIENT` | 空 | **唯一**收件人；后端永远只发到这里（无 per-job 收件人，防滥发） |
 | 邮件 | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | 支持 `{{title}}` / `{{author}}` |
-| 存储 | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DB_PATH` | `data/...` | |
+| 存储 | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DISTILL_STORAGE_DIR / DB_PATH` | `data/...` | `DISTILL_STORAGE_DIR` 存蒸馏语料 |
 | 清理 | `AUDIO_RETENTION_DAYS` | `7` | |
 | 清理 | `JOB_RETENTION_DAYS` | `180` | |
 | 清理 | `ORPHAN_FILE_RETENTION_DAYS` | `3` | DB 不引用的孤儿文件多久后清 |
@@ -85,7 +85,7 @@ All tunable settings live in `server/.env`; defaults are in
 | Email | `EMAIL_WEBHOOK_TOKEN` | empty | required when email is enabled; auth token from backend → worker; must match the worker's `BIRI_YOUYAKU_TOKEN` |
 | Email | `EMAIL_DEFAULT_RECIPIENT` | empty | the **only** recipient; backend always sends here (no per-job recipient, anti-abuse) |
 | Email | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | `{{title}}` / `{{author}}` allowed |
-| Storage | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DB_PATH` | `data/...` | |
+| Storage | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DISTILL_STORAGE_DIR / DB_PATH` | `data/...` | `DISTILL_STORAGE_DIR` holds distilled author corpora |
 | Cleanup | `AUDIO_RETENTION_DAYS` | `7` | |
 | Cleanup | `JOB_RETENTION_DAYS` | `180` | |
 | Cleanup | `ORPHAN_FILE_RETENTION_DAYS` | `3` | how long DB-unreferenced files linger |
