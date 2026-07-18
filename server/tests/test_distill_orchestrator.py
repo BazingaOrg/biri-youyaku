@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from biri_youyaku import db
@@ -160,6 +162,152 @@ async def test_cancel_run_marks_cancelled_and_pipeline_stops_between_steps(monke
 
     await orchestrator._run_pipeline(run.id)
 
+    final = distill_repo.get_run(run.id)
+    assert final is not None
+    assert final.status == DistillRunStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_prepare_transcripts_fan_out_respects_concurrency_limit(monkeypatch, tmp_path):
+    """`_do_prepare_transcripts` 用 settings.distill_transcript_concurrency 做 fan-out
+    上限；用一个记录高水位的假 _obtain_transcript 验证从未超过配置的并发数。"""
+    _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(orchestrator.settings, "distill_transcript_concurrency", 2)
+
+    run = distill_repo.create_run(1, video_limit=5, dir_path=str(tmp_path))
+    videos = [
+        space.UpVideo(bvid=f"BV{i}", title=f"t{i}", cover="", pubdate=i, duration=10, play=1)
+        for i in range(5)
+    ]
+
+    async def fake_fetch_up_videos_limited(mid, limit):
+        return "UP", videos
+
+    in_flight = 0
+    high_water_mark = 0
+
+    async def fake_obtain_transcript(run_id, bvid):
+        nonlocal in_flight, high_water_mark
+        in_flight += 1
+        high_water_mark = max(high_water_mark, in_flight)
+        await asyncio.sleep(0.02)
+        in_flight -= 1
+        return f"transcript-{bvid}"
+
+    monkeypatch.setattr(orchestrator, "_fetch_up_videos_limited", fake_fetch_up_videos_limited)
+    monkeypatch.setattr(orchestrator, "_obtain_transcript", fake_obtain_transcript)
+
+    records = await orchestrator._do_prepare_transcripts(run.id)
+
+    assert high_water_mark <= 2
+    assert [r["bvid"] for r in records] == [v.bvid for v in videos]
+    assert all(r["status"] == "pending_extract" for r in records)
+
+    final = distill_repo.get_run(run.id)
+    assert final is not None
+    assert final.counters["videos_transcribed"] == 5
+
+
+@pytest.mark.asyncio
+async def test_prepare_transcripts_single_failure_does_not_abort_others(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    run = distill_repo.create_run(1, video_limit=3, dir_path=str(tmp_path))
+    videos = [
+        space.UpVideo(bvid="BV_OK1", title="ok1", cover="", pubdate=1, duration=10, play=1),
+        space.UpVideo(bvid="BV_FAIL", title="fail", cover="", pubdate=2, duration=10, play=1),
+        space.UpVideo(bvid="BV_OK2", title="ok2", cover="", pubdate=3, duration=10, play=1),
+    ]
+
+    async def fake_fetch_up_videos_limited(mid, limit):
+        return "UP", videos
+
+    async def fake_obtain_transcript(run_id, bvid):
+        if bvid == "BV_FAIL":
+            return None
+        return f"transcript-{bvid}"
+
+    monkeypatch.setattr(orchestrator, "_fetch_up_videos_limited", fake_fetch_up_videos_limited)
+    monkeypatch.setattr(orchestrator, "_obtain_transcript", fake_obtain_transcript)
+
+    records = await orchestrator._do_prepare_transcripts(run.id)
+
+    by_bvid = {r["bvid"]: r for r in records}
+    assert by_bvid["BV_OK1"]["status"] == "pending_extract"
+    assert by_bvid["BV_OK2"]["status"] == "pending_extract"
+    assert by_bvid["BV_FAIL"]["status"] == "failed"
+
+    final = distill_repo.get_run(run.id)
+    assert final is not None
+    assert final.counters["videos_transcribed"] == 2
+    assert "BV_FAIL" in final.counters["failed_bvids"]
+
+
+@pytest.mark.asyncio
+async def test_prepare_transcripts_skips_video_exists_without_creating_job(
+    monkeypatch, tmp_path
+):
+    _setup(monkeypatch, tmp_path)
+    run = distill_repo.create_run(2, video_limit=2, dir_path=str(tmp_path))
+    distill_storage.save_video(2, "BV_OLD", "---\ntitle: 老视频\n---\n\n已有内容")
+    videos = [
+        space.UpVideo(bvid="BV_OLD", title="old", cover="", pubdate=1, duration=10, play=1),
+        space.UpVideo(bvid="BV_NEW", title="new", cover="", pubdate=2, duration=10, play=1),
+    ]
+
+    async def fake_fetch_up_videos_limited(mid, limit):
+        return "UP", videos
+
+    called_bvids = []
+
+    async def fake_obtain_transcript(run_id, bvid):
+        called_bvids.append(bvid)
+        return f"transcript-{bvid}"
+
+    monkeypatch.setattr(orchestrator, "_fetch_up_videos_limited", fake_fetch_up_videos_limited)
+    monkeypatch.setattr(orchestrator, "_obtain_transcript", fake_obtain_transcript)
+
+    records = await orchestrator._do_prepare_transcripts(run.id)
+
+    assert called_bvids == ["BV_NEW"]
+    by_bvid = {r["bvid"]: r for r in records}
+    assert by_bvid["BV_OLD"]["status"] == "extracted"
+    assert by_bvid["BV_NEW"]["status"] == "pending_extract"
+
+
+@pytest.mark.asyncio
+async def test_cancel_run_calls_cancel_job_for_spawned_jobs_and_stops_new_spawns(
+    monkeypatch, tmp_path
+):
+    """cancel_run 应该对本 run 已经 spawn 的 job 调 runner.cancel_job；取消发生后，
+    尚未处理的视频不应该再触发新的 job/转写获取。"""
+    _setup(monkeypatch, tmp_path)
+    run = distill_repo.create_run(3, video_limit=3, dir_path=str(tmp_path))
+    videos = [
+        space.UpVideo(bvid="BV_A", title="a", cover="", pubdate=1, duration=10, play=1),
+        space.UpVideo(bvid="BV_B", title="b", cover="", pubdate=2, duration=10, play=1),
+    ]
+
+    async def fake_fetch_up_videos_limited(mid, limit):
+        return "UP", videos
+
+    cancelled_job_ids = []
+    monkeypatch.setattr(orchestrator.runner, "cancel_job", lambda job_id: cancelled_job_ids.append(job_id))
+
+    async def fake_obtain_transcript(run_id, bvid):
+        job_id = f"job-{bvid}"
+        orchestrator._run_job_ids.setdefault(run_id, set()).add(job_id)
+        # 模拟第一个视频处理期间被取消。
+        orchestrator.cancel_run(run_id)
+        return f"transcript-{bvid}"
+
+    monkeypatch.setattr(orchestrator, "_fetch_up_videos_limited", fake_fetch_up_videos_limited)
+    monkeypatch.setattr(orchestrator, "_obtain_transcript", fake_obtain_transcript)
+
+    await orchestrator._do_prepare_transcripts(run.id)
+
+    # 只有第一个视频处理时触发了 cancel_run（注册并取消了它自己的 job）；第二个
+    # 视频的协程拿到信号量前/后检查 _is_cancelled 应该短路，不再新建 job。
+    assert cancelled_job_ids == ["job-BV_A"]
     final = distill_repo.get_run(run.id)
     assert final is not None
     assert final.status == DistillRunStatus.CANCELLED

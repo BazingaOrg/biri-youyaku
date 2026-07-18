@@ -47,6 +47,7 @@
 | 清理 | `DB_VACUUM_INTERVAL_DAYS` | `30` | VACUUM 周期 |
 | 并发 | `MAX_CONCURRENT_JOBS` | `2` | `_io_semaphore` 上限：同时跑的「下载音频 + 转写」任务数 |
 | 并发 | `MAX_CONCURRENT_SUMMARIES` | `2` | `_summary_semaphore` 上限：同时跑的 LLM 总结任务数 |
+| 并发 | `DISTILL_TRANSCRIPT_CONCURRENCY` | `3` | 蒸馏 `_do_prepare_transcripts` 阶段并发获取/转写视频的上限 |
 | 防滥用 | `MAX_VIDEO_DURATION_SECONDS` | `9000` | 视频时长上限；超长直接拒 |
 | 防滥用 | `MAX_INFLIGHT_JOBS` | `20` | 同时在飞任务上限；超出返回 503 |
 
@@ -95,5 +96,6 @@ All tunable settings live in `server/.env`; defaults are in
 | Cleanup | `DB_VACUUM_INTERVAL_DAYS` | `30` | VACUUM period |
 | Concurrency | `MAX_CONCURRENT_JOBS` | `2` | `_io_semaphore` cap: concurrent "download audio + transcribe" jobs |
 | Concurrency | `MAX_CONCURRENT_SUMMARIES` | `2` | `_summary_semaphore` cap: concurrent LLM summarize jobs |
+| Concurrency | `DISTILL_TRANSCRIPT_CONCURRENCY` | `3` | Fan-out cap for `_do_prepare_transcripts` obtaining/transcribing videos concurrently for a distill run |
 | Abuse | `MAX_VIDEO_DURATION_SECONDS` | `9000` | video length cap; too long → reject |
 | Abuse | `MAX_INFLIGHT_JOBS` | `20` | total in-flight jobs; overflow → 503 |

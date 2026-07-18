@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     job_retention_days: int = 180
     max_concurrent_jobs: int = 2
     max_concurrent_summaries: int = 2
+    # 蒸馏 _do_prepare_transcripts 阶段并发获取/转写视频的上限。
+    distill_transcript_concurrency: int = 3
 
     # P3 新增：清理 / 维护策略
     # 注：字幕落盘缓存（subtitle_cache_retention_days）已规划但未实现，先不暴露。

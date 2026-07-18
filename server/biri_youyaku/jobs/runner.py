@@ -5,7 +5,12 @@ from contextlib import asynccontextmanager
 from biri_youyaku.config import settings
 from biri_youyaku.events import event_bus
 from biri_youyaku.jobs import repo
-from biri_youyaku.jobs.model import JobOptions, JobStatus, PAUSED_OR_TERMINAL_JOB_STATUSES
+from biri_youyaku.jobs.model import (
+    JobOptions,
+    JobStatus,
+    PAUSED_OR_TERMINAL_JOB_STATUSES,
+    TERMINAL_JOB_STATUSES,
+)
 from biri_youyaku.jobs.pipeline import (
     CanceledError,
     download_audio,
@@ -70,6 +75,10 @@ class _JobRegistry:
 
 
 _registry = _JobRegistry()
+
+# job_id -> Future[JobStatus]，供 `await_job_completion` 等待任务终态；解析点唯一在
+# `_spawn` 的 done_callback 里（任务已经跑完，直接查 DB 拿终态）。
+_completion: dict[str, "asyncio.Future[JobStatus]"] = {}
 
 
 _io_semaphore = asyncio.Semaphore(settings.max_concurrent_jobs)
@@ -143,13 +152,51 @@ def retry_job(job_id: str, *, llm_api_key: str | None = None) -> None:
     start_job(job_id, llm_api_key=llm_api_key)
 
 
+def _resolve_completion(job_id: str) -> None:
+    """task 跑完后的唯一解析点：读 DB 终态，解析（若存在）等待中的 future 并清理。"""
+    job = repo.get_job(job_id)
+    fut = _completion.pop(job_id, None)
+    if fut is None:
+        return
+    if job is None:
+        # 不应该发生：task 跑完了但 DB 里查不到 job。不让回调崩，安全起见按 FAILED 解析。
+        logger.warning("_resolve_completion: job %s not found in DB after task finished", job_id)
+        if not fut.done():
+            fut.set_result(JobStatus.FAILED)
+        return
+    if not fut.done():
+        fut.set_result(job.status)
+
+
 def _spawn(job_id: str, coro_factory) -> None:
     """共用「注册 task + done_callback 自清」的模板。"""
     if job_id in _registry.tasks:
         return
     task = asyncio.create_task(coro_factory())
     _registry.tasks[job_id] = task
-    task.add_done_callback(lambda _: _registry.tasks.pop(job_id, None))
+
+    def _on_done(_: asyncio.Task[None]) -> None:
+        _registry.tasks.pop(job_id, None)
+        _resolve_completion(job_id)
+
+    task.add_done_callback(_on_done)
+
+
+async def await_job_completion(job_id: str) -> JobStatus:
+    """等到 job 进入终态（COMPLETED/FAILED/CANCELED）再返回其状态。
+
+    先查 DB：如果已经是终态就直接返回——兜住「调用方开始等之前 job 就已经跑完」和
+    「job 复用已完成」两种竞态，不需要挂 future。否则挂一个 future，由 `_spawn` 的
+    done_callback 在 task 结束时唯一解析。
+    """
+    job = repo.get_job(job_id)
+    if job is not None and job.status in TERMINAL_JOB_STATUSES:
+        return job.status
+    fut = _completion.get(job_id)
+    if fut is None:
+        fut = asyncio.get_event_loop().create_future()
+        _completion[job_id] = fut
+    return await fut
 
 
 def start_job(job_id: str, *, llm_api_key: str | None = None) -> None:

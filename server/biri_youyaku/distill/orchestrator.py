@@ -24,6 +24,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from biri_youyaku.config import settings
 from biri_youyaku.distill import assembler
 from biri_youyaku.distill import repo as distill_repo
 from biri_youyaku.distill.model import (
@@ -33,6 +34,7 @@ from biri_youyaku.distill.model import (
 )
 from biri_youyaku.events import event_bus
 from biri_youyaku.jobs import repo as job_repo
+from biri_youyaku.jobs import runner
 from biri_youyaku.jobs.model import JobOptions, JobStatus
 from biri_youyaku.jobs.runner import start_job
 from biri_youyaku.modules.asr.formatter import transcript_to_text
@@ -46,7 +48,6 @@ logger = logging.getLogger(__name__)
 
 _DYNAMICS_BATCH_SIZE = 50
 _EXTRACT_CONCURRENCY = 2
-_JOB_POLL_INTERVAL_SECONDS = 1.0
 _DISTILL_LANGUAGE = "中文简体"
 
 _DYNAMIC_TYPE_LABELS = {
@@ -61,6 +62,10 @@ _DYNAMIC_TYPE_LABELS = {
 # 单进程内正在跑的编排 task，key 为 run_id（镜像 jobs/runner.py 的 _registry.tasks，
 # 但蒸馏没有取消 key / llm_api_key 这些额外状态，不需要一整个 registry 类）。
 _active_tasks: dict[str, asyncio.Task] = {}
+
+# run_id -> 该 run 已 spawn 的 job id 集合，仅内存态、不落库；用于 cancel_run 联动
+# `runner.cancel_job()` 打断正在跑的转写 job（_obtain_transcript 里注册）。
+_run_job_ids: dict[str, set[str]] = {}
 
 
 class DistillRunCancelled(Exception):
@@ -82,6 +87,8 @@ def cancel_run(run_id: str) -> None:
     if run is None or run.status.value in TERMINAL_DISTILL_RUN_STATUS_VALUES:
         return
     distill_repo.update_status(run_id, DistillRunStatus.CANCELLED)
+    for job_id in _run_job_ids.get(run_id, set()):
+        runner.cancel_job(job_id)
 
 
 def recover_unfinished_runs() -> None:
@@ -156,6 +163,9 @@ async def _run_pipeline(run_id: str) -> None:
         logger.exception("Distill run %s failed", run_id)
         distill_repo.update_status(run_id, DistillRunStatus.FAILED, error=str(exc))
         await _publish(run_id, DistillRunStatus.FAILED, error=str(exc))
+    finally:
+        # run 结束（无论成功/取消/失败）：清掉本 run 的 job id 追踪，避免内存常驻。
+        _run_job_ids.pop(run_id, None)
 
 
 # ---------------------------------------------------------------------------
@@ -242,10 +252,10 @@ def _transcript_items_from_job(job) -> list[TranscriptItem]:
     ]
 
 
-async def _obtain_transcript(bvid: str) -> str | None:
+async def _obtain_transcript(run_id: str, bvid: str) -> str | None:
     """先找有 transcript 的已完成 job 复用；没有就建 task_type="distill" 的 job
     走现有 runner 到 COMPLETED（等价 TRANSCRIPT_READY，见 runner.py 的提前收尾分支）
-    即停，轮询等待。ASR 是成本大头，复用转写不复用总结。"""
+    即停，等待其完成信号。ASR 是成本大头，复用转写不复用总结。"""
     existing = job_repo.find_completed_by_bvid(bvid, include_distill=True)
     if existing is not None and existing.transcript:
         items = _transcript_items_from_job(existing)
@@ -255,24 +265,23 @@ async def _obtain_transcript(bvid: str) -> str | None:
     url = f"https://www.bilibili.com/video/{bvid}"
     options = JobOptions(task_type="distill", email_enabled=False)
     job = job_repo.create_job(url, options)
+    _run_job_ids.setdefault(run_id, set()).add(job.id)
     start_job(job.id)
 
-    while True:
+    final_status = await runner.await_job_completion(job.id)
+    if final_status == JobStatus.COMPLETED:
         current = job_repo.get_job(job.id)
         if current is None:
             return None
-        if current.status == JobStatus.COMPLETED:
-            items = _transcript_items_from_job(current)
-            return transcript_to_text(items) if items else None
-        if current.status in (JobStatus.FAILED, JobStatus.CANCELED):
-            logger.warning(
-                "Distill: transcript job %s for %s ended as %s, skipping video",
-                job.id,
-                bvid,
-                current.status.value,
-            )
-            return None
-        await asyncio.sleep(_JOB_POLL_INTERVAL_SECONDS)
+        items = _transcript_items_from_job(current)
+        return transcript_to_text(items) if items else None
+    logger.warning(
+        "Distill: transcript job %s for %s ended as %s, skipping video",
+        job.id,
+        bvid,
+        final_status.value,
+    )
+    return None
 
 
 async def _do_prepare_transcripts(run_id: str) -> list[dict]:
@@ -288,8 +297,11 @@ async def _do_prepare_transcripts(run_id: str) -> list[dict]:
     distill_repo.update_counters(run_id, videos_total=len(up_videos))
     await _publish(run_id, DistillRunStatus.PREPARING_TRANSCRIPTS, videos_total=len(up_videos))
 
+    # 构造完整顺序的 records 列表（保留 up_videos 原始顺序），先同步过滤掉
+    # video_exists 的（已提取过，断点续跑不重转写），剩下的再并发 fan-out 获取转写。
     records: list[dict] = []
     transcribed = 0
+    pending_indices: list[int] = []
     for video in up_videos:
         _raise_if_cancelled(run_id)
         record = {
@@ -303,23 +315,46 @@ async def _do_prepare_transcripts(run_id: str) -> list[dict]:
             # 断点续跑：已经提取过，直接算完成，不重新转写/提取。
             record["status"] = "extracted"
             transcribed += 1
-            records.append(record)
             distill_repo.update_counters(run_id, videos_transcribed=transcribed)
-            continue
-
-        transcript_text = await _obtain_transcript(video.bvid)
-        if transcript_text is None:
-            record["status"] = "failed"
-            distill_repo.add_failed_bvid(run_id, video.bvid)
         else:
+            pending_indices.append(len(records))
+        records.append(record)
+
+    semaphore = asyncio.Semaphore(settings.distill_transcript_concurrency)
+
+    async def _obtain_one(video, record: dict) -> None:
+        nonlocal transcribed
+        if _is_cancelled(run_id):
+            return
+        async with semaphore:
+            if _is_cancelled(run_id):
+                return
+            try:
+                transcript_text = await _obtain_transcript(run_id, video.bvid)
+            except Exception as exc:
+                logger.warning(
+                    "Distill run %s: obtain transcript failed for %s: %s",
+                    run_id,
+                    video.bvid,
+                    exc,
+                )
+                transcript_text = None
+            if transcript_text is None:
+                record["status"] = "failed"
+                distill_repo.add_failed_bvid(run_id, video.bvid)
+                return
             record["status"] = "pending_extract"
             record["transcript_text"] = transcript_text
+            # 计数自增与 update_counters 之间不得有 await——保证并发写计数安全。
             transcribed += 1
             distill_repo.update_counters(run_id, videos_transcribed=transcribed)
-        records.append(record)
-        await _publish(
-            run_id, DistillRunStatus.PREPARING_TRANSCRIPTS, videos_transcribed=transcribed
-        )
+            await _publish(
+                run_id, DistillRunStatus.PREPARING_TRANSCRIPTS, videos_transcribed=transcribed
+            )
+
+    await asyncio.gather(
+        *(_obtain_one(up_videos[i], records[i]) for i in pending_indices)
+    )
 
     return records
 
