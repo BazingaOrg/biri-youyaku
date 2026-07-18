@@ -1,8 +1,9 @@
 import {useCallback, useState} from 'react'
 import ReactMarkdown from 'react-markdown'
-import {AlertTriangle, Boxes, ChevronDown, ChevronUp, FolderOpen, RotateCw, X} from 'lucide-react'
+import {AlertTriangle, Boxes, ChevronDown, ChevronUp, FolderOpen, RotateCw, Trash2, X} from 'lucide-react'
 import {
   cancelDistill,
+  deleteDistill,
   getDistillCorpus,
   startDistill,
   type DistillCounters,
@@ -12,6 +13,7 @@ import {
 } from '../lib/api'
 import {useDistillStream} from '../hooks/useDistillStream'
 import {useToast} from './ToastProvider'
+import {ConfirmDialog} from './ConfirmDialog'
 import {PROSE} from '../pages/workspace/SummaryTabs'
 
 const STAGE_LABELS: Record<DistillRunStatus, string> = {
@@ -31,8 +33,9 @@ interface DistillPanelProps {
   mid: number
   run: DistillRun
   /** 重新开始会创建一个新 run（新 id）；父组件应以 `key={run.id}` 挂载本组件，
-   * 这样切换到新 run 时内部状态（语料预览展开态等）会自然重置。 */
-  onRunChange: (run: DistillRun) => void
+   * 这样切换到新 run 时内部状态（语料预览展开态等）会自然重置。
+   * 删除语料后传 null，父组件据此回退成展示「开始蒸馏」按钮。 */
+  onRunChange: (run: DistillRun | null) => void
 }
 
 /** UpPage 头部的蒸馏进度面板：订阅 SSE、展示阶段/计数/取消，终态时展示语料入口或重试。 */
@@ -45,6 +48,8 @@ export function DistillPanel({mid, run: initialRun, onRunChange}: DistillPanelPr
   const [corpusText, setCorpusText] = useState<string | null>(null)
   const [corpusLoading, setCorpusLoading] = useState(false)
   const [corpusError, setCorpusError] = useState<string | null>(null)
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const terminal = TERMINAL_STATUSES.includes(run.status)
 
@@ -119,6 +124,20 @@ export function DistillPanel({mid, run: initialRun, onRunChange}: DistillPanelPr
     }
   }
 
+  const deleteCorpus = async () => {
+    setDeleting(true)
+    try {
+      await deleteDistill(mid)
+      toast.success('已删除语料')
+      setConfirmDeleteOpen(false)
+      onRunChange(null)
+    } catch (err) {
+      toast.error('删除失败', err instanceof Error ? err.message : '请稍后再试')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const counters = run.counters
   const progress =
     run.status === 'PREPARING_TRANSCRIPTS' && counters.videos_total > 0
@@ -190,16 +209,26 @@ export function DistillPanel({mid, run: initialRun, onRunChange}: DistillPanelPr
           {run.status === 'COMPLETED' && (
             <div className="grid gap-2 pt-1">
               <p className="break-all font-mono text-xs text-muted">{run.dir_path}</p>
-              <button
-                type="button"
-                onClick={() => void loadCorpus()}
-                disabled={corpusLoading}
-                className="inline-flex min-h-9 w-fit items-center gap-1 rounded-xl bg-brandSoft px-3 text-xs font-medium text-brand transition hover:brightness-95 active:scale-95 disabled:opacity-50"
-              >
-                <FolderOpen size={14} />
-                {corpusLoading ? '加载中…' : '查看语料'}
-                {corpusText !== null && (corpusOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />)}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void loadCorpus()}
+                  disabled={corpusLoading}
+                  className="inline-flex min-h-9 w-fit items-center gap-1 rounded-xl bg-brandSoft px-3 text-xs font-medium text-brand transition hover:brightness-95 active:scale-95 disabled:opacity-50"
+                >
+                  <FolderOpen size={14} />
+                  {corpusLoading ? '加载中…' : '查看语料'}
+                  {corpusText !== null && (corpusOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteOpen(true)}
+                  className="inline-flex min-h-9 w-fit items-center gap-1 rounded-xl bg-danger/10 px-3 text-xs font-medium text-danger transition hover:brightness-95 active:scale-95 disabled:opacity-50"
+                >
+                  <Trash2 size={14} />
+                  删除语料
+                </button>
+              </div>
               {corpusError && <p className="text-xs text-danger">{corpusError}</p>}
               {corpusOpen && corpusText !== null && (
                 <div className={`max-h-[50vh] overflow-y-auto rounded-xl bg-panel p-3 ${PROSE}`}>
@@ -210,6 +239,17 @@ export function DistillPanel({mid, run: initialRun, onRunChange}: DistillPanelPr
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="删除蒸馏语料？"
+        description="将永久删除该 UP 已蒸馏的语料及其记录，删除后需要重新蒸馏才能再次查看。此操作无法撤销。"
+        confirmLabel="删除"
+        danger
+        loading={deleting}
+        onConfirm={() => void deleteCorpus()}
+        onCancel={() => setConfirmDeleteOpen(false)}
+      />
     </section>
   )
 }
