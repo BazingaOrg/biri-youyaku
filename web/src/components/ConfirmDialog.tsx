@@ -71,7 +71,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onCancel}
             disabled={loading}
-            className="inline-flex min-h-10 items-center rounded-2xl bg-lift px-4 text-sm text-muted transition-[transform,background-color,color] hover:bg-line/70 hover:text-ink active:scale-95 disabled:opacity-40"
+            className="inline-flex min-h-10 items-center rounded-xl bg-lift px-4 text-sm text-muted transition-[transform,background-color,color] hover:bg-line/70 hover:text-ink active:scale-95 disabled:opacity-40"
           >
             {cancelLabel}
           </button>
@@ -80,7 +80,7 @@ export function ConfirmDialog({
               type="button"
               onClick={onSecondary}
               disabled={loading}
-              className="inline-flex min-h-10 items-center rounded-2xl bg-lift px-4 text-sm font-medium text-ink transition-[transform,background-color,color] hover:bg-line/70 active:scale-95 disabled:opacity-40"
+              className="inline-flex min-h-10 items-center rounded-xl bg-lift px-4 text-sm font-medium text-ink transition-[transform,background-color,color] hover:bg-line/70 active:scale-95 disabled:opacity-40"
             >
               {secondaryLabel}
             </button>
@@ -89,7 +89,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={loading}
-            className={`inline-flex min-h-10 items-center rounded-2xl px-4 text-sm font-medium text-white shadow-card transition-[transform,filter] hover:brightness-105 active:scale-95 disabled:opacity-50 ${
+            className={`inline-flex min-h-10 items-center rounded-xl px-4 text-sm font-medium text-white shadow-card transition-[transform,filter] hover:brightness-105 active:scale-95 disabled:opacity-50 ${
               danger ? 'bg-danger' : 'bg-brand'
             }`}
           >
