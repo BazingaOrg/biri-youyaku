@@ -82,7 +82,6 @@ class Settings(BaseSettings):
     distill_transcript_concurrency: int = 3
 
     # P3 新增：清理 / 维护策略
-    # 注：字幕落盘缓存（subtitle_cache_retention_days）已规划但未实现，先不暴露。
     orphan_file_retention_days: int = 3
     stale_running_fail_hours: int = 4
     db_vacuum_interval_days: int = 30

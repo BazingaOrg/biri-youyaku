@@ -30,3 +30,9 @@ deep-reasoner 与 Codex 独立设计后合成（对垒模式）。主体采用 d
 - 偏离与理由：终态判断用严格 TERMINAL_JOB_STATUSES（不含 TRANSCRIPT_READY，后者对普通 job 是中间态，提前返回有风险）；job 跑完但 DB 查不到时 future 解析为 FAILED 而非挂起。
 - 验证：pytest 143 passed、ruff 通过（fast-worker 与 qa-runner 各跑一遍）；orchestrator 新增/更新测试覆盖并发上限、失败隔离、跳过、取消传播。
 - 遗留（后续独立项）：下载/ASR 双信号量流水线化；consumer_key 持久化 get-or-create（重启后可能重复建 in-flight 转写 job，代价为浪费一次转写，可接受）。
+
+## 遗留项裁决（2026-07-19）
+
+评估收益/成本后决定：
+- 不做：双信号量流水线化（动 runner 核心，批量蒸馏低频，风险不对称）；consumer_key 迁移（触发罕见、代价仅一次转写）；transcripts.py 边界模块（耦合面已收敛到 await_job_completion 一个函数）；字幕落盘缓存（上层同视频复用已覆盖主场景，已删 config.py 过时注释）；列表行 memo（窗口化已压住）；web lint 脚本（无 eslint 栈，tsc 已在 build 中，不值得引入整套依赖）。
+- 挂起观察：蒸馏续跑缓存动态清洗结果（省 token/调用），等实际频繁续跑出现痛感再做。
