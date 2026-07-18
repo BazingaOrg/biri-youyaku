@@ -1,16 +1,17 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
-import type {ReactNode} from 'react'
-import {ArrowLeft, BarChart3, Plus, RotateCw, Search, Tag, Trash, Trash2} from 'lucide-react'
+import {ArrowLeft, BarChart3, Plus, RotateCw, Search, Trash, Trash2} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
 import {ApiError, deleteAllJobs, deleteJob, listJobs, resummarizeJob, type Job, type JobOptionOverrides} from '../lib/api'
 import {writeActive} from '../lib/activeJob'
 import {formatDate, formatDuration, formatStatus} from '../lib/format'
 import {isRunning} from '../lib/jobStatus'
 import {AuthorLink} from '../components/AuthorLink'
-import {PageLoading} from '../components/Spinner'
+import {Skeleton} from '../components/Skeleton'
 import {useToast} from '../components/ToastProvider'
 import {ConfirmDialog} from '../components/ConfirmDialog'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
+import {IconTooltip} from './history/IconTooltip'
+import {ChipFilter} from './history/ChipFilter'
 
 const PAGE_SIZE = 200
 // 增量渲染：首屏只渲染 INITIAL 行，滚到底再补 STEP 行。零依赖地把 DOM 节点数压住，
@@ -19,101 +20,6 @@ const INITIAL_VISIBLE = 60
 const VISIBLE_STEP = 40
 // 删除撤销窗口（毫秒）：到点才真正提交后端删除。
 const UNDO_WINDOW_MS = 5000
-
-function IconTooltip({label, children, className = ''}: {label: string; children: ReactNode; className?: string}) {
-  return (
-    <span className={`group relative inline-flex ${className}`}>
-      {children}
-      <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-ink px-2 py-1 text-xs font-medium text-canvas opacity-0 shadow-card transition group-hover:opacity-100 group-focus-within:opacity-100">
-        {label}
-      </span>
-    </span>
-  )
-}
-
-interface ChipFilterItem {
-  key: string
-  label: string
-  count: number
-}
-
-function ChipFilter({
-  label,
-  items,
-  selected,
-  total,
-  onSelect,
-  variant = 'neutral',
-}: {
-  label: string
-  items: ChipFilterItem[]
-  selected: string | null
-  total?: number
-  onSelect: (value: string | null) => void
-  variant?: 'neutral' | 'tag'
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const shouldCollapse = items.length > 6
-  const itemClass = (active: boolean) => {
-    if (active) return 'bg-brand text-white shadow-card'
-    if (variant === 'tag') return 'bg-brandSoft/50 text-brand hover:bg-brandSoft'
-    return 'bg-lift text-muted hover:bg-line/70 hover:text-ink'
-  }
-
-  return (
-    <div className="grid gap-2 border-b border-line/60 py-3" aria-label={`${label}筛选`}>
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted">
-          {variant === 'tag' && <Tag size={13} className="shrink-0" />}
-          <span>{label}</span>
-        </div>
-        {shouldCollapse && (
-          <button
-            type="button"
-            onClick={() => setExpanded((value) => !value)}
-            className="shrink-0 rounded-full px-2 py-1 text-xs text-muted transition-[transform,color,background-color] hover:bg-lift hover:text-ink active:scale-95"
-          >
-            {expanded ? '收起' : `展开全部（${items.length}）`}
-          </button>
-        )}
-      </div>
-      <div className={`relative ${shouldCollapse && !expanded ? 'max-h-[4.5rem] overflow-hidden' : ''}`}>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => onSelect(null)}
-            className={`inline-flex min-h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-[transform,background-color,color] active:scale-95 ${itemClass(selected == null)}`}
-          >
-            全部
-            {total != null && (
-              <span className={selected == null ? 'text-white/80' : 'text-muted'}>{total}</span>
-            )}
-          </button>
-          {items.map((item) => {
-            const active = selected === item.key
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => onSelect(active ? null : item.key)}
-                className={`inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-[transform,background-color,color] active:scale-95 ${itemClass(active)}`}
-                title={`${item.label} · ${item.count}`}
-              >
-                <span className="truncate">{item.label}</span>
-                <span className={active ? 'text-white/80' : variant === 'tag' ? 'text-brand/60' : 'text-muted'}>
-                  {item.count}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-        {shouldCollapse && !expanded && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-canvas to-transparent" />
-        )}
-      </div>
-    </div>
-  )
-}
 
 export function HistoryPage() {
   const [, navigate] = useLocation()
@@ -139,23 +45,31 @@ export function HistoryPage() {
   const loadFirstPage = useCallback(async (cancelled?: () => boolean) => {
     setLoading(true)
     setLoadError(false)
+    let cursor: number | null | undefined = null
     try {
-      const allJobs: Job[] = []
-      let cursor: number | null | undefined = null
-      do {
-        const response: Awaited<ReturnType<typeof listJobs>> = await listJobs({limit: PAGE_SIZE, cursor})
-        if (cancelled?.()) return
-        allJobs.push(...response.jobs)
-        cursor = response.next_cursor ?? null
-      } while (cursor != null)
+      const response: Awaited<ReturnType<typeof listJobs>> = await listJobs({limit: PAGE_SIZE, cursor})
       if (cancelled?.()) return
-      setJobs(allJobs)
+      setJobs(response.jobs)
+      cursor = response.next_cursor ?? null
     } catch {
       if (cancelled?.()) return
       setJobs([])
       setLoadError(true)
+      return
     } finally {
       if (!cancelled?.()) setLoading(false)
+    }
+    // 首屏之后在后台继续拉剩余分页，逐页追加，避免长列表阻塞首屏渲染。
+    while (cursor != null) {
+      if (cancelled?.()) return
+      try {
+        const response: Awaited<ReturnType<typeof listJobs>> = await listJobs({limit: PAGE_SIZE, cursor})
+        if (cancelled?.()) return
+        setJobs((current) => [...current, ...response.jobs])
+        cursor = response.next_cursor ?? null
+      } catch {
+        return
+      }
     }
   }, [])
 
@@ -375,7 +289,7 @@ export function HistoryPage() {
   }
 
   return (
-    <div className="grid min-h-[calc(100dvh-3rem)] content-start gap-5 sm:min-h-[calc(100dvh-5rem)]">
+    <div className="grid min-h-[calc(100dvh-3rem)] animate-fade-in-up content-start gap-5 sm:min-h-[calc(100dvh-5rem)]">
       <header className="grid gap-4 px-4 sm:px-5">
         <button
           type="button"
@@ -465,7 +379,7 @@ export function HistoryPage() {
         )}
 
         <div className="py-3">
-          {loading && <PageLoading label="加载历史…" />}
+          {loading && <Skeleton count={6} />}
 
           {!loading && loadError && (
             <div className="grid justify-items-center gap-3 border-b border-line/60 py-12 text-center">
@@ -503,12 +417,13 @@ export function HistoryPage() {
           {!loading && !loadError && filtered.length > 0 && (
             <>
               <ul className="grid gap-2">
-                {visibleJobs.map((job) => {
+                {visibleJobs.map((job, index) => {
                   const running = isRunning(job.status)
                   return (
                     <li
                       key={job.id}
-                      className="group/item grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-2xl bg-lift/55 transition-[background-color,box-shadow] hover:bg-brandSoft/30"
+                      style={{animationDelay: `${Math.min(index, 6) * 40}ms`}}
+                      className="group/item grid animate-fade-in-up grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-2xl bg-lift/55 opacity-0 [animation-fill-mode:forwards] transition-[background-color,box-shadow] hover:bg-brandSoft/30"
                     >
                       <div className="min-w-0 px-2 py-1.5">
                         <Link

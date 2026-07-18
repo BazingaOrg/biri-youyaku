@@ -42,17 +42,19 @@ export function SummaryTabs({job}: {job: Job}) {
         ))}
       </div>
 
-      {tab === 'notes' &&
-        (summary ? <NotesView markdown={summary} /> : <p className="text-sm text-muted">没有总结内容</p>)}
-      {tab === 'mindmap' &&
-        (summary ? (
-          <Suspense fallback={<PageLoading label="加载脑图…" />}>
-            <MindmapView markdown={summary} title={job.title} />
-          </Suspense>
-        ) : (
-          <p className="text-sm text-muted">没有可生成脑图的内容</p>
-        ))}
-      {tab === 'transcript' && hasTranscript && <TranscriptList job={job} />}
+      <div key={tab} className="animate-fade-in-up">
+        {tab === 'notes' &&
+          (summary ? <NotesView markdown={summary} /> : <p className="text-sm text-muted">没有总结内容</p>)}
+        {tab === 'mindmap' &&
+          (summary ? (
+            <Suspense fallback={<PageLoading label="加载脑图…" />}>
+              <MindmapView markdown={summary} title={job.title} />
+            </Suspense>
+          ) : (
+            <p className="text-sm text-muted">没有可生成脑图的内容</p>
+          ))}
+        {tab === 'transcript' && hasTranscript && <TranscriptList job={job} />}
+      </div>
     </section>
   )
 }
@@ -72,18 +74,19 @@ function NotesView({markdown}: {markdown: string}) {
       el.style.scrollMarginTop = '16px'
     })
     if (els.length === 0) return
-    // 滚动高亮：当前激活 = 最后一个顶部已越过阈值的标题。
-    const onScroll = () => {
-      let idx = 0
-      for (let i = 0; i < els.length; i++) {
-        if (els[i].getBoundingClientRect().top <= 96) idx = i
-        else break
-      }
-      setActiveIdx(idx)
-    }
-    onScroll()
-    window.addEventListener('scroll', onScroll, {passive: true})
-    return () => window.removeEventListener('scroll', onScroll)
+    // 滚动高亮：观察每个标题是否穿过视口顶部附近的一条窄带，取当前穿过带内/上方最近的标题为激活项。
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          const idx = els.indexOf(entry.target as HTMLElement)
+          if (idx !== -1) setActiveIdx(idx)
+        }
+      },
+      {rootMargin: '-96px 0px -80% 0px', threshold: 0},
+    )
+    els.forEach((el) => observer.observe(el))
+    return () => observer.disconnect()
   }, [markdown])
 
   const jumpTo = (i: number) => {

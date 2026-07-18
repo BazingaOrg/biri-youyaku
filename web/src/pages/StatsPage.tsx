@@ -3,25 +3,13 @@ import type {ReactNode} from 'react'
 import {ArrowLeft, BarChart3, Clock3, Coins, Hash, History, RotateCw, Sparkles} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
 import {Heatmap} from '../components/Heatmap'
-import {PageLoading} from '../components/Spinner'
+import {Skeleton} from '../components/Skeleton'
 import {WeekBars} from '../components/WeekBars'
 import {getLlmBalance, listJobs, type Job, type LlmBalanceResponse} from '../lib/api'
 import {formatDuration} from '../lib/format'
 import {buildStats, type WeeklyStats} from '../lib/stats'
 
 const PAGE_SIZE = 200
-
-async function loadAllJobs(cancelled?: () => boolean): Promise<Job[]> {
-  const jobs: Job[] = []
-  let cursor: number | null | undefined = null
-  do {
-    const response: Awaited<ReturnType<typeof listJobs>> = await listJobs({limit: PAGE_SIZE, cursor})
-    if (cancelled?.()) return []
-    jobs.push(...response.jobs)
-    cursor = response.next_cursor ?? null
-  } while (cursor != null)
-  return jobs
-}
 
 function formatTokens(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(2)}M`
@@ -157,21 +145,39 @@ export function StatsPage() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const [fullyLoaded, setFullyLoaded] = useState(false)
 
   const load = useCallback(async (cancelled?: () => boolean) => {
     setLoading(true)
     setError(false)
+    setFullyLoaded(false)
+    let cursor: number | null | undefined = null
     try {
-      const next = await loadAllJobs(cancelled)
-      if (!cancelled?.()) setJobs(next)
+      const response: Awaited<ReturnType<typeof listJobs>> = await listJobs({limit: PAGE_SIZE, cursor})
+      if (cancelled?.()) return
+      setJobs(response.jobs)
+      cursor = response.next_cursor ?? null
     } catch {
-      if (!cancelled?.()) {
-        setJobs([])
-        setError(true)
-      }
+      if (cancelled?.()) return
+      setJobs([])
+      setError(true)
+      return
     } finally {
       if (!cancelled?.()) setLoading(false)
     }
+    // 首屏之后在后台继续拉剩余分页；stats 是全量聚合，全部到齐前用 fullyLoaded 标记为「部分」。
+    while (cursor != null) {
+      if (cancelled?.()) return
+      try {
+        const response: Awaited<ReturnType<typeof listJobs>> = await listJobs({limit: PAGE_SIZE, cursor})
+        if (cancelled?.()) return
+        setJobs((current) => [...current, ...response.jobs])
+        cursor = response.next_cursor ?? null
+      } catch {
+        return
+      }
+    }
+    if (!cancelled?.()) setFullyLoaded(true)
   }, [])
 
   useEffect(() => {
@@ -224,7 +230,7 @@ export function StatsPage() {
       </header>
 
       <section className="grid gap-4 px-4 sm:px-5">
-        {loading && <PageLoading label="加载统计…" />}
+        {loading && <Skeleton count={4} />}
 
         {!loading && error && (
           <div className="grid justify-items-center gap-3 rounded-3xl bg-panel py-12 text-center shadow-card">
@@ -243,6 +249,8 @@ export function StatsPage() {
         {!loading && !error && (
           <>
             <BalanceCard />
+
+            {!fullyLoaded && <p className="text-xs text-muted">统计数据加载中…</p>}
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <StatCard

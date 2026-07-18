@@ -1,10 +1,13 @@
+import {lazy, Suspense} from 'react'
 import {Route, Switch} from 'wouter'
 import {AppShell} from './components/AppShell'
-import {HistoryPage} from './pages/HistoryPage'
-import {StatsPage} from './pages/StatsPage'
-import {UpPage} from './pages/UpPage'
 import {Workspace} from './pages/Workspace'
 import {ToastProvider} from './components/ToastProvider'
+import {PageLoading} from './components/Spinner'
+
+const HistoryPage = lazy(() => import('./pages/HistoryPage').then((m) => ({default: m.HistoryPage})))
+const StatsPage = lazy(() => import('./pages/StatsPage').then((m) => ({default: m.StatsPage})))
+const UpPage = lazy(() => import('./pages/UpPage').then((m) => ({default: m.UpPage})))
 
 export default function App() {
   // 主题完全跟随系统（prefers-color-scheme，见 styles.css）。
@@ -14,13 +17,21 @@ export default function App() {
       <AppShell>
         <Switch>
           <Route path="/history">
-            <HistoryPage />
+            <Suspense fallback={<PageLoading />}>
+              <HistoryPage />
+            </Suspense>
           </Route>
           <Route path="/stats">
-            <StatsPage />
+            <Suspense fallback={<PageLoading />}>
+              <StatsPage />
+            </Suspense>
           </Route>
           <Route path="/up/:mid">
-            {(params) => <UpPage mid={params.mid} />}
+            {(params) => (
+              <Suspense fallback={<PageLoading />}>
+                <UpPage mid={params.mid} />
+              </Suspense>
+            )}
           </Route>
           <Route path="/jobs/:jobId">
             {(params) => <Workspace jobId={params.jobId} />}
