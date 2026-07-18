@@ -1,4 +1,4 @@
-import {useEffect} from 'react'
+import {useEffect, useRef, useState} from 'react'
 import type {ReactNode} from 'react'
 
 interface ConfirmDialogProps {
@@ -43,7 +43,32 @@ export function ConfirmDialog({
     return () => window.removeEventListener('keydown', onKey)
   }, [open, loading, onCancel])
 
-  if (!open) return null
+  const [closing, setClosing] = useState(false)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const wasOpenRef = useRef(open)
+
+  useEffect(() => {
+    if (!open && wasOpenRef.current) {
+      setClosing(true)
+      closeTimerRef.current = setTimeout(() => setClosing(false), 200)
+      wasOpenRef.current = open
+      return () => {
+        if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+      }
+    }
+    setClosing(false)
+    wasOpenRef.current = open
+  }, [open])
+
+  const endClosing = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+    setClosing(false)
+  }
+
+  if (!open && !closing) return null
 
   return (
     <div
@@ -57,9 +82,16 @@ export function ConfirmDialog({
         aria-label="关闭"
         tabIndex={-1}
         onClick={() => !loading && onCancel()}
-        className="absolute inset-0 cursor-default bg-ink/30 backdrop-blur-sm"
+        className={`absolute inset-0 cursor-default bg-ink/30 backdrop-blur-sm transition-opacity duration-150 ${
+          closing ? 'opacity-0' : 'opacity-100'
+        }`}
       />
-      <div className="animate-pop relative w-full max-w-sm rounded-2xl border border-line bg-panel/95 p-5 shadow-cardHover backdrop-blur-md">
+      <div
+        onAnimationEnd={() => {
+          if (closing) endClosing()
+        }}
+        className={`${closing ? 'animate-pop-out' : 'animate-pop'} relative w-full max-w-sm rounded-2xl border border-line bg-panel/95 p-5 shadow-cardHover backdrop-blur-md`}
+      >
         <h2 id="confirm-dialog-title" className="text-base font-semibold text-ink">
           {title}
         </h2>

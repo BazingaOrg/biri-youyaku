@@ -45,6 +45,10 @@ module.exports = {
           '0%': {opacity: '0', transform: 'translateY(-6px) scale(0.98)'},
           '100%': {opacity: '1', transform: 'translateY(0) scale(1)'},
         },
+        'pop-out': {
+          '0%': {opacity: '1', transform: 'translateY(0) scale(1)'},
+          '100%': {opacity: '0', transform: 'translateY(-6px) scale(0.98)'},
+        },
         'fade-in-up': {
           '0%': {opacity: '0', transform: 'translateY(8px)'},
           '100%': {opacity: '1', transform: 'translateY(0)'},
@@ -52,6 +56,7 @@ module.exports = {
       },
       animation: {
         pop: 'pop 180ms ease-out',
+        'pop-out': 'pop-out 150ms ease-in',
         'fade-in-up': 'fade-in-up 200ms ease-out',
       },
     },

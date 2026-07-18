@@ -16,6 +16,7 @@ interface Toast {
   message?: string
   taskName?: string
   action?: ToastAction
+  closing?: boolean
 }
 
 interface ToastOptions {
@@ -46,13 +47,21 @@ const icons = {
 export function ToastProvider({children}: {children: ReactNode}) {
   const [toasts, setToasts] = useState<Toast[]>([])
   const remove = (id: number) => setToasts((current) => current.filter((toast) => toast.id !== id))
+  const startClose = (id: number) => {
+    setToasts((current) => {
+      const toast = current.find((t) => t.id === id)
+      if (!toast || toast.closing) return current
+      return current.map((t) => (t.id === id ? {...t, closing: true} : t))
+    })
+    window.setTimeout(() => remove(id), 200)
+  }
   const push = (type: ToastType, title: string, message?: string, options?: ToastOptions) => {
     const id = Date.now() + Math.random()
     setToasts((current) => [...current, {id, type, title, message, taskName: options?.taskName, action: options?.action}])
     // 提示默认常驻，等用户主动关闭；autoClose 或带 action（如撤销）时走定时关闭。
     if (options?.autoClose === true || options?.action) {
       const duration = options?.durationMs ?? (type === 'success' ? 6000 : 4000)
-      window.setTimeout(() => remove(id), duration)
+      window.setTimeout(() => startClose(id), duration)
     }
   }
   const value = useMemo<ToastContextValue>(() => ({
@@ -93,7 +102,12 @@ export function ToastProvider({children}: {children: ReactNode}) {
           const Icon = icons[toast.type]
           const copyText = [toast.title, toast.message].filter(Boolean).join('\n')
           return (
-            <div key={toast.id} className={`animate-pop overflow-hidden rounded-2xl border bg-panel/85 p-4 shadow-card backdrop-blur-md ${
+            <div
+              key={toast.id}
+              onAnimationEnd={() => {
+                if (toast.closing) remove(toast.id)
+              }}
+              className={`${toast.closing ? 'animate-pop-out' : 'animate-pop'} overflow-hidden rounded-2xl border bg-panel/85 p-4 shadow-card backdrop-blur-md ${
               toast.type === 'error' ? 'border-danger/40' : toast.type === 'success' ? 'border-success/40' : 'border-line'
             }`}>
               {/*
@@ -112,7 +126,7 @@ export function ToastProvider({children}: {children: ReactNode}) {
                   )}
                   {toast.message && <p className="mt-1 break-words text-sm leading-5 text-muted">{toast.message}</p>}
                 </div>
-                <button type="button" aria-label="关闭提示" onClick={() => remove(toast.id)} className="-mr-1 -mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-xl text-muted transition hover:bg-lift active:scale-95">
+                <button type="button" aria-label="关闭提示" onClick={() => startClose(toast.id)} className="-mr-1 -mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-xl text-muted transition hover:bg-lift active:scale-95">
                   <X size={16} />
                 </button>
               </div>
@@ -121,7 +135,7 @@ export function ToastProvider({children}: {children: ReactNode}) {
                   type="button"
                   onClick={() => {
                     toast.action?.onClick()
-                    remove(toast.id)
+                    startClose(toast.id)
                   }}
                   className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-xl bg-lift px-3 text-sm font-medium text-brand transition hover:bg-brandSoft/60 active:scale-95"
                 >
