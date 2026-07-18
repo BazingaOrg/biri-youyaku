@@ -7,6 +7,7 @@ from pathlib import Path
 
 from biri_youyaku.config import settings
 from biri_youyaku.db import connect
+from biri_youyaku.distill import repo as distill_repo
 from biri_youyaku.jobs import repo
 from biri_youyaku.jobs.model import Job, JobStatus, RETENTION_DELETE_JOB_STATUSES
 
@@ -113,18 +114,59 @@ def _scan_orphan_files(directory: Path, known_paths: set[str], retention_days: i
     return removed
 
 
+def _scan_orphan_distill_dirs(directory: Path, retention_days: int) -> int:
+    """删除 directory 下「distill_runs 表无 mid 记录且 mtime 比 retention_days 早」的子目录。
+
+    与 `_scan_orphan_files` 同一套「DB 不引用 + 过了保留期才删」的规则，只是这里
+    校验对象是 `<mid>` 子目录而非单个文件。
+    """
+    if not directory.exists():
+        return 0
+    cutoff_seconds = retention_days * 24 * 60 * 60
+    removed = 0
+    now_seconds = time.time()
+    for entry in directory.iterdir():
+        if not entry.is_dir():
+            continue
+        try:
+            mid = int(entry.name)
+        except ValueError:
+            continue
+        if distill_repo.mid_has_run(mid):
+            continue
+        try:
+            if now_seconds - entry.stat().st_mtime < cutoff_seconds:
+                continue
+            shutil.rmtree(entry)
+            removed += 1
+        except OSError:
+            logger.warning("Failed to remove orphan distill dir %s", entry, exc_info=True)
+    return removed
+
+
 async def scan_orphans_once() -> dict[str, int]:
     """文件 → DB 反向校验：DB 不引用的文件清掉。"""
     retention = max(0, settings.orphan_file_retention_days)
     audio_dir = Path(settings.audio_storage_dir)
     summary_dir = Path(settings.summary_storage_dir)
+    distill_dir = Path(settings.distill_storage_dir)
     audio_known = repo.all_audio_paths()
     summary_known = repo.all_summary_paths()
     audio_orphans = _scan_orphan_files(audio_dir, audio_known, retention)
     summary_orphans = _scan_orphan_files(summary_dir, summary_known, retention)
-    if audio_orphans or summary_orphans:
-        logger.info("Removed orphans: audio=%d summary=%d", audio_orphans, summary_orphans)
-    return {"audio_orphans": audio_orphans, "summary_orphans": summary_orphans}
+    distill_orphans = _scan_orphan_distill_dirs(distill_dir, retention)
+    if audio_orphans or summary_orphans or distill_orphans:
+        logger.info(
+            "Removed orphans: audio=%d summary=%d distill=%d",
+            audio_orphans,
+            summary_orphans,
+            distill_orphans,
+        )
+    return {
+        "audio_orphans": audio_orphans,
+        "summary_orphans": summary_orphans,
+        "distill_orphans": distill_orphans,
+    }
 
 
 def clean_tempfile_residues() -> int:
@@ -147,20 +189,28 @@ def clean_tempfile_residues() -> int:
     return removed
 
 
+def _checkpoint_wal_sync() -> None:
+    with connect() as connection:
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+
 async def checkpoint_wal() -> None:
     """`PRAGMA wal_checkpoint(TRUNCATE)`：把 WAL 文件截断回 0 字节，避免长跑膨胀。"""
     try:
-        with connect() as connection:
-            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        await asyncio.to_thread(_checkpoint_wal_sync)
     except Exception:
         logger.exception("wal_checkpoint failed")
+
+
+def _vacuum_db_sync() -> None:
+    with connect() as connection:
+        connection.execute("VACUUM")
 
 
 async def vacuum_db() -> None:
     """`VACUUM`：回收已删除行的页。比较重，跑得稀疏些。"""
     try:
-        with connect() as connection:
-            connection.execute("VACUUM")
+        await asyncio.to_thread(_vacuum_db_sync)
     except Exception:
         logger.exception("VACUUM failed")
 

@@ -383,6 +383,10 @@ export function getLatestDistillRun(mid: number) {
   return request<{ok: true; run: DistillRun | null}>(`/v1/up/${mid}/distill/latest`)
 }
 
+export function deleteDistill(mid: number) {
+  return request<{ok: true}>(`/v1/up/${mid}/distill`, {method: 'DELETE'})
+}
+
 export type UpOrder = 'pubdate' | 'click'
 
 export function getUpVideos(

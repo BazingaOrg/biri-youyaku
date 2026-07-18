@@ -167,6 +167,22 @@ def add_failed_bvid(run_id: str, bvid: str) -> dict[str, Any]:
     )
 
 
+def list_runs_by_mid(mid: int) -> list[DistillRun]:
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM distill_runs WHERE mid = ? ORDER BY created_at ASC", (mid,)
+        ).fetchall()
+    return [_row_to_run(row) for row in rows]
+
+
+def mid_has_run(mid: int) -> bool:
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT 1 FROM distill_runs WHERE mid = ? LIMIT 1", (mid,)
+        ).fetchone()
+    return row is not None
+
+
 def delete_run(run_id: str) -> None:
     with connect() as connection:
         connection.execute("DELETE FROM distill_runs WHERE id = ?", (run_id,))

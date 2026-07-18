@@ -34,8 +34,8 @@ from biri_youyaku.jobs.runner import (
 from biri_youyaku.modules.bilibili import meta as bili_meta
 from biri_youyaku.modules.bilibili.meta import VideoMeta
 from biri_youyaku.modules.email.webhook import send as send_email
+from biri_youyaku.llm_url import validate_llm_base_url
 from biri_youyaku.rate_limit import limiter
-from biri_youyaku.routes.config import _validate_llm_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ def _extract_option_overrides(options: JobOptionsPayload | None) -> tuple[dict, 
 
 def _job_options_from_overrides(option_overrides: dict) -> JobOptions:
     options = JobOptions.from_overrides(option_overrides, settings)
-    _validate_llm_base_url(options.llm_base_url)
+    validate_llm_base_url(options.llm_base_url)
     return options
 
 

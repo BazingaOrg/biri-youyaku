@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import shutil
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -117,3 +118,18 @@ async def get_latest_distill(mid: int) -> dict:
     if run is None:
         return {"ok": True, "run": None}
     return {"ok": True, "run": _serialize_run(run)}
+
+
+@router.delete("/up/{mid}/distill")
+async def delete_distill(mid: int) -> dict:
+    active = distill_repo.find_active_by_mid(mid)
+    if active is not None:
+        raise HTTPException(status_code=409, detail="蒸馏任务正在进行中，请先取消再删除")
+
+    for run in distill_repo.list_runs_by_mid(mid):
+        distill_repo.delete_run(run.id)
+
+    run_dir = distill_storage.run_dir(mid)
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    return {"ok": True}

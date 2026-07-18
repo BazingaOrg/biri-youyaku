@@ -1,6 +1,9 @@
+import os
+
 import pytest
 
 from biri_youyaku import db
+from biri_youyaku.distill import repo as distill_repo
 from biri_youyaku.jobs import cleanup, repo
 from biri_youyaku.jobs.model import JobOptions, JobStatus
 
@@ -54,3 +57,66 @@ async def test_cleanup_deletes_expired_terminal_jobs(monkeypatch, tmp_path):
     assert result["jobs_removed"] == 1
     assert repo.get_job(job.id) is None
     assert not summary_path.exists()
+
+
+def _age_dir(path, days):
+    old_time = repo.now_ms() / 1000 - days * 24 * 60 * 60
+    os.utime(path, (old_time, old_time))
+
+
+@pytest.mark.asyncio
+async def test_scan_orphans_removes_distill_dir_without_db_record(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    monkeypatch.setattr(cleanup.settings, "orphan_file_retention_days", 1)
+    distill_dir = tmp_path / "distill"
+    monkeypatch.setattr(cleanup.settings, "distill_storage_dir", distill_dir)
+    db.init_db()
+
+    orphan_dir = distill_dir / "123"
+    orphan_dir.mkdir(parents=True)
+    (orphan_dir / "corpus.md").write_text("stale", encoding="utf-8")
+    _age_dir(orphan_dir, 2)
+
+    result = await cleanup.scan_orphans_once()
+
+    assert result["distill_orphans"] == 1
+    assert not orphan_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_scan_orphans_keeps_distill_dir_with_db_record(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    monkeypatch.setattr(cleanup.settings, "orphan_file_retention_days", 1)
+    distill_dir = tmp_path / "distill"
+    monkeypatch.setattr(cleanup.settings, "distill_storage_dir", distill_dir)
+    db.init_db()
+    distill_repo.create_run(456, video_limit=50, dir_path="d")
+
+    kept_dir = distill_dir / "456"
+    kept_dir.mkdir(parents=True)
+    (kept_dir / "corpus.md").write_text("kept", encoding="utf-8")
+    _age_dir(kept_dir, 2)
+
+    result = await cleanup.scan_orphans_once()
+
+    assert result["distill_orphans"] == 0
+    assert kept_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_scan_orphans_respects_retention_window_for_distill_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    monkeypatch.setattr(cleanup.settings, "orphan_file_retention_days", 3)
+    distill_dir = tmp_path / "distill"
+    monkeypatch.setattr(cleanup.settings, "distill_storage_dir", distill_dir)
+    db.init_db()
+
+    fresh_orphan_dir = distill_dir / "789"
+    fresh_orphan_dir.mkdir(parents=True)
+    (fresh_orphan_dir / "corpus.md").write_text("fresh", encoding="utf-8")
+    _age_dir(fresh_orphan_dir, 1)  # 未过 retention 期，不该被删
+
+    result = await cleanup.scan_orphans_once()
+
+    assert result["distill_orphans"] == 0
+    assert fresh_orphan_dir.exists()

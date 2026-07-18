@@ -109,3 +109,38 @@ async def test_latest_distill_returns_most_recent_or_none(monkeypatch, tmp_path)
     result = await distill_route.get_latest_distill(1)
 
     assert result["run"]["id"] == run.id
+
+
+@pytest.mark.asyncio
+async def test_delete_distill_removes_records_and_dir(monkeypatch, tmp_path):
+    _init_db(monkeypatch, tmp_path)
+    run = distill_repo.create_run(7, video_limit=50, dir_path="d")
+    distill_repo.update_status(run.id, DistillRunStatus.COMPLETED)
+    distill_route.distill_storage.save_corpus(7, "# 语料内容")
+    run_dir = distill_route.distill_storage.run_dir(7)
+    assert run_dir.exists()
+
+    result = await distill_route.delete_distill(7)
+
+    assert result["ok"] is True
+    assert distill_repo.list_runs_by_mid(7) == []
+    assert not run_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_distill_conflict_when_running(monkeypatch, tmp_path):
+    _init_db(monkeypatch, tmp_path)
+    distill_repo.create_run(8, video_limit=50, dir_path="d")  # 默认 PENDING（非终态）
+
+    with pytest.raises(HTTPException) as exc:
+        await distill_route.delete_distill(8)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_delete_distill_idempotent_when_no_run(monkeypatch, tmp_path):
+    _init_db(monkeypatch, tmp_path)
+
+    result = await distill_route.delete_distill(999)
+
+    assert result["ok"] is True
