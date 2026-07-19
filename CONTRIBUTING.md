@@ -39,7 +39,6 @@ npm run build           # 包含 tsc 类型检查
   单测，签名漂移不会在类型层暴露，只会被 pytest 抓到。
 - Commit message 现在时祈使句即可，中英文皆可，无强制规范（`fix: ...` / `feat: ...` 欢迎但不强求）。
 - 涉及配置项变更，记得同步改 `server/.env.example` 和 [`CONFIG.md`](CONFIG.md) 的配置表。
-- 改了用户可见行为，请在 `CHANGELOG.md` 加一行。
 
 ## 风格
 

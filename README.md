@@ -131,8 +131,6 @@ flowchart LR
 - [`DEPLOY.md`](DEPLOY.md) — 公网部署（Vercel + Cloudflare Tunnel）
 - [`CONFIG.md`](CONFIG.md) — `server/.env` 全部可调项
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — 开发 / 测试 / 提交
-- [`AGENTS.md`](AGENTS.md) — 给 AI 编程助手的代码库导览
-- [`CHANGELOG.md`](CHANGELOG.md) — 版本变更
 
 完整 API 见后端运行后的 `/docs`（FastAPI 自动生成）。
 
