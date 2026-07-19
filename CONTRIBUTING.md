@@ -21,15 +21,15 @@ bash scripts/dev.sh                  # macOS / Linux / WSL
 cd server
 uv sync --extra dev
 uv run pytest -q
-uv run ruff check .          # lint（CI 强制）
-# uv run ruff format .       # 可选：想统一格式自己跑，CI 不强制 format
+uv run ruff check .          # lint
+# uv run ruff format .       # 可选：想统一格式自己跑
 
 cd ../web
 npm install
 npm run build           # 包含 tsc 类型检查
 ```
 
-CI（`.github/workflows/ci.yml`）会在 PR 上跑同一套，挂红就别 merge。
+提交前请确保上面这套本地检查全绿。
 
 ## Commit / PR
 
