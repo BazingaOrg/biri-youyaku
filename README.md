@@ -130,7 +130,8 @@ flowchart LR
 
 - [`DEPLOY.md`](DEPLOY.md) — 公网部署（Vercel + Cloudflare Tunnel）
 - [`CONFIG.md`](CONFIG.md) — `server/.env` 全部可调项
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — 开发 / 测试 / 提交
+
+提交前本地检查：`cd server && uv run pytest -q && uv run ruff check .`，`cd web && npm run build`（含 tsc）。
 
 完整 API 见后端运行后的 `/docs`（FastAPI 自动生成）。
 
