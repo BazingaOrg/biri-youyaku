@@ -2,6 +2,8 @@ import {createContext, useContext, useMemo, useState} from 'react'
 import type {ReactNode} from 'react'
 import {CheckCircle2, Copy, Info, Undo2, X, XCircle} from 'lucide-react'
 
+const POP_OUT_FALLBACK_MS = 200 // pop-out 150ms + 50ms 余量；改动画时长时同步改这里
+
 type ToastType = 'success' | 'error' | 'info'
 
 interface ToastAction {
@@ -53,7 +55,7 @@ export function ToastProvider({children}: {children: ReactNode}) {
       if (!toast || toast.closing) return current
       return current.map((t) => (t.id === id ? {...t, closing: true} : t))
     })
-    window.setTimeout(() => remove(id), 200)
+    window.setTimeout(() => remove(id), POP_OUT_FALLBACK_MS)
   }
   const push = (type: ToastType, title: string, message?: string, options?: ToastOptions) => {
     const id = Date.now() + Math.random()

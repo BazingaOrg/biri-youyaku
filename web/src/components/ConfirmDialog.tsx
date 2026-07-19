@@ -1,6 +1,8 @@
 import {useEffect, useRef, useState} from 'react'
 import type {ReactNode} from 'react'
 
+const POP_OUT_FALLBACK_MS = 200 // pop-out 150ms + 50ms 余量；改动画时长时同步改这里
+
 interface ConfirmDialogProps {
   open: boolean
   title: string
@@ -50,7 +52,7 @@ export function ConfirmDialog({
   useEffect(() => {
     if (!open && wasOpenRef.current) {
       setClosing(true)
-      closeTimerRef.current = setTimeout(() => setClosing(false), 200)
+      closeTimerRef.current = setTimeout(() => setClosing(false), POP_OUT_FALLBACK_MS)
       wasOpenRef.current = open
       return () => {
         if (closeTimerRef.current) clearTimeout(closeTimerRef.current)

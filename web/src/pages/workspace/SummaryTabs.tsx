@@ -5,6 +5,7 @@ import type {Job} from '../../lib/api'
 import {parseHeadings} from '../../lib/markdown'
 import {formatDuration} from '../../lib/format'
 import {PageLoading} from '../../components/Spinner'
+import {smoothScrollTo} from '../../lib/scroll'
 
 // 懒加载：mind-elixir 体积不小，只有点开「脑图」tab 才拉它的 chunk + CSS。
 const MindmapView = lazy(() => import('./MindmapView').then((m) => ({default: m.MindmapView})))
@@ -42,7 +43,7 @@ export function SummaryTabs({job}: {job: Job}) {
         ))}
       </div>
 
-      <div key={tab} className="animate-fade-in-up">
+      <div key={tab}>
         {tab === 'notes' &&
           (summary ? <NotesView markdown={summary} /> : <p className="text-sm text-muted">没有总结内容</p>)}
         {tab === 'mindmap' &&
@@ -93,7 +94,7 @@ function NotesView({markdown}: {markdown: string}) {
     const el = document.getElementById(`sec-${i}`)
     if (!el) return
     const top = el.getBoundingClientRect().top + window.scrollY - 16
-    window.scrollTo({top, behavior: 'smooth'})
+    smoothScrollTo({top})
   }
 
   const showToc = headings.length >= 3

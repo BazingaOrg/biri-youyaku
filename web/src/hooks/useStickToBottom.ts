@@ -1,4 +1,5 @@
 import {useEffect, useRef, useState} from 'react'
+import {smoothScrollTo} from '../lib/scroll'
 
 /**
  * 流式总结时的「跟随到底」浮标。
@@ -47,7 +48,7 @@ export function useStickToBottom(active: boolean, deps: unknown[]) {
   }, [active, ...deps])
 
   const jumpToBottom = () => {
-    window.scrollTo({top: document.documentElement.scrollHeight, behavior: 'smooth'})
+    smoothScrollTo({top: document.documentElement.scrollHeight})
   }
   return {showJump, jumpToBottom}
 }

@@ -56,7 +56,7 @@ module.exports = {
       },
       animation: {
         pop: 'pop 180ms ease-out',
-        'pop-out': 'pop-out 150ms ease-in',
+        'pop-out': 'pop-out 150ms ease-out',
         'fade-in-up': 'fade-in-up 200ms ease-out',
       },
     },

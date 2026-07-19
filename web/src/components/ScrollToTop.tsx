@@ -1,5 +1,6 @@
 import {useEffect, useState} from 'react'
 import {ArrowUp} from 'lucide-react'
+import {smoothScrollTo} from '../lib/scroll'
 
 /** 滚动超过一屏后出现的「回到顶部」浮标。全局挂一个即可。 */
 export function ScrollToTop() {
@@ -16,7 +17,7 @@ export function ScrollToTop() {
   return (
     <button
       type="button"
-      onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})}
+      onClick={() => smoothScrollTo({top: 0})}
       aria-label="回到顶部"
       className="fixed bottom-5 right-5 z-30 grid h-11 w-11 place-items-center rounded-full border border-line bg-panel text-muted shadow-card transition hover:text-brand"
     >
