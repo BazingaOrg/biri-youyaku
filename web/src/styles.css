@@ -3,7 +3,8 @@
 @tailwind utilities;
 
 /* Sakura-on-Washi 配色：和纸米 + 墨 + 樱红，明暗双套。
-   暗色完全跟随 prefers-color-scheme，不再 data-theme 切换。 */
+   主题由 html[data-theme] 驱动（index.html 首帧脚本 + ThemeToggle）：
+   system 模式下 JS 解析 prefers-color-scheme 后同样落到 data-theme。 */
 :root {
   --color-bg: #fbf7f2;
   --color-bg-elevated: #ffffff;
@@ -24,8 +25,7 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
+:root[data-theme='dark'] {
     --color-bg: #15131a;
     --color-bg-elevated: #1e1b23;
     --color-bg-sunken: #0f0d12;
@@ -40,7 +40,6 @@
     --shadow-card: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 8px 24px rgba(0, 0, 0, 0.4);
     --shadow-card-hover: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 14px 32px rgba(0, 0, 0, 0.46);
     color-scheme: dark;
-  }
 }
 
 * {
@@ -72,12 +71,12 @@
   }
 }
 
-@media (pointer: fine) and (prefers-color-scheme: dark) {
-  * {
+@media (pointer: fine) {
+  :root[data-theme='dark'] * {
     scrollbar-color: color-mix(in srgb, var(--color-border), var(--color-fg-muted) 28%) transparent;
   }
 
-  *::-webkit-scrollbar-thumb {
+  :root[data-theme='dark'] *::-webkit-scrollbar-thumb {
     background-color: color-mix(in srgb, var(--color-border), var(--color-fg-muted) 28%);
   }
 }
@@ -103,12 +102,18 @@ body {
   background-attachment: fixed;
 }
 
-@media (prefers-color-scheme: dark) {
-  body {
+:root[data-theme='dark'] body {
     background-image:
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='440' height='440' viewBox='0 0 440 440'%3E%3Cpath d='M0 36C-16 22-20 2-12-14-8-22-4-26 0-20 4-26 8-22 12-14 20 2 16 22 0 36Z' fill='%23f29cb4' fill-opacity='0.06' transform='translate(84 96) rotate(28)'/%3E%3Cpath d='M0 36C-16 22-20 2-12-14-8-22-4-26 0-20 4-26 8-22 12-14 20 2 16 22 0 36Z' fill='%23ede7db' fill-opacity='0.04' transform='translate(304 218) rotate(-52) scale(0.8)'/%3E%3Cpath d='M0 36C-16 22-20 2-12-14-8-22-4-26 0-20 4-26 8-22 12-14 20 2 16 22 0 36Z' fill='%23f29cb4' fill-opacity='0.05' transform='translate(180 358) rotate(140) scale(0.65)'/%3E%3C/svg%3E"),
       radial-gradient(circle at 1px 1px, rgba(237, 231, 219, 0.045) 1px, transparent 0);
-  }
+}
+
+/* 主题切换的落幕/升幕动画：关掉默认交叉淡化，由 ThemeToggle 里的 JS
+   对 ::view-transition-new(root) 做 clip-path 动画。 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
 }
 
 button,

@@ -10,8 +10,7 @@ const StatsPage = lazy(() => import('./pages/StatsPage').then((m) => ({default: 
 const UpPage = lazy(() => import('./pages/UpPage').then((m) => ({default: m.UpPage})))
 
 export default function App() {
-  // 主题完全跟随系统（prefers-color-scheme，见 styles.css）。
-  // 如果未来需要人工切换主题，再恢复 ThemeProvider 包一层。
+  // 主题三档（系统/白天/黑夜）由 AppShell 里的 ThemeToggle 管理。
   return (
     <ToastProvider>
       <AppShell>

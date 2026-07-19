@@ -1,7 +1,7 @@
 module.exports = {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
-  // 主题完全跟随系统：让 dark: 变体响应 prefers-color-scheme，无需在 html 加 class。
-  darkMode: 'media',
+  // 主题由 html[data-theme] 驱动（见 ThemeToggle），dark: 变体跟随它。
+  darkMode: ['class', '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {
