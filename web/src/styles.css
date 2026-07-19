@@ -94,23 +94,20 @@ body {
   min-height: 100vh;
   font-family: theme('fontFamily.sans');
   color: theme('colors.ink');
-  /* antfu 风：底色 + 极淡点阵 + 一组斜向"枝条"线条，叠在一起像和纸上的纹理 */
+  /* 和纸质感：极淡纸纹颗粒 + 散落的樱花瓣（带缺口的花瓣形，低透明度飘在纸面上） */
   background-color: var(--color-bg);
   background-image:
-    radial-gradient(circle at 1px 1px, rgba(43, 42, 51, 0.07) 1px, transparent 0),
-    linear-gradient(135deg, transparent 49.5%, rgba(43, 42, 51, 0.045) 49.5%, rgba(43, 42, 51, 0.045) 50.5%, transparent 50.5%),
-    linear-gradient(45deg, transparent 49.7%, rgba(43, 42, 51, 0.03) 49.7%, rgba(43, 42, 51, 0.03) 50.3%, transparent 50.3%);
-  background-size: 24px 24px, 220px 220px, 320px 320px;
-  background-position: 0 0, 0 0, 60px 60px;
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='440' height='440' viewBox='0 0 440 440'%3E%3Cpath d='M0 36C-16 22-20 2-12-14-8-22-4-26 0-20 4-26 8-22 12-14 20 2 16 22 0 36Z' fill='%23e26a8d' fill-opacity='0.07' transform='translate(84 96) rotate(28)'/%3E%3Cpath d='M0 36C-16 22-20 2-12-14-8-22-4-26 0-20 4-26 8-22 12-14 20 2 16 22 0 36Z' fill='%232b2a33' fill-opacity='0.045' transform='translate(304 218) rotate(-52) scale(0.8)'/%3E%3Cpath d='M0 36C-16 22-20 2-12-14-8-22-4-26 0-20 4-26 8-22 12-14 20 2 16 22 0 36Z' fill='%23e26a8d' fill-opacity='0.055' transform='translate(180 358) rotate(140) scale(0.65)'/%3E%3C/svg%3E"),
+    radial-gradient(circle at 1px 1px, rgba(43, 42, 51, 0.05) 1px, transparent 0);
+  background-size: 440px 440px, 22px 22px;
   background-attachment: fixed;
 }
 
 @media (prefers-color-scheme: dark) {
   body {
     background-image:
-      radial-gradient(circle at 1px 1px, rgba(237, 231, 219, 0.06) 1px, transparent 0),
-      linear-gradient(135deg, transparent 49.5%, rgba(237, 231, 219, 0.035) 49.5%, rgba(237, 231, 219, 0.035) 50.5%, transparent 50.5%),
-      linear-gradient(45deg, transparent 49.7%, rgba(237, 231, 219, 0.025) 49.7%, rgba(237, 231, 219, 0.025) 50.3%, transparent 50.3%);
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='440' height='440' viewBox='0 0 440 440'%3E%3Cpath d='M0 36C-16 22-20 2-12-14-8-22-4-26 0-20 4-26 8-22 12-14 20 2 16 22 0 36Z' fill='%23f29cb4' fill-opacity='0.06' transform='translate(84 96) rotate(28)'/%3E%3Cpath d='M0 36C-16 22-20 2-12-14-8-22-4-26 0-20 4-26 8-22 12-14 20 2 16 22 0 36Z' fill='%23ede7db' fill-opacity='0.04' transform='translate(304 218) rotate(-52) scale(0.8)'/%3E%3Cpath d='M0 36C-16 22-20 2-12-14-8-22-4-26 0-20 4-26 8-22 12-14 20 2 16 22 0 36Z' fill='%23f29cb4' fill-opacity='0.05' transform='translate(180 358) rotate(140) scale(0.65)'/%3E%3C/svg%3E"),
+      radial-gradient(circle at 1px 1px, rgba(237, 231, 219, 0.045) 1px, transparent 0);
   }
 }
 
