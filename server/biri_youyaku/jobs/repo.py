@@ -13,7 +13,7 @@ from biri_youyaku.jobs.model import (
     TERMINAL_JOB_STATUSES,
 )
 from biri_youyaku.modules.bilibili.meta import Chapter
-from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
+from biri_youyaku.modules.transcript import TranscriptItem
 
 
 def now_ms() -> int:

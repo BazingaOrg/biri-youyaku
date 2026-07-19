@@ -1,4 +1,4 @@
-from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
+from biri_youyaku.modules.transcript import TranscriptItem
 
 
 def transcript_to_text(items: list[TranscriptItem]) -> str:

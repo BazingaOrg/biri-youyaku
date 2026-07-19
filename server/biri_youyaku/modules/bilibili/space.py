@@ -25,7 +25,6 @@ _VALID_ORDERS = {"pubdate", "click", "stow"}
 # 风控热身能力（cookie 注入 / buvid / w_webid）提取到 _guard.py，这里保留同名别名，
 # 使公开行为、既有测试（monkeypatch 这些名字）完全不变。
 _BROWSER_UA = _guard.BROWSER_UA
-_fetch_buvid = _guard.fetch_buvid
 _prime_cookies = _guard.prime_cookies
 _fetch_w_webid = _guard.fetch_w_webid
 _auth_fingerprint = _guard.auth_fingerprint

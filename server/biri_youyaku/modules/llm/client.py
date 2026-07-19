@@ -10,7 +10,7 @@ from biri_youyaku.config import settings
 from biri_youyaku.jobs.model import JobOptions
 from biri_youyaku.modules._http import openai_client
 from biri_youyaku.modules.bilibili.meta import VideoMeta
-from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
+from biri_youyaku.modules.transcript import TranscriptItem
 from biri_youyaku.modules.asr.formatter import transcript_to_text
 from biri_youyaku.modules.llm.prompts import (
     SUMMARY_MARKDOWN_PROMPT,
@@ -131,10 +131,8 @@ def _build_create_kwargs(model: str, temperature: float, **base) -> dict:
     kwargs = dict(base)
     kwargs["model"] = model
     thinking = _thinking_kwargs(model)
-    if thinking.pop("skip_temperature", False):
-        # 思考模式静默忽略 temperature/top_p，不传更干净，也方便日志识别。
-        pass
-    else:
+    # 思考模式静默忽略 temperature/top_p，不传更干净，也方便日志识别。
+    if not thinking.pop("skip_temperature", False):
         kwargs["temperature"] = temperature
     if "extra_body" in thinking:
         kwargs["extra_body"] = thinking["extra_body"]

@@ -16,7 +16,7 @@ from biri_youyaku.modules.asr.base import (
     TranscribeProgress,
     TranscribeRequest,
 )
-from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
+from biri_youyaku.modules.transcript import TranscriptItem
 
 
 logger = logging.getLogger(__name__)
@@ -217,9 +217,3 @@ class SenseVoiceTranscriber:
                 await asyncio.sleep(0)
         logger.info("SenseVoice 分段推理完成：共 %d 句", len(all_items))
         return all_items
-
-
-async def transcribe(audio_path: str, language: str = "auto") -> list[TranscriptItem]:
-    return await SenseVoiceTranscriber().transcribe(
-        TranscribeRequest(audio_path=Path(audio_path), language=language)
-    )

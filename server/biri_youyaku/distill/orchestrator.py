@@ -22,11 +22,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
 
 from biri_youyaku.config import settings
 from biri_youyaku.distill import assembler
 from biri_youyaku.distill import repo as distill_repo
+from biri_youyaku.distill._util import format_ts
 from biri_youyaku.distill.model import (
     DistillRun,
     DistillRunStatus,
@@ -42,7 +42,7 @@ from biri_youyaku.modules.bilibili import dynamic as dynamic_module
 from biri_youyaku.modules.bilibili import space as space_module
 from biri_youyaku.modules.llm.distill import clean_dynamics_batch, extract_video_viewpoints
 from biri_youyaku.modules.storage import distill as distill_storage
-from biri_youyaku.modules.transcript import TranscriptItem
+from biri_youyaku.modules.transcript import transcript_items_from_job
 
 logger = logging.getLogger(__name__)
 
@@ -128,12 +128,6 @@ def _raise_if_cancelled(run_id: str) -> None:
         raise DistillRunCancelled()
 
 
-def _format_ts(ts: int | None) -> str:
-    if not ts:
-        return "未知日期"
-    return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone().strftime("%Y-%m-%d")
-
-
 async def _run_pipeline(run_id: str) -> None:
     try:
         # 每个阶段开始前都先检查一次取消：光在阶段之间检查不够——每个 _do_* 一进
@@ -174,7 +168,7 @@ async def _run_pipeline(run_id: str) -> None:
 
 
 def _format_dynamic_line(item: dict) -> str:
-    date = _format_ts(item.get("ts"))
+    date = format_ts(item.get("ts"))
     label = _DYNAMIC_TYPE_LABELS.get(item.get("type"), item.get("type") or "其他")
     text = (item.get("text") or "").replace("\n", " ").strip()
     return f"[{date}][{label}] {text}"
@@ -244,21 +238,13 @@ async def _fetch_up_videos_limited(mid: int, limit: int) -> tuple[str, list]:
     return author, collected[:limit]
 
 
-def _transcript_items_from_job(job) -> list[TranscriptItem]:
-    return [
-        TranscriptItem(start=float(item["start"]), end=float(item["end"]), text=str(item["text"]))
-        for item in job.transcript or []
-        if str(item.get("text") or "").strip()
-    ]
-
-
 async def _obtain_transcript(run_id: str, bvid: str) -> str | None:
     """先找有 transcript 的已完成 job 复用；没有就建 task_type="distill" 的 job
     走现有 runner 到 COMPLETED（等价 TRANSCRIPT_READY，见 runner.py 的提前收尾分支）
     即停，等待其完成信号。ASR 是成本大头，复用转写不复用总结。"""
     existing = job_repo.find_completed_by_bvid(bvid, include_distill=True)
     if existing is not None and existing.transcript:
-        items = _transcript_items_from_job(existing)
+        items = transcript_items_from_job(existing)
         if items:
             return transcript_to_text(items)
 
@@ -273,7 +259,7 @@ async def _obtain_transcript(run_id: str, bvid: str) -> str | None:
         current = job_repo.get_job(job.id)
         if current is None:
             return None
-        items = _transcript_items_from_job(current)
+        items = transcript_items_from_job(current)
         return transcript_to_text(items) if items else None
     logger.warning(
         "Distill: transcript job %s for %s ended as %s, skipping video",

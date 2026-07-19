@@ -22,6 +22,7 @@ from biri_youyaku.jobs.model import (
     RETENTION_DELETE_JOB_STATUSES,
     TERMINAL_JOB_STATUSES,
     TERMINAL_JOB_STATUS_VALUES,
+    video_meta_from_job,
 )
 from biri_youyaku.jobs.runner import (
     cancel_job,
@@ -32,7 +33,6 @@ from biri_youyaku.jobs.runner import (
     start_job,
 )
 from biri_youyaku.modules.bilibili import meta as bili_meta
-from biri_youyaku.modules.bilibili.meta import VideoMeta
 from biri_youyaku.modules.email.webhook import send as send_email
 from biri_youyaku.llm_url import validate_llm_base_url
 from biri_youyaku.rate_limit import limiter
@@ -118,17 +118,6 @@ def serialize_job(job: Job, *, lite: bool = False) -> dict:
     if lite:
         payload["summary_available"] = job.summary_path is not None
     return payload
-
-
-def _video_meta_from_job(job: Job) -> VideoMeta:
-    return VideoMeta(
-        url=job.url,
-        bvid=job.bvid or "",
-        cid=job.cid,
-        title=job.title or job.bvid or job.id,
-        author=job.author or "",
-        duration=job.duration or 0,
-    )
 
 
 def _extract_option_overrides(options: JobOptionsPayload | None) -> tuple[dict, str | None]:
@@ -418,7 +407,7 @@ async def resend_email(request: Request, job_id: str) -> dict:
             status_code=409, detail="Only completed jobs with a summary can be emailed"
         )
     try:
-        await send_email(_video_meta_from_job(job), summary, job.options)
+        await send_email(video_meta_from_job(job), summary, job.options)
     except Exception as exc:
         # 重发失败：更新 email_error（别留旧消息），并把真实原因回给前端，而不是通用 500。
         message = str(exc) or "邮件发送失败"

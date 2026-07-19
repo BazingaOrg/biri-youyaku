@@ -9,18 +9,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
+from biri_youyaku.distill._util import format_ts
 from biri_youyaku.distill.model import DistillRun
 from biri_youyaku.jobs.repo import now_ms
 from biri_youyaku.modules.storage import distill as distill_storage
-
-
-def _format_ts(ts: int | None) -> str:
-    if not ts:
-        return "未知日期"
-    return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone().strftime("%Y-%m-%d")
 
 
 def build_manifest(run: DistillRun, videos: list[dict[str, Any]]) -> dict[str, Any]:
@@ -75,7 +69,7 @@ def build_corpus(run: DistillRun, videos: list[dict[str, Any]]) -> str:
     ]
     for video in extracted:
         title = video.get("title") or video["bvid"]
-        lines.append(f"- [{_format_ts(video.get('pubdate'))}] {title}（{video['bvid']}）")
+        lines.append(f"- [{format_ts(video.get('pubdate'))}] {title}（{video['bvid']}）")
     lines.append("")
 
     for video in extracted:

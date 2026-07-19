@@ -30,6 +30,8 @@ from biri_youyaku.modules.asr.base import (
 # 复用 funasr 后端的清洗规则（SenseVoice 模型本身的 tag / emoji 输出特性一致）
 from biri_youyaku.modules.asr.sensevoice import (
     CHUNK_SECONDS,
+    _has_ffmpeg,
+    _slice_audio,
     clean_transcription_text,
 )
 from biri_youyaku.modules.transcript import TranscriptItem
@@ -51,10 +53,6 @@ def _load_model() -> Any:
     return load(model_id)
 
 
-def _has_ffmpeg() -> bool:
-    return bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
-
-
 def _probe_duration(audio_path: Path) -> float:
     """读音频时长（秒）。失败返回 0。"""
     if not shutil.which("ffprobe"):
@@ -72,19 +70,6 @@ def _probe_duration(audio_path: Path) -> float:
         return float(result.stdout.strip() or 0)
     except (subprocess.SubprocessError, ValueError):
         return 0.0
-
-
-def _slice_audio(audio_path: Path, start: float, duration: float, out_path: Path) -> None:
-    subprocess.run(
-        [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-ss", f"{start:.3f}", "-t", f"{duration:.3f}",
-            "-i", str(audio_path),
-            "-ac", "1", "-ar", "16000", "-f", "wav",
-            str(out_path),
-        ],
-        check=True, timeout=120,
-    )
 
 
 def _items_from_result(result: Any, time_offset: float) -> list[TranscriptItem]:

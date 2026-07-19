@@ -7,7 +7,7 @@ from biri_youyaku.modules.asr.base import (
     TranscribeProgress,
     TranscribeRequest,
 )
-from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
+from biri_youyaku.modules.transcript import TranscriptItem
 
 
 def resolve_device() -> str:

@@ -367,10 +367,6 @@ export function startDistill(mid: number, videoLimit: number) {
   })
 }
 
-export function getDistillRun(runId: string) {
-  return request<{ok: true; run: DistillRun}>(`/v1/distill/${runId}`)
-}
-
 export function cancelDistill(runId: string) {
   return request<{ok: true}>(`/v1/distill/${runId}/cancel`, {method: 'POST'})
 }

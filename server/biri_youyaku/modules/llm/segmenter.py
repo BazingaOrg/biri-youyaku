@@ -1,4 +1,4 @@
-from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
+from biri_youyaku.modules.transcript import TranscriptItem
 from biri_youyaku.modules.asr.formatter import transcript_to_text
 
 

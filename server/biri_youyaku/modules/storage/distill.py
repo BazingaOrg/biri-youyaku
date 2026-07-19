@@ -63,13 +63,6 @@ def read_video(mid: int, bvid: str) -> str | None:
     return path.read_text(encoding="utf-8")
 
 
-def list_video_bvids(mid: int) -> list[str]:
-    directory = videos_dir(mid)
-    if not directory.exists():
-        return []
-    return sorted(path.stem for path in directory.glob("*.md"))
-
-
 def save_dynamics(mid: int, content: str) -> Path:
     ensure_dirs(mid)
     path = dynamics_path(mid)

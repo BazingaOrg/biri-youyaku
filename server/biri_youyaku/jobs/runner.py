@@ -10,6 +10,7 @@ from biri_youyaku.jobs.model import (
     JobStatus,
     PAUSED_OR_TERMINAL_JOB_STATUSES,
     TERMINAL_JOB_STATUSES,
+    video_meta_from_job,
 )
 from biri_youyaku.jobs.pipeline import (
     CanceledError,
@@ -22,8 +23,7 @@ from biri_youyaku.jobs.pipeline import (
     transcribe_audio,
 )
 from biri_youyaku.modules.asr.base import TranscribeProgress
-from biri_youyaku.modules.bilibili.meta import VideoMeta
-from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
+from biri_youyaku.modules.transcript import transcript_items_from_job
 
 logger = logging.getLogger(__name__)
 
@@ -265,29 +265,6 @@ def recover_unfinished_jobs() -> None:
         resume_job(job.id)
 
 
-def _meta_from_job(job) -> VideoMeta:
-    return VideoMeta(
-        url=job.url,
-        bvid=job.bvid or "",
-        cid=job.cid,
-        title=job.title or job.bvid or job.id,
-        author=job.author or "",
-        duration=job.duration or 0,
-    )
-
-
-def _transcript_from_job(job) -> list[TranscriptItem]:
-    return [
-        TranscriptItem(
-            start=float(item["start"]),
-            end=float(item["end"]),
-            text=str(item["text"]),
-        )
-        for item in job.transcript or []
-        if str(item.get("text") or "").strip()
-    ]
-
-
 # ---------------------------------------------------------------------------
 # Lifecycle：收敛 run_until_transcript / run_after_resume 共享的 try/except/finally。
 # ---------------------------------------------------------------------------
@@ -484,10 +461,10 @@ async def _do_summarize(job_id: str, stage: _RunStage) -> None:
     fresh_job = repo.get_job(job_id)
     if fresh_job is None:
         raise RuntimeError("Job not found")
-    items = _transcript_from_job(fresh_job)
+    items = transcript_items_from_job(fresh_job)
     if not items:
         raise RuntimeError("任务没有可总结的字幕")
-    video_meta = _meta_from_job(fresh_job)
+    video_meta = video_meta_from_job(fresh_job)
     stage.value = JobStatus.SUMMARIZING.value
     await transition(job_id, JobStatus.SUMMARIZING)
     async with _semaphore_with_queue_notice(job_id, JobStatus.SUMMARIZING, _summary_semaphore):

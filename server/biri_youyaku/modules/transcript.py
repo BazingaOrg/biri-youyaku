@@ -15,3 +15,15 @@ class TranscriptItem:
     start: float
     end: float
     text: str
+
+
+def transcript_items_from_job(job) -> list[TranscriptItem]:
+    return [
+        TranscriptItem(
+            start=float(item["start"]),
+            end=float(item["end"]),
+            text=str(item["text"]),
+        )
+        for item in job.transcript or []
+        if str(item.get("text") or "").strip()
+    ]

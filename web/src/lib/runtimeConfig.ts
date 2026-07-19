@@ -22,7 +22,3 @@ export function loadRuntimeConfig(): Promise<RuntimeConfig> {
   return cached
 }
 
-/** 强制下次重新拉。一般用不到，留给开发期手动刷新。 */
-export function resetRuntimeConfig(): void {
-  cached = null
-}

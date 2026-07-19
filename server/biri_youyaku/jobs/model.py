@@ -3,6 +3,7 @@ from enum import StrEnum
 from typing import Any
 
 from biri_youyaku.config import Settings
+from biri_youyaku.modules.bilibili.meta import VideoMeta
 
 
 class JobStatus(StrEnum):
@@ -118,3 +119,14 @@ class Job:
     stage_timings: list[dict[str, Any]] | None = None
     email_error: str | None = None
     tags: list[str] | None = None
+
+
+def video_meta_from_job(job: "Job") -> VideoMeta:
+    return VideoMeta(
+        url=job.url,
+        bvid=job.bvid or "",
+        cid=job.cid,
+        title=job.title or job.bvid or job.id,
+        author=job.author or "",
+        duration=job.duration or 0,
+    )
