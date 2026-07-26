@@ -46,6 +46,7 @@ def bili_client() -> httpx.AsyncClient:
             follow_redirects=True,
             headers=_bili_headers(),
             limits=httpx.Limits(max_keepalive_connections=8, max_connections=16),
+            trust_env=False,
         )
     return _bili_client
 
