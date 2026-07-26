@@ -21,8 +21,8 @@ from biri_youyaku.jobs.cleanup import (
     fail_stale_running_once,
     scan_orphans_once,
 )
-from biri_youyaku.distill.orchestrator import recover_unfinished_runs
-from biri_youyaku.jobs.runner import recover_unfinished_jobs
+from biri_youyaku.distill import orchestrator as distill_orchestrator
+from biri_youyaku.jobs import runner
 from biri_youyaku.logging import configure_logging
 from biri_youyaku.modules._http import aclose_all
 from biri_youyaku.routes import (
@@ -34,9 +34,45 @@ from biri_youyaku.routes import (
     up_router,
 )
 
+_deferred_http_close_tasks: set[asyncio.Task[None]] = set()
+_lifespan_generation = 0
+
+
+def _defer_http_close(generation: int, job_ids: tuple[str, ...]) -> None:
+    task = asyncio.create_task(_close_http_after_jobs(generation, job_ids))
+    _deferred_http_close_tasks.add(task)
+    task.add_done_callback(_deferred_http_close_tasks.discard)
+
+
+async def _close_http_after_jobs(generation: int, job_ids: tuple[str, ...]) -> None:
+    log = logging.getLogger("biri_youyaku.startup")
+    try:
+        results = await asyncio.gather(
+            *(runner.await_job_completion(job_id) for job_id in job_ids),
+            return_exceptions=True,
+        )
+        failures = sum(isinstance(result, Exception) for result in results)
+        if failures:
+            log.warning("Deferred HTTP cleanup observed %d job completion errors", failures)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.warning("Deferred HTTP cleanup could not await unfinished jobs")
+    finally:
+        is_current = generation == _lifespan_generation
+        jobs_still_active = any(runner.has_active_task(job_id) for job_id in job_ids)
+        if is_current and not jobs_still_active:
+            try:
+                await aclose_all()
+            except Exception:
+                log.warning("Deferred HTTP client cleanup failed")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    global _lifespan_generation
+    _lifespan_generation += 1
+    generation = _lifespan_generation
     configure_logging()
     log = logging.getLogger("biri_youyaku.startup")
     token = _expected_token()
@@ -73,22 +109,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await cleanup_once()
     await fail_stale_running_once()
     await scan_orphans_once()
-    recover_unfinished_jobs()
-    recover_unfinished_runs()
+    runner.prepare_startup()
+    distill_orchestrator.prepare_startup()
+    runner.recover_unfinished_jobs()
     cleanup_task = asyncio.create_task(cleanup_loop())
     warmup_task = asyncio.create_task(_warmup_asr())
     tags_task = asyncio.create_task(_backfill_tags())
     try:
         yield
     finally:
+        runner.begin_shutdown()
+        distill_orchestrator.begin_shutdown()
+        await distill_orchestrator.shutdown()
+        unfinished_jobs = await runner.shutdown()
         for task in (cleanup_task, warmup_task, tags_task):
             task.cancel()
             try:
                 await task
             except (asyncio.CancelledError, Exception):  # warmup 失败不阻塞退出
                 pass
-        # 关闭共享 client 释放 socket，避免 pytest / reload 留连接
-        await aclose_all()
+        if unfinished_jobs:
+            log.warning("Jobs still active; preserving HTTP clients: %s", unfinished_jobs)
+            _defer_http_close(generation, tuple(unfinished_jobs))
+        else:
+            # 关闭共享 client 释放 socket，避免 pytest / reload 留连接
+            await aclose_all()
 
 
 async def _backfill_tags() -> None:
