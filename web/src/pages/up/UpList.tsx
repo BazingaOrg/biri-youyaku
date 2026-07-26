@@ -35,6 +35,14 @@ export function UpList({mid}: {mid: number}) {
   // 先不渲染按钮/面板，避免"先闪一下按钮再切成面板"。
   const [distillRun, setDistillRun] = useState<DistillRun | null>(null)
   const [distillChecked, setDistillChecked] = useState(false)
+  const requestGenerationRef = useRef(0)
+  const activeRequestRef = useRef<{controller: AbortController; generation: number} | null>(null)
+
+  useEffect(() => () => {
+    requestGenerationRef.current += 1
+    activeRequestRef.current?.controller.abort()
+    activeRequestRef.current = null
+  }, [])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 300)
@@ -43,11 +51,22 @@ export function UpList({mid}: {mid: number}) {
 
   const fetchPage = useCallback(
     async (pageNum: number, keyword: string, sortOrder: UpOrder, mode: 'reset' | 'append') => {
-      if (mode === 'reset') setLoading(true)
+      if (mode === 'append' && activeRequestRef.current) return
+      if (mode === 'reset') {
+        requestGenerationRef.current += 1
+        activeRequestRef.current?.controller.abort()
+      }
+      const request = {controller: new AbortController(), generation: requestGenerationRef.current}
+      activeRequestRef.current = request
+      if (mode === 'reset') {
+        setLoading(true)
+        setLoadingMore(false)
+      }
       else setLoadingMore(true)
       setError(null)
       try {
-        const res = await getUpVideos(mid, {page: pageNum, keyword, order: sortOrder})
+        const res = await getUpVideos(mid, {page: pageNum, keyword, order: sortOrder}, {signal: request.controller.signal})
+        if (activeRequestRef.current !== request || requestGenerationRef.current !== request.generation) return
         // 空结果页（如搜索无命中）author 为空时保留上一次的昵称。
         setAuthor((prev) => res.author || prev)
         setTotal(res.total)
@@ -55,11 +74,15 @@ export function UpList({mid}: {mid: number}) {
         setHasMore(res.has_more)
         setVideos((current) => (mode === 'reset' ? res.videos : [...current, ...res.videos]))
       } catch (err) {
+        if (activeRequestRef.current !== request || requestGenerationRef.current !== request.generation || request.controller.signal.aborted) return
         setError(err instanceof Error ? err.message : '加载失败，请检查网络后重试')
         if (mode === 'reset') setVideos([])
       } finally {
-        setLoading(false)
-        setLoadingMore(false)
+        if (activeRequestRef.current === request && requestGenerationRef.current === request.generation) {
+          activeRequestRef.current = null
+          if (mode === 'reset') setLoading(false)
+          else setLoadingMore(false)
+        }
       }
     },
     [mid],

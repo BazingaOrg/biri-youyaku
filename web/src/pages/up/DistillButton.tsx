@@ -4,16 +4,25 @@ import {ApiError, getLatestDistillRun, startDistill, type DistillRun} from '../.
 import {ConfirmDialog} from '../../components/ConfirmDialog'
 import {useToast} from '../../components/ToastProvider'
 
+function getVideoLimit(value: string): number | null {
+  const limit = Number(value)
+  return Number.isInteger(limit) && limit >= 1 && limit <= 200 ? limit : null
+}
+
 /** 头部「蒸馏语料」按钮 + 确认层：说明耗时预期 + 可改视频范围，确认后 POST 启动。 */
 export function DistillButton({mid, onStarted}: {mid: number; onStarted: (run: DistillRun) => void}) {
   const toast = useToast()
   const [open, setOpen] = useState(false)
   const [videoLimit, setVideoLimit] = useState('50')
   const [starting, setStarting] = useState(false)
+  const limit = getVideoLimit(videoLimit)
+  const videoLimitError = limit == null ? '请输入 1 到 200 之间的整数。' : null
 
   const start = async () => {
-    const parsed = Number(videoLimit)
-    const limit = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 50
+    if (limit == null) {
+      toast.error('视频范围无效', '请输入 1 到 200 之间的整数。')
+      return
+    }
     setStarting(true)
     try {
       const res = await startDistill(mid, limit)
@@ -63,15 +72,24 @@ export function DistillButton({mid, onStarted}: {mid: number; onStarted: (run: D
               <input
                 type="number"
                 min={1}
+                max={200}
                 value={videoLimit}
                 onChange={(e) => setVideoLimit(e.target.value)}
+                aria-invalid={Boolean(videoLimitError)}
+                aria-describedby={videoLimitError ? 'video-limit-error' : undefined}
                 className="min-h-10 w-full rounded-xl bg-lift px-3 text-sm text-ink outline-none focus:ring-2 focus:ring-brand/30"
               />
+              {videoLimitError && (
+                <span id="video-limit-error" className="text-xs text-danger">
+                  {videoLimitError}
+                </span>
+              )}
             </label>
           </div>
         }
         confirmLabel="开始蒸馏"
         loading={starting}
+        confirmDisabled={Boolean(videoLimitError)}
         onConfirm={() => void start()}
         onCancel={() => setOpen(false)}
       />

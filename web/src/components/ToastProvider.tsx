@@ -106,6 +106,9 @@ export function ToastProvider({children}: {children: ReactNode}) {
           return (
             <div
               key={toast.id}
+              role={toast.type === 'error' ? 'alert' : 'status'}
+              aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
+              aria-atomic="true"
               onAnimationEnd={() => {
                 if (toast.closing) remove(toast.id)
               }}

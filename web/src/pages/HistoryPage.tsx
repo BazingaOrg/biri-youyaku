@@ -26,7 +26,7 @@ export function HistoryPage() {
   const [jobs, setJobs] = useState<Job[]>([])
   // 初始即 true：避免首帧 jobs=[] && !loading 闪一下「还没有任务记录」空状态。
   const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState(false)
+  const [loadError, setLoadError] = useState<'initial' | 'partial' | null>(null)
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null)
@@ -41,45 +41,58 @@ export function HistoryPage() {
 
   // 待提交的删除：id -> {timer, job}。撤销时清 timer 并恢复；到点 commitDelete 真正删后端。
   const pendingDeletes = useRef<Map<string, {timer: number; job: Job}>>(new Map())
+  const loadGenerationRef = useRef(0)
+  const activeLoadRef = useRef<{controller: AbortController; generation: number} | null>(null)
 
-  const loadFirstPage = useCallback(async (cancelled?: () => boolean) => {
+  const invalidateLoad = useCallback(() => {
+    loadGenerationRef.current += 1
+    activeLoadRef.current?.controller.abort()
+    activeLoadRef.current = null
+  }, [])
+
+  const loadFirstPage = useCallback(async () => {
+    invalidateLoad()
+    const load = {controller: new AbortController(), generation: loadGenerationRef.current}
+    activeLoadRef.current = load
+    const isCurrent = () => activeLoadRef.current === load && loadGenerationRef.current === load.generation
     setLoading(true)
-    setLoadError(false)
+    setLoadError(null)
     let cursor: number | null | undefined = null
     try {
-      const response: Awaited<ReturnType<typeof listJobs>> = await listJobs({limit: PAGE_SIZE, cursor})
-      if (cancelled?.()) return
+      const response: Awaited<ReturnType<typeof listJobs>> = await listJobs({limit: PAGE_SIZE, cursor}, {signal: load.controller.signal})
+      if (!isCurrent()) return
       setJobs(response.jobs)
       cursor = response.next_cursor ?? null
     } catch {
-      if (cancelled?.()) return
+      if (!isCurrent() || load.controller.signal.aborted) return
       setJobs([])
-      setLoadError(true)
+      setLoadError('initial')
       return
     } finally {
-      if (!cancelled?.()) setLoading(false)
+      if (isCurrent()) setLoading(false)
     }
     // 首屏之后在后台继续拉剩余分页，逐页追加，避免长列表阻塞首屏渲染。
     while (cursor != null) {
-      if (cancelled?.()) return
+      if (!isCurrent()) return
       try {
-        const response: Awaited<ReturnType<typeof listJobs>> = await listJobs({limit: PAGE_SIZE, cursor})
-        if (cancelled?.()) return
+        const response: Awaited<ReturnType<typeof listJobs>> = await listJobs({limit: PAGE_SIZE, cursor}, {signal: load.controller.signal})
+        if (!isCurrent()) return
         setJobs((current) => [...current, ...response.jobs])
         cursor = response.next_cursor ?? null
       } catch {
+        if (isCurrent() && !load.controller.signal.aborted) setLoadError('partial')
         return
       }
     }
-  }, [])
+    if (isCurrent()) activeLoadRef.current = null
+  }, [invalidateLoad])
 
   useEffect(() => {
-    let canceled = false
-    void loadFirstPage(() => canceled)
+    void loadFirstPage()
     return () => {
-      canceled = true
+      invalidateLoad()
     }
-  }, [loadFirstPage])
+  }, [invalidateLoad, loadFirstPage])
 
   // 卸载时把还在撤销窗口里的删除立即提交，避免离开页面后丢删除。
   useEffect(() => {
@@ -243,6 +256,7 @@ export function HistoryPage() {
 
   const handleClearCompleted = async () => {
     setClearing(true)
+    invalidateLoad()
     // 清空前结清撤销窗口内的待删任务：清掉计时器，交给 deleteAll + reload 兜底，
     // 避免计时器稍后触发 commitDelete 与全量删除竞争。
     for (const entry of pendingDeletes.current.values()) {
@@ -358,7 +372,7 @@ export function HistoryPage() {
           </IconTooltip>
         </div>
 
-        {!loading && !loadError && authorStats.length > 0 && (
+        {!loading && loadError !== 'initial' && authorStats.length > 0 && (
           <ChipFilter
             label="UP 主"
             items={authorStats.map((item) => ({key: item.author, label: item.author, count: item.count}))}
@@ -368,7 +382,7 @@ export function HistoryPage() {
           />
         )}
 
-        {!loading && !loadError && tagStats.length > 0 && (
+        {!loading && loadError !== 'initial' && tagStats.length > 0 && (
           <ChipFilter
             label="标签"
             items={tagStats.map((item) => ({key: item.tag, label: item.tag, count: item.count}))}
@@ -381,7 +395,7 @@ export function HistoryPage() {
         <div className="py-3">
           {loading && <Skeleton count={6} />}
 
-          {!loading && loadError && (
+          {!loading && loadError === 'initial' && (
             <div className="grid justify-items-center gap-3 border-b border-line/60 py-12 text-center">
               <p className="text-sm text-muted">加载失败，请检查网络后重试</p>
               <button
@@ -395,7 +409,7 @@ export function HistoryPage() {
             </div>
           )}
 
-          {!loading && !loadError && jobs.length === 0 && (
+          {!loading && loadError !== 'initial' && jobs.length === 0 && (
             <div className="grid justify-items-center gap-3 border-b border-line/60 py-12 text-center">
               <p className="text-sm text-muted">还没有任务记录</p>
               <Link
@@ -408,13 +422,17 @@ export function HistoryPage() {
             </div>
           )}
 
-          {!loading && !loadError && jobs.length > 0 && filtered.length === 0 && (
+          {!loading && loadError !== 'initial' && jobs.length > 0 && filtered.length === 0 && (
             <p className="border-b border-line/60 py-12 text-center text-sm text-muted">
               没有匹配{selectedAuthor ? `「${selectedAuthor}」` : ''}{selectedTag ? `「#${selectedTag}」` : ''}{debouncedQuery ? `「${debouncedQuery}」` : ''}的记录
             </p>
           )}
 
-          {!loading && !loadError && filtered.length > 0 && (
+          {!loading && loadError === 'partial' && (
+            <p role="alert" className="mb-3 text-center text-sm text-muted">部分记录加载失败，请稍后重试。</p>
+          )}
+
+          {!loading && loadError !== 'initial' && filtered.length > 0 && (
             <>
               <ul className="grid gap-2">
                 {visibleJobs.map((job, index) => {

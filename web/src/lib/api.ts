@@ -140,16 +140,28 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     // 503：在飞任务到上限了
     if (response.status === 503) {
-      try {
-        const payload = await response.clone().json() as {detail?: string}
-        if (payload.detail) throw new Error(payload.detail)
-      } catch { /* fall through */ }
-      throw new Error('服务器繁忙，请稍后再试')
+      throw new Error((await getErrorMessage(response)) || '服务器繁忙，请稍后再试')
     }
-    const message = await response.text()
-    throw new ApiError(response.status, message || `HTTP ${response.status}`)
+    throw new ApiError(response.status, (await getErrorMessage(response)) || `HTTP ${response.status}`)
   }
   return response.json() as Promise<T>
+}
+
+async function getErrorMessage(response: Response): Promise<string> {
+  const text = await response.text()
+  if (!text) return ''
+  try {
+    const payload: unknown = JSON.parse(text)
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      const {detail, message} = payload as {detail?: unknown; message?: unknown}
+      if (typeof detail === 'string') return detail
+      if (Object.prototype.hasOwnProperty.call(payload, 'detail')) return '请求失败，请稍后再试'
+      if (typeof message === 'string') return message
+    }
+  } catch {
+    // 非 JSON 错误响应直接展示文本。
+  }
+  return text
 }
 
 async function requestBlob(path: string): Promise<{blob: Blob; filename?: string}> {
@@ -164,17 +176,7 @@ async function requestBlob(path: string): Promise<{blob: Blob; filename?: string
     credentials: 'include',
   })
   if (!response.ok) {
-    let message = `HTTP ${response.status}`
-    try {
-      const payload = await response.json() as {detail?: string}
-      message = payload.detail ?? message
-    } catch {
-      const text = await response.text()
-      if (text) {
-        message = text
-      }
-    }
-    throw new Error(message)
+    throw new Error((await getErrorMessage(response)) || `HTTP ${response.status}`)
   }
 
   const disposition = response.headers.get('content-disposition') ?? ''
@@ -245,7 +247,7 @@ export function retryJob(jobId: string, options: JobOptionOverrides = {}) {
   })
 }
 
-export function listJobs(params: {limit?: number; offset?: number; cursor?: number | null} = {}) {
+export function listJobs(params: {limit?: number; offset?: number; cursor?: number | null} = {}, init?: RequestInit) {
   const search = new URLSearchParams()
   search.set('limit', String(params.limit ?? 50))
   if (params.offset) {
@@ -254,7 +256,7 @@ export function listJobs(params: {limit?: number; offset?: number; cursor?: numb
   if (params.cursor != null) {
     search.set('cursor', String(params.cursor))
   }
-  return request<{ok: true; jobs: Job[]; next_cursor?: number | null}>(`/v1/jobs?${search.toString()}`)
+  return request<{ok: true; jobs: Job[]; next_cursor?: number | null}>(`/v1/jobs?${search.toString()}`, init)
 }
 
 export function resendEmail(jobId: string) {
@@ -388,12 +390,13 @@ export type UpOrder = 'pubdate' | 'click'
 export function getUpVideos(
   mid: number,
   params: {page?: number; keyword?: string; order?: UpOrder} = {},
+  init?: RequestInit,
 ) {
   const search = new URLSearchParams()
   search.set('page', String(params.page ?? 1))
   if (params.keyword) search.set('keyword', params.keyword)
   if (params.order) search.set('order', params.order)
-  return request<UpVideosResponse>(`/v1/up/${mid}/videos?${search.toString()}`)
+  return request<UpVideosResponse>(`/v1/up/${mid}/videos?${search.toString()}`, init)
 }
 
 export {API_BASE_URL}
