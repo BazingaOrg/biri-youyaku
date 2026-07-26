@@ -17,11 +17,11 @@ import shutil
 import subprocess
 import tempfile
 import time
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from biri_youyaku.config import settings
+from biri_youyaku.modules._cache import singleflight_singleton
 from biri_youyaku.modules.asr.base import (
     ProgressCallback,
     TranscribeProgress,
@@ -39,7 +39,7 @@ from biri_youyaku.modules.transcript import TranscriptItem
 logger = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=1)
+@singleflight_singleton
 def _load_model() -> Any:
     """Lazy 加载 mlx-audio 包下的 SenseVoice 模型。第一次调用约 5-10s。"""
     try:

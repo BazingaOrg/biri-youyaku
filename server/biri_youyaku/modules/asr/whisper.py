@@ -1,7 +1,6 @@
 import asyncio
-from functools import lru_cache
-
 from biri_youyaku.config import settings
+from biri_youyaku.modules._cache import singleflight_singleton
 from biri_youyaku.modules.asr.base import (
     ProgressCallback,
     TranscribeProgress,
@@ -16,7 +15,7 @@ def resolve_device() -> str:
     return "auto"
 
 
-@lru_cache(maxsize=1)
+@singleflight_singleton
 def _load_model():
     """faster-whisper 模型单例：第一次推理后驻留内存。"""
     try:
@@ -38,7 +37,7 @@ def _run_sync(audio_path: str, language: str | None):
 class FasterWhisperTranscriber:
     @staticmethod
     def warmup() -> None:
-        """同步加载模型权重，与 transcribe 共用 @lru_cache 的 _load_model 单例。"""
+        """同步加载模型权重，与 transcribe 共用 _load_model 单例。"""
         _load_model()
 
     async def transcribe(

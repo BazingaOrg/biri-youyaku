@@ -6,11 +6,11 @@ import shutil
 import subprocess
 import tempfile
 import time
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from biri_youyaku.config import settings
+from biri_youyaku.modules._cache import singleflight_singleton
 from biri_youyaku.modules.asr.base import (
     ProgressCallback,
     TranscribeProgress,
@@ -32,7 +32,7 @@ def _has_ffmpeg() -> bool:
     return bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
 
 
-@lru_cache(maxsize=1)
+@singleflight_singleton
 def _load_model():
     """加载 SenseVoice。
 
@@ -155,7 +155,7 @@ async def _emit(on_progress: ProgressCallback | None, items: list[TranscriptItem
 class SenseVoiceTranscriber:
     @staticmethod
     def warmup() -> None:
-        """同步加载模型权重；与 transcribe 共用 @lru_cache 的 _load_model 单例。"""
+        """同步加载模型权重；与 transcribe 共用 _load_model 单例。"""
         _load_model()
 
     async def transcribe(

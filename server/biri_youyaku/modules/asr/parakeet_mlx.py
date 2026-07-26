@@ -12,11 +12,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from biri_youyaku.config import settings
+from biri_youyaku.modules._cache import singleflight_singleton
 from biri_youyaku.modules.asr.base import (
     ProgressCallback,
     TranscribeProgress,
@@ -31,7 +31,7 @@ _PARAKEET_CHUNK_SECONDS = 120.0
 _PARAKEET_OVERLAP_SECONDS = 15.0
 
 
-@lru_cache(maxsize=1)
+@singleflight_singleton
 def _load_model() -> Any:
     try:
         from parakeet_mlx import from_pretrained

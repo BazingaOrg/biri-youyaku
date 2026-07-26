@@ -24,6 +24,8 @@ from biri_youyaku.modules.llm.segmenter import should_chunk, split_transcript
 
 logger = logging.getLogger(__name__)
 
+_STREAM_FLUSH_INTERVAL = 0.1
+
 SummaryChunkCallback = Callable[[str], Awaitable[None]]
 TokenUsageCallback = Callable[[dict], Awaitable[None]]
 # (done, total) 分段总结进度：长视频段级总结阶段没有流式 token，靠这个让前端
@@ -181,19 +183,74 @@ async def _complete_stream(
         logger.error("LLM 流式调用失败 model=%s: %s", model, _format_llm_error(exc))
         raise
 
-    content = ""
-    async for chunk in stream:
-        usage = _usage_to_dict(getattr(chunk, "usage", None))
-        if usage is not None and on_usage is not None:
-            await on_usage(usage)
-        if not chunk.choices:
-            continue
-        delta = chunk.choices[0].delta.content or ""
-        if not delta:
-            continue
-        content += delta
-        await on_chunk(content)
-    return content
+    parts: list[str] = []
+    pending: list[str] = []
+    pending_length = 0
+    last_emitted: str | None = None
+
+    async def flush() -> None:
+        nonlocal pending_length, last_emitted
+        if not pending:
+            return
+        content = "".join(parts)
+        pending.clear()
+        pending_length = 0
+        if content != last_emitted:
+            await on_chunk(content)
+            last_emitted = content
+
+    iterator = stream.__aiter__()
+    next_chunk = asyncio.create_task(anext(iterator))
+    flush_timer: asyncio.Task[None] | None = None
+    try:
+        while True:
+            wait_for = {next_chunk}
+            if flush_timer is not None:
+                wait_for.add(flush_timer)
+            done, _ = await asyncio.wait(wait_for, return_when=asyncio.FIRST_COMPLETED)
+
+            if flush_timer in done:
+                flush_timer = None
+                await flush()
+
+            if next_chunk not in done:
+                continue
+            try:
+                chunk = next_chunk.result()
+            except StopAsyncIteration:
+                break
+            next_chunk = asyncio.create_task(anext(iterator))
+
+            usage = _usage_to_dict(getattr(chunk, "usage", None))
+            if usage is not None and on_usage is not None:
+                await on_usage(usage)
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta.content or ""
+            if not delta:
+                continue
+            parts.append(delta)
+            pending.append(delta)
+            pending_length += len(delta)
+            if pending_length >= 256:
+                if flush_timer is not None:
+                    flush_timer.cancel()
+                    await asyncio.gather(flush_timer, return_exceptions=True)
+                    flush_timer = None
+                await flush()
+            elif flush_timer is None:
+                # Timer 与下一次 __anext__ 并行等待，保证稀疏流的首块不会一直滞留。
+                flush_timer = asyncio.create_task(asyncio.sleep(_STREAM_FLUSH_INTERVAL))
+        await flush()
+    finally:
+        for task in (next_chunk, flush_timer):
+            if task is not None and not task.done():
+                task.cancel()
+        await asyncio.gather(
+            *(task for task in (next_chunk, flush_timer) if task is not None),
+            return_exceptions=True,
+        )
+    return "".join(parts)
 
 
 async def _repair_summary_json(

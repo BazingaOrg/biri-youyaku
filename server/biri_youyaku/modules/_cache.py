@@ -11,10 +11,33 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Hashable
-from functools import wraps
+from functools import lru_cache, wraps
 from typing import Any, TypeVar
 
 T = TypeVar("T")
+
+
+def singleflight_singleton(func: Callable[[], T]) -> Callable[[], T]:
+    """为同步、无参的惰性资源加载器提供线程安全单例。
+
+    ``lru_cache`` 本身不会把并发的首次未命中合并；锁住缓存调用即可避免多个
+    请求同时加载同一份模型。被加载对象的后续推理不在这个装饰器的锁内。
+    """
+
+    cached = lru_cache(maxsize=1)(func)
+    lock = threading.Lock()
+
+    @wraps(func)
+    def wrapper() -> T:
+        with lock:
+            return cached()
+
+    def cache_clear() -> None:
+        with lock:
+            cached.cache_clear()
+
+    wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
+    return wrapper
 
 
 def ttl_lru(maxsize: int, ttl_seconds: float):

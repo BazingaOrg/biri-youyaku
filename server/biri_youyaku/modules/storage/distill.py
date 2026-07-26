@@ -12,6 +12,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from biri_youyaku.config import settings
@@ -45,6 +47,24 @@ def ensure_dirs(mid: int) -> None:
     videos_dir(mid).mkdir(parents=True, exist_ok=True)
 
 
+def _atomic_write_text(path: Path, content: str) -> None:
+    """写入同目录临时文件后原子替换，避免中断时破坏已有语料。"""
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
+        ) as file:
+            temp_path = Path(file.name)
+            file.write(content)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temp_path, path)
+    except Exception:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise
+
+
 def video_exists(mid: int, bvid: str) -> bool:
     return video_path(mid, bvid).exists()
 
@@ -52,7 +72,7 @@ def video_exists(mid: int, bvid: str) -> bool:
 def save_video(mid: int, bvid: str, content: str) -> Path:
     ensure_dirs(mid)
     path = video_path(mid, bvid)
-    path.write_text(content, encoding="utf-8")
+    _atomic_write_text(path, content)
     return path
 
 
@@ -66,7 +86,7 @@ def read_video(mid: int, bvid: str) -> str | None:
 def save_dynamics(mid: int, content: str) -> Path:
     ensure_dirs(mid)
     path = dynamics_path(mid)
-    path.write_text(content, encoding="utf-8")
+    _atomic_write_text(path, content)
     return path
 
 
@@ -80,7 +100,7 @@ def read_dynamics(mid: int) -> str | None:
 def save_corpus(mid: int, content: str) -> Path:
     ensure_dirs(mid)
     path = corpus_path(mid)
-    path.write_text(content, encoding="utf-8")
+    _atomic_write_text(path, content)
     return path
 
 
@@ -94,7 +114,7 @@ def read_corpus(mid: int) -> str | None:
 def save_manifest(mid: int, manifest: dict) -> Path:
     ensure_dirs(mid)
     path = manifest_path(mid)
-    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    _atomic_write_text(path, json.dumps(manifest, ensure_ascii=False, indent=2))
     return path
 
 

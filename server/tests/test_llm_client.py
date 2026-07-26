@@ -234,7 +234,127 @@ async def test_complete_stream_publishes_accumulated_chunks():
     )
 
     assert result == "hello"
-    assert chunks == ["hel", "hello"]
+    assert chunks == ["hello"]
+    assert chunks[-1] == result
     assert calls[0]["stream"] is True
     assert calls[0]["stream_options"] == {"include_usage": True}
     assert usages == [{"input_tokens": 3, "output_tokens": 2, "total_tokens": 5, "cost_estimate": None}]
+
+
+@pytest.mark.asyncio
+async def test_complete_stream_flushes_at_256_characters_then_final_result():
+    chunks = []
+
+    class Delta:
+        def __init__(self, content):
+            self.content = content
+
+    class Choice:
+        def __init__(self, content):
+            self.delta = Delta(content)
+
+    class Chunk:
+        def __init__(self, content):
+            self.choices = [Choice(content)]
+            self.usage = None
+
+    class FakeStream:
+        def __aiter__(self):
+            self.items = iter([Chunk("a" * 255), Chunk("b"), Chunk("c")])
+            return self
+
+        async def __anext__(self):
+            try:
+                return next(self.items)
+            except StopIteration as exc:
+                raise StopAsyncIteration from exc
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            return FakeStream()
+
+    class FakeClient:
+        class chat:
+            completions = FakeCompletions()
+
+    async def on_chunk(text):
+        chunks.append(text)
+
+    result = await client._complete_stream(
+        FakeClient(),
+        model="provider-model",
+        messages=[{"role": "user", "content": "hello"}],
+        temperature=0.2,
+        on_chunk=on_chunk,
+    )
+
+    assert chunks == ["a" * 255 + "b", "a" * 255 + "bc"]
+    assert chunks[-1] == result
+
+
+@pytest.mark.asyncio
+async def test_complete_stream_flushes_sparse_first_chunk_before_next_chunk(monkeypatch):
+    monkeypatch.setattr(client, "_STREAM_FLUSH_INTERVAL", 0.01)
+    flushed = asyncio.Event()
+    release_second_chunk = asyncio.Event()
+    chunks = []
+
+    class Delta:
+        def __init__(self, content):
+            self.content = content
+
+    class Choice:
+        def __init__(self, content):
+            self.delta = Delta(content)
+
+    class Chunk:
+        def __init__(self, content):
+            self.choices = [Choice(content)]
+            self.usage = None
+
+    class SparseStream:
+        def __init__(self):
+            self.step = 0
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            self.step += 1
+            if self.step == 1:
+                return Chunk("first")
+            if self.step == 2:
+                await release_second_chunk.wait()
+                return Chunk(" second")
+            raise StopAsyncIteration
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            return SparseStream()
+
+    class FakeClient:
+        class chat:
+            completions = FakeCompletions()
+
+    async def on_chunk(text):
+        chunks.append(text)
+        if text == "first":
+            flushed.set()
+
+    task = asyncio.create_task(
+        client._complete_stream(
+            FakeClient(),
+            model="provider-model",
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0.2,
+            on_chunk=on_chunk,
+        )
+    )
+
+    await asyncio.wait_for(flushed.wait(), timeout=0.2)
+    assert chunks == ["first"]
+    release_second_chunk.set()
+    result = await asyncio.wait_for(task, timeout=0.2)
+
+    assert result == "first second"
+    assert chunks == ["first", result]
