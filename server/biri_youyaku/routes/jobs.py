@@ -12,7 +12,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from biri_youyaku.auth import require_token
 from biri_youyaku.config import settings
-from biri_youyaku.events import event_bus
+from biri_youyaku.events import SubscriberClosed, event_bus
 from biri_youyaku.jobs import repo
 from biri_youyaku.jobs.cleanup import delete_job_files
 from biri_youyaku.jobs.model import (
@@ -27,7 +27,6 @@ from biri_youyaku.jobs.model import (
 from biri_youyaku.jobs.runner import (
     cancel_job,
     clear_job_state,
-    has_active_task,
     resume_job,
     retry_job,
     start_job,
@@ -169,6 +168,9 @@ async def create_job(request: Request, payload: CreateJobPayload) -> dict:
         bvid = bili_meta.extract_bvid(payload.url)
     except ValueError:
         bvid = None
+    source_url = (
+        bili_meta.canonical_video_url(bvid, bili_meta.extract_page_number(payload.url)) if bvid else payload.url
+    )
     if payload.dedupe and bvid:
         existing = repo.find_completed_by_bvid(bvid)
         if existing is not None:
@@ -180,7 +182,7 @@ async def create_job(request: Request, payload: CreateJobPayload) -> dict:
     # 早失败：开了邮件却没有有效收件人 → 直接拒，别让任务跑完才在 EMAILING 阶段 fail。
     if options.email_enabled:
         _ensure_email_ready()
-    job = repo.create_job(payload.url, options, option_overrides=option_overrides)
+    job = repo.create_job(source_url, options, option_overrides=option_overrides)
     start_job(job.id, llm_api_key=llm_api_key)
     return {"ok": True, "job_id": job.id}
 
@@ -269,6 +271,8 @@ async def stream_job(job_id: str):
                 except asyncio.TimeoutError:
                     yield {"comment": "keepalive"}
                     continue
+                except SubscriberClosed:
+                    return
                 yield {
                     "event": message["event"],
                     "data": json.dumps(message["data"], ensure_ascii=False),
@@ -289,10 +293,8 @@ async def cancel(job_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Job not found")
     # 标记取消 + 取消在跑的 task（现在 transcript→总结 是同一条连续 task，所以
     # 即便处于 TRANSCRIPT_READY 也通常有 task 在跑）。
-    cancel_job(job_id)
-    # 没有在跑 task 的暂停残留（如上传字幕后停在 TRANSCRIPT_READY）：直接落 CANCELED。
-    if job.status == JobStatus.TRANSCRIPT_READY and not has_active_task(job_id):
-        repo.update_status(job_id, JobStatus.CANCELED)
+    # idle CAS 由 runner 完成；只有它实际完成了终态切换才在此发布一次 SSE。
+    if cancel_job(job_id):
         clear_job_state(job_id)
         await event_bus.publish(job_id, "status", {"status": JobStatus.CANCELED.value})
     return {"ok": True}

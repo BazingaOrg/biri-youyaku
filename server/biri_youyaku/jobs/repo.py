@@ -12,7 +12,7 @@ from biri_youyaku.jobs.model import (
     PAUSED_OR_TERMINAL_JOB_STATUSES,
     TERMINAL_JOB_STATUSES,
 )
-from biri_youyaku.modules.bilibili.meta import Chapter
+from biri_youyaku.modules.bilibili.meta import Chapter, canonical_video_url
 from biri_youyaku.modules.transcript import TranscriptItem
 
 
@@ -295,6 +295,71 @@ def update_status(job_id: str, status: JobStatus) -> None:
         )
 
 
+def transition_status(
+    job_id: str,
+    status: JobStatus,
+    *,
+    expected_statuses: Collection[JobStatus],
+) -> bool:
+    """Atomically move a job only when it is still in an expected state."""
+    if not expected_statuses:
+        return False
+    placeholders, values = _status_filter(expected_statuses)
+    timestamp = now_ms()
+    completed_at = timestamp if status == JobStatus.COMPLETED else None
+    stream_finished_at = timestamp if status in TERMINAL_JOB_STATUSES else None
+    with connect() as connection:
+        cursor = connection.execute(
+            f"""
+            UPDATE jobs
+            SET status = ?, updated_at = ?, completed_at = COALESCE(?, completed_at),
+                stream_finished_at = COALESCE(?, stream_finished_at)
+            WHERE id = ? AND status IN ({placeholders})
+            """,
+            (
+                status.value,
+                timestamp,
+                completed_at,
+                stream_finished_at,
+                job_id,
+                *values,
+            ),
+        )
+    return cursor.rowcount == 1
+
+
+def fail_stale_running_job(
+    job_id: str,
+    *,
+    expected_status: JobStatus,
+    cutoff_ms: int,
+    message: str,
+) -> bool:
+    """Atomically mark one unchanged running job as stale/failed."""
+    timestamp = now_ms()
+    with connect() as connection:
+        cursor = connection.execute(
+            """
+            UPDATE jobs
+            SET status = ?, error_stage = ?, error_message = ?, error_code = ?,
+                updated_at = ?, stream_finished_at = COALESCE(stream_finished_at, ?)
+            WHERE id = ? AND status = ? AND updated_at < ?
+            """,
+            (
+                JobStatus.FAILED.value,
+                expected_status.value,
+                message,
+                "STAGE_STUCK",
+                timestamp,
+                timestamp,
+                job_id,
+                expected_status.value,
+                cutoff_ms,
+            ),
+        )
+    return cursor.rowcount == 1
+
+
 def _set(job_id: str, **fields: Any) -> None:
     """通用 single-row 更新：拼 `SET col = ?, ..., updated_at = ? WHERE id = ?`。
 
@@ -522,6 +587,27 @@ def find_completed_by_bvid(bvid: str, *, include_distill: bool = False) -> Job |
             LIMIT 1
             """,
             (bvid, JobStatus.COMPLETED.value),
+        ).fetchone()
+    return _row_to_job(row) if row else None
+
+
+def find_active_distill_by_bvid(bvid: str) -> Job | None:
+    """Return the newest in-flight distill job by persisted BV or its canonical source URL."""
+    if not bvid:
+        return None
+    placeholders, statuses = _status_filter(TERMINAL_JOB_STATUSES)
+    source_url = canonical_video_url(bvid)
+    with connect() as connection:
+        row = connection.execute(
+            f"""
+            SELECT * FROM jobs
+            WHERE json_extract(effective_options_json, '$.task_type') = 'distill'
+              AND status NOT IN ({placeholders})
+              AND (bvid = ? OR (bvid IS NULL AND url = ?))
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (*statuses, bvid, source_url),
         ).fetchone()
     return _row_to_job(row) if row else None
 

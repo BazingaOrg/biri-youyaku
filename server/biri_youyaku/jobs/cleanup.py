@@ -6,10 +6,11 @@ import time
 from pathlib import Path
 
 from biri_youyaku.config import settings
-from biri_youyaku.db import connect
+from biri_youyaku.db import maintenance_connection
 from biri_youyaku.distill import repo as distill_repo
 from biri_youyaku.jobs import repo
-from biri_youyaku.jobs.model import Job, JobStatus, RETENTION_DELETE_JOB_STATUSES
+from biri_youyaku.jobs.model import Job, RETENTION_DELETE_JOB_STATUSES
+from biri_youyaku.jobs.runner import has_active_task
 
 logger = logging.getLogger(__name__)
 
@@ -74,14 +75,15 @@ async def fail_stale_running_once() -> int:
     cutoff = repo.now_ms() - hours * 60 * 60 * 1000
     count = 0
     for job in repo.list_running_jobs_stale_before(cutoff):
-        repo.set_error(
+        if has_active_task(job.id):
+            continue
+        if repo.fail_stale_running_job(
             job.id,
-            stage=job.status.value,
+            expected_status=job.status,
+            cutoff_ms=cutoff,
             message=f"任务在 {hours}h 内无心跳，已自动置 FAILED",
-            code="STAGE_STUCK",
-        )
-        repo.update_status(job.id, JobStatus.FAILED)
-        count += 1
+        ):
+            count += 1
     if count:
         logger.info("Marked %d stale running jobs as FAILED", count)
     return count
@@ -190,7 +192,7 @@ def clean_tempfile_residues() -> int:
 
 
 def _checkpoint_wal_sync() -> None:
-    with connect() as connection:
+    with maintenance_connection() as connection:
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
 
@@ -203,7 +205,7 @@ async def checkpoint_wal() -> None:
 
 
 def _vacuum_db_sync() -> None:
-    with connect() as connection:
+    with maintenance_connection() as connection:
         connection.execute("VACUUM")
 
 

@@ -40,6 +40,12 @@ def extract_bvid(url: str) -> str:
     return match.group(1)
 
 
+def canonical_video_url(bvid: str, page_number: int | None = None) -> str:
+    """构造唯一允许交给下载器的 B 站视频 URL。"""
+    url = f"https://www.bilibili.com/video/{bvid}"
+    return f"{url}?p={page_number}" if page_number is not None else url
+
+
 _SHORT_HOSTS = ("b23.tv", "b.23.tv")
 
 
@@ -264,7 +270,7 @@ async def fetch(url: str) -> VideoMeta:
     owner = data.get("owner") or {}
     owner_mid = owner.get("mid")
     return VideoMeta(
-        url=url,
+        url=canonical_video_url(bvid, page_number),
         bvid=bvid,
         cid=cid,
         title=base_title,

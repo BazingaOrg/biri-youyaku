@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from biri_youyaku import db
@@ -5,6 +7,7 @@ from biri_youyaku.jobs import repo, runner
 from biri_youyaku.jobs.model import JobOptions, JobStatus
 from biri_youyaku.modules.bilibili.meta import VideoMeta
 from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
+from biri_youyaku.routes import jobs as job_routes
 
 
 async def _fake_summarize(job, video_meta, items, *, llm_api_key=None, on_chunk=None, on_usage=None, on_segment=None):
@@ -149,3 +152,118 @@ async def test_audio_only_job_clears_cached_llm_key(monkeypatch, tmp_path):
     assert completed is not None
     assert completed.status == JobStatus.COMPLETED
     assert job.id not in runner._registry.llm_api_keys
+
+
+@pytest.mark.asyncio
+async def test_shutdown_drains_without_canceling_or_rewriting_active_job(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    runner._registry.reset_for_tests()
+    db.init_db()
+    restarting = repo.create_job("https://www.bilibili.com/video/BV-restart", JobOptions())
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def wait_forever(job_id):
+        async with runner._job_lifecycle(job_id, JobStatus.PENDING):
+            started.set()
+            await release.wait()
+
+    runner._spawn(restarting.id, lambda: wait_forever(restarting.id))
+    await started.wait()
+    monkeypatch.setattr(runner, "_SHUTDOWN_DRAIN_SECONDS", 0)
+    assert await runner.shutdown() == {restarting.id: "unknown"}
+    assert repo.get_job(restarting.id).status == JobStatus.PENDING
+    assert restarting.id in runner._registry.tasks
+
+    blocked = repo.create_job("https://www.bilibili.com/video/BV-blocked", JobOptions())
+    runner._spawn(blocked.id, lambda: wait_forever(blocked.id))
+    assert blocked.id not in runner._registry.tasks
+
+    release.set()
+    await runner._registry.tasks[restarting.id]
+
+    runner.prepare_startup()
+    canceled = repo.create_job("https://www.bilibili.com/video/BV-cancel", JobOptions())
+    cancel_started = asyncio.Event()
+    cancel_release = asyncio.Event()
+
+    async def wait_to_cancel(job_id):
+        async with runner._job_lifecycle(job_id, JobStatus.PENDING):
+            cancel_started.set()
+            await cancel_release.wait()
+
+    runner._spawn(canceled.id, lambda: wait_to_cancel(canceled.id))
+    await cancel_started.wait()
+    await asyncio.sleep(0)
+    runner.cancel_job(canceled.id)
+    await asyncio.sleep(0)
+    assert repo.get_job(canceled.id).status == JobStatus.CANCELED
+
+
+def test_recovery_skips_distill_and_does_not_resend_email(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    runner._registry.reset_for_tests()
+    db.init_db()
+    distill = repo.create_job(
+        "https://www.bilibili.com/video/BV-distill", JobOptions(task_type="distill")
+    )
+    email = repo.create_job("https://www.bilibili.com/video/BV-email", JobOptions(email_enabled=True))
+    repo.update_status(email.id, JobStatus.EMAILING)
+    started: list[str] = []
+    resumed: list[str] = []
+    monkeypatch.setattr(runner, "start_job", lambda job_id: started.append(job_id))
+    monkeypatch.setattr(runner, "resume_job", lambda job_id: resumed.append(job_id))
+
+    runner.recover_unfinished_jobs()
+
+    assert distill.id not in started
+    assert distill.id not in resumed
+    recovered_email = repo.get_job(email.id)
+    assert recovered_email.status == JobStatus.FAILED
+    assert recovered_email.error_code == "DELIVERY_UNKNOWN"
+
+
+@pytest.mark.asyncio
+async def test_idle_cancel_publishes_once_and_never_reverses_terminal(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    runner._registry.reset_for_tests()
+    db.init_db()
+    events = []
+    cleared = []
+    monkeypatch.setattr(job_routes, "clear_job_state", lambda job_id: cleared.append(job_id))
+
+    async def fake_publish(*args):
+        events.append(args)
+
+    monkeypatch.setattr(job_routes.event_bus, "publish", fake_publish)
+    idle = repo.create_job("https://www.bilibili.com/video/BV-idle-route", JobOptions())
+    await job_routes.cancel(idle.id)
+    assert repo.get_job(idle.id).status == JobStatus.CANCELED
+    assert cleared == [idle.id]
+    assert events == [(idle.id, "status", {"status": JobStatus.CANCELED.value})]
+
+    terminal = repo.create_job("https://www.bilibili.com/video/BV-terminal", JobOptions())
+    repo.update_status(terminal.id, JobStatus.COMPLETED)
+    await job_routes.cancel(terminal.id)
+    assert repo.get_job(terminal.id).status == JobStatus.COMPLETED
+    assert cleared == [idle.id]
+    assert len(events) == 1
+
+
+def test_cancel_job_is_idempotent_for_terminal_and_idle_jobs(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    runner._registry.reset_for_tests()
+    db.init_db()
+    terminal = repo.create_job("https://www.bilibili.com/video/BV-terminal-child", JobOptions())
+    repo.update_status(terminal.id, JobStatus.COMPLETED)
+    runner._registry.cancel_requested.add(terminal.id)
+
+    runner.cancel_job(terminal.id)
+    assert repo.get_job(terminal.id).status == JobStatus.COMPLETED
+    assert terminal.id not in runner._registry.cancel_requested
+
+    idle = repo.create_job("https://www.bilibili.com/video/BV-idle", JobOptions())
+    runner.cancel_job(idle.id)
+    assert repo.get_job(idle.id).status == JobStatus.CANCELED
+    assert idle.id not in runner._registry.cancel_requested

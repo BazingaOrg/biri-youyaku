@@ -1,6 +1,8 @@
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from threading import Lock
+from typing import Iterator
 
 from biri_youyaku.config import settings
 
@@ -87,6 +89,20 @@ def connect() -> sqlite3.Connection:
             _connection.execute("PRAGMA synchronous=NORMAL")
             _connection.execute("PRAGMA busy_timeout=5000")
         return _connection
+
+
+@contextmanager
+def maintenance_connection() -> Iterator[sqlite3.Connection]:
+    """为可能在线程中运行的维护操作创建并关闭独立连接。"""
+    db_path = Path(settings.db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("PRAGMA busy_timeout=5000")
+        yield connection
+        connection.commit()
+    finally:
+        connection.close()
 
 
 def init_db() -> None:

@@ -93,3 +93,30 @@ async def test_await_job_completion_multiple_waiters_share_future(monkeypatch, t
 
     assert results == [JobStatus.CANCELED, JobStatus.CANCELED]
     assert job.id not in runner._completion
+
+
+@pytest.mark.asyncio
+async def test_canceling_one_waiter_does_not_cancel_shared_completion_future(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    job = repo.create_job("https://www.bilibili.com/video/BV123", JobOptions())
+    runner._registry.reset_for_tests()
+    release = asyncio.Event()
+
+    async def _finish_after_release():
+        await release.wait()
+        repo.update_status(job.id, JobStatus.COMPLETED)
+
+    runner._spawn(job.id, _finish_after_release)
+    first_waiter = asyncio.create_task(runner.await_job_completion(job.id))
+    await asyncio.sleep(0)
+    shared = runner._completion[job.id]
+    first_waiter.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first_waiter
+    assert not shared.cancelled()
+
+    second_waiter = asyncio.create_task(runner.await_job_completion(job.id))
+    release.set()
+    assert await second_waiter == JobStatus.COMPLETED
+    assert job.id not in runner._completion

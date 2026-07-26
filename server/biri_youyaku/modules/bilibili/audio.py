@@ -4,7 +4,7 @@ from pathlib import Path
 from collections.abc import Awaitable, Callable
 
 from biri_youyaku.config import settings
-from biri_youyaku.modules.bilibili.meta import VideoMeta
+from biri_youyaku.modules.bilibili.meta import VideoMeta, canonical_video_url, extract_page_number
 
 DownloadProgressCallback = Callable[[dict], Awaitable[None]]
 
@@ -69,6 +69,7 @@ async def download(
     target = output_path.with_suffix(".%(ext)s")
     cookie_path = _write_cookie_file()
     loop = asyncio.get_running_loop()
+    download_url = canonical_video_url(meta.bvid, extract_page_number(meta.url))
 
     def progress_hook(data: dict) -> None:
         if on_progress is None:
@@ -100,7 +101,7 @@ async def download(
 
         try:
             with YoutubeDL(options) as ydl:
-                ydl.download([meta.url])
+                ydl.download([download_url])
         except Exception as exc:
             raise RuntimeError(_format_download_error(str(exc), cookie_path is not None)) from exc
 

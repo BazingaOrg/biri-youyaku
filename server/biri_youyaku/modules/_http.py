@@ -109,7 +109,12 @@ async def aclose_all() -> None:
         try:
             await oc.close()
         except Exception:
-            logger.exception("close openai client %s failed", key)
+            _, base_url, timeout, _ = key
+            logger.error(
+                "close openai client failed (provider=openai, base_url=%s, timeout=%s)",
+                base_url,
+                timeout,
+            )
     _openai_clients.clear()
 
 

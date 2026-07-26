@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from biri_youyaku.config import Settings
 from biri_youyaku.jobs.model import JobOptions
 
@@ -49,3 +52,25 @@ def test_job_options_from_overrides_keeps_defaults_for_unset_fields():
     assert options.email_enabled is False
     assert options.llm_model == "model-b"
     assert "summary_words" not in options.as_dict()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error_type"),
+    [
+        ("llm_timeout_seconds", 0, "greater_than"),
+        ("max_inflight_jobs", 0, "greater_than"),
+        ("max_concurrent_jobs", 0, "greater_than"),
+        ("max_concurrent_summaries", -1, "greater_than"),
+        ("distill_transcript_concurrency", 0, "greater_than"),
+        ("audio_retention_days", -1, "greater_than_equal"),
+        ("job_retention_days", -1, "greater_than_equal"),
+        ("orphan_file_retention_days", -1, "greater_than_equal"),
+    ],
+)
+def test_settings_rejects_invalid_runtime_limits(field, value, error_type):
+    with pytest.raises(ValidationError) as exc:
+        Settings(**{field: value})
+
+    error = exc.value.errors()[0]
+    assert error["loc"] == (field,)
+    assert error["type"] == error_type

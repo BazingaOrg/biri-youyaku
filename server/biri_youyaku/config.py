@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # DeepSeek 最新基础款（替代已弃用的 deepseek-chat/deepseek-reasoner）。
     # 旗舰 deepseek-v4-pro 也可换用，但贵 3 倍、并发上限低，本场景不必。
     llm_model: str = "deepseek-v4-flash"
-    llm_timeout_seconds: int = 300
+    llm_timeout_seconds: int = Field(default=300, gt=0)
     llm_max_retries: int = 2
     llm_temperature: float | None = None
     llm_chunk_token_threshold: int = 30000
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     max_video_duration_seconds: int = 9000
     # 在飞任务总数上限（PENDING + 各 RUNNING 阶段总和）。即便单 IP 在限流内灌任务，
     # 也不会让 PENDING 队列无限堆积。超出 → 503 让前端友好提示「忙不过来」。
-    max_inflight_jobs: int = 20
+    max_inflight_jobs: int = Field(default=20, gt=0)
     # 公网部署防 SSRF：/v1/llm/models 接受的 base_url 必须以这些 host 结尾。
     # 留空 = 允许任意（仅适合本地）。生产环境务必配齐。
     llm_base_url_allowed_hosts: str = (
@@ -74,15 +74,15 @@ class Settings(BaseSettings):
     distill_storage_dir: Path = Path("data/distill")
     db_path: Path = Path("data/biri_youyaku.db")
 
-    audio_retention_days: int = 7
-    job_retention_days: int = 180
-    max_concurrent_jobs: int = 2
-    max_concurrent_summaries: int = 2
+    audio_retention_days: int = Field(default=7, ge=0)
+    job_retention_days: int = Field(default=180, ge=0)
+    max_concurrent_jobs: int = Field(default=2, gt=0)
+    max_concurrent_summaries: int = Field(default=2, gt=0)
     # 蒸馏 _do_prepare_transcripts 阶段并发获取/转写视频的上限。
-    distill_transcript_concurrency: int = 3
+    distill_transcript_concurrency: int = Field(default=3, gt=0)
 
     # P3 新增：清理 / 维护策略
-    orphan_file_retention_days: int = 3
+    orphan_file_retention_days: int = Field(default=3, ge=0)
     stale_running_fail_hours: int = 4
     db_vacuum_interval_days: int = 30
     wal_checkpoint_interval_hours: int = 24

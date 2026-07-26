@@ -1,3 +1,5 @@
+import logging
+
 from biri_youyaku.modules import _http
 
 
@@ -26,3 +28,21 @@ def test_bili_client_ignores_proxy_environment_without_socksio(monkeypatch):
         assert captured_kwargs["trust_env"] is False
     finally:
         _http._reset_for_tests()
+
+
+async def test_aclose_all_logs_openai_close_failure_without_api_key(caplog):
+    secret = "super-secret-api-key"
+
+    class FailingClient:
+        async def close(self):
+            raise RuntimeError("close failed")
+
+    _http._reset_for_tests()
+    _http._openai_clients[(secret, "https://api.example/v1", 12.5, 3)] = FailingClient()
+    with caplog.at_level(logging.ERROR, logger=_http.__name__):
+        await _http.aclose_all()
+
+    assert secret not in caplog.text
+    assert "provider=openai" in caplog.text
+    assert "base_url=https://api.example/v1" in caplog.text
+    assert "timeout=12.5" in caplog.text

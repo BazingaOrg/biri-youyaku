@@ -157,6 +157,33 @@ async def test_create_job_can_bypass_dedupe(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_job_normalizes_untrusted_url_with_bvid(monkeypatch):
+    created = Job(
+        id="job-new",
+        url="https://www.bilibili.com/video/BV1xx?p=2",
+        status=JobStatus.PENDING,
+        options=JobOptions(),
+        created_at=2,
+        updated_at=2,
+    )
+    received = {}
+    monkeypatch.setattr(jobs_route.repo, "count_jobs_excluding_status", lambda statuses: 0)
+
+    def create_job(url, options, option_overrides=None):
+        received["url"] = url
+        return created
+
+    monkeypatch.setattr(jobs_route.repo, "create_job", create_job)
+    monkeypatch.setattr(jobs_route, "start_job", lambda *args, **kwargs: None)
+
+    await jobs_route.create_job(
+        None, jobs_route.CreateJobPayload(url="http://127.0.0.1:8000/video/BV1xx?p=2", dedupe=False)
+    )
+
+    assert received["url"] == "https://www.bilibili.com/video/BV1xx?p=2"
+
+
+@pytest.mark.asyncio
 async def test_resummarize_creates_transcript_ready_job(monkeypatch):
     source = Job(
         id="job-source",

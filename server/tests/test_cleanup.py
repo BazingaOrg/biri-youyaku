@@ -1,4 +1,6 @@
 import os
+import sqlite3
+from contextlib import contextmanager
 
 import pytest
 
@@ -57,6 +59,27 @@ async def test_cleanup_deletes_expired_terminal_jobs(monkeypatch, tmp_path):
     assert result["jobs_removed"] == 1
     assert repo.get_job(job.id) is None
     assert not summary_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_fail_stale_running_skips_active_task_and_uses_atomic_transition(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    monkeypatch.setattr(cleanup.settings, "stale_running_fail_hours", 1)
+    db.init_db()
+    active = repo.create_job("https://www.bilibili.com/video/BV-active", JobOptions())
+    stale = repo.create_job("https://www.bilibili.com/video/BV-stale", JobOptions())
+    with db.connect() as connection:
+        connection.execute(
+            "UPDATE jobs SET updated_at = ? WHERE id IN (?, ?)",
+            (repo.now_ms() - 2 * 60 * 60 * 1000, active.id, stale.id),
+        )
+    monkeypatch.setattr(cleanup, "has_active_task", lambda job_id: job_id == active.id)
+
+    assert await cleanup.fail_stale_running_once() == 1
+    assert repo.get_job(active.id).status == JobStatus.PENDING
+    failed = repo.get_job(stale.id)
+    assert failed.status == JobStatus.FAILED
+    assert failed.error_code == "STAGE_STUCK"
 
 
 def _age_dir(path, days):
@@ -120,3 +143,31 @@ async def test_scan_orphans_respects_retention_window_for_distill_dir(monkeypatc
 
     assert result["distill_orphans"] == 0
     assert fresh_orphan_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_uses_short_connection_without_committing_repo_transaction(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    job = repo.create_job("https://www.bilibili.com/video/BV123", JobOptions())
+    shared_connection = db.connect()
+    shared_connection.execute("UPDATE jobs SET title = ? WHERE id = ?", ("uncommitted", job.id))
+
+    @contextmanager
+    def short_maintenance_connection():
+        connection = sqlite3.connect(tmp_path / "jobs.db")
+        connection.execute("PRAGMA busy_timeout=1")
+        try:
+            yield connection
+        finally:
+            connection.close()
+
+    monkeypatch.setattr(cleanup, "maintenance_connection", short_maintenance_connection)
+
+    await cleanup.checkpoint_wal()
+
+    assert shared_connection.in_transaction
+    shared_connection.rollback()
+    assert repo.get_job(job.id).title is None

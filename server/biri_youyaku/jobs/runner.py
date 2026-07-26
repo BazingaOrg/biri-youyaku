@@ -40,6 +40,7 @@ class _JobRegistry:
 
     def __init__(self) -> None:
         self.tasks: dict[str, asyncio.Task[None]] = {}
+        self.stopping = False
         self.cancel_requested: set[str] = set()
         self.llm_api_keys: dict[str, str] = {}
         self.stage_started_at: dict[str, tuple[str, int]] = {}
@@ -69,6 +70,7 @@ class _JobRegistry:
     def reset_for_tests(self) -> None:
         """测试 fixture 用：清空所有状态，但不取消已有 task。"""
         self.tasks.clear()
+        self.stopping = False
         self.cancel_requested.clear()
         self.llm_api_keys.clear()
         self.stage_started_at.clear()
@@ -83,6 +85,7 @@ _completion: dict[str, "asyncio.Future[JobStatus]"] = {}
 
 _io_semaphore = asyncio.Semaphore(settings.max_concurrent_jobs)
 _summary_semaphore = asyncio.Semaphore(settings.max_concurrent_summaries)
+_SHUTDOWN_DRAIN_SECONDS = 2
 
 
 class StageTimeoutError(RuntimeError):
@@ -120,16 +123,21 @@ async def _with_timeout(stage: JobStatus, timeout_seconds: float, awaitable):
         raise StageTimeoutError(f"{stage.value} 超时") from exc
 
 
-async def transition(job_id: str, status: JobStatus, **data) -> None:
+async def transition(job_id: str, status: JobStatus, **data) -> bool:
+    job = repo.get_job(job_id)
+    if job is None or job.status in TERMINAL_JOB_STATUSES:
+        return False
     now = repo.now_ms()
     previous = _registry.stage_started_at.get(job_id)
+    if not repo.transition_status(job_id, status, expected_statuses={job.status}):
+        return False
     if previous is not None and previous[0] != status.value:
         repo.add_stage_timing(job_id, previous[0], previous[1], now)
         _registry.stage_started_at.pop(job_id, None)
     if status not in PAUSED_OR_TERMINAL_JOB_STATUSES:
         _registry.stage_started_at[job_id] = (status.value, now)
-    repo.update_status(job_id, status)
     await event_bus.publish(job_id, "status", {"status": status.value, **data})
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +178,7 @@ def _resolve_completion(job_id: str) -> None:
 
 def _spawn(job_id: str, coro_factory) -> None:
     """共用「注册 task + done_callback 自清」的模板。"""
-    if job_id in _registry.tasks:
+    if _registry.stopping or job_id in _registry.tasks:
         return
     task = asyncio.create_task(coro_factory())
     _registry.tasks[job_id] = task
@@ -193,13 +201,18 @@ async def await_job_completion(job_id: str) -> JobStatus:
     if job is not None and job.status in TERMINAL_JOB_STATUSES:
         return job.status
     fut = _completion.get(job_id)
-    if fut is None:
-        fut = asyncio.get_event_loop().create_future()
+    if fut is None or fut.cancelled():
+        # This block has no await, so replacement is atomic with respect to the
+        # event loop. A canceled caller must never poison the shared completion
+        # signal that the task's done callback will resolve.
+        fut = asyncio.get_running_loop().create_future()
         _completion[job_id] = fut
-    return await fut
+    return await asyncio.shield(fut)
 
 
 def start_job(job_id: str, *, llm_api_key: str | None = None) -> None:
+    if _registry.stopping:
+        return
     if job_id in _registry.tasks:
         return
     _registry.remember_key(job_id, llm_api_key)
@@ -207,17 +220,36 @@ def start_job(job_id: str, *, llm_api_key: str | None = None) -> None:
 
 
 def resume_job(job_id: str, *, llm_api_key: str | None = None) -> None:
+    if _registry.stopping:
+        return
     if job_id in _registry.tasks:
         return
     _registry.remember_key(job_id, llm_api_key)
     _spawn(job_id, lambda: run_after_resume(job_id))
 
 
-def cancel_job(job_id: str) -> None:
-    _registry.cancel_requested.add(job_id)
+def cancel_job(job_id: str) -> bool:
+    """Cancel an active task, or atomically terminally cancel an idle job.
+
+    Returns true only when this call performed the idle status transition; callers
+    use that signal to publish the one terminal status event.
+    """
+    job = repo.get_job(job_id)
+    if job is None or job.status in TERMINAL_JOB_STATUSES:
+        _registry.cancel_requested.discard(job_id)
+        return False
     task = _registry.tasks.get(job_id)
     if task is not None:
+        _registry.cancel_requested.add(job_id)
         task.cancel()
+        return False
+    transitioned = repo.transition_status(
+        job_id,
+        JobStatus.CANCELED,
+        expected_statuses=set(JobStatus) - TERMINAL_JOB_STATUSES,
+    )
+    _registry.cancel_requested.discard(job_id)
+    return transitioned
 
 
 def clear_job_state(job_id: str) -> None:
@@ -235,22 +267,60 @@ def has_active_task(job_id: str) -> bool:
     return job_id in _registry.tasks
 
 
+def prepare_startup() -> None:
+    """Allow starts after a previous lifespan shutdown in this process."""
+    _registry.stopping = False
+
+
+def begin_shutdown() -> None:
+    """Synchronously stop accepting new work before lifespan teardown awaits anything."""
+    _registry.stopping = True
+
+
+async def shutdown() -> dict[str, str]:
+    """Give active jobs a bounded chance to drain without cancelling or rewriting them."""
+    begin_shutdown()
+    tasks = list(_registry.tasks.values())
+    if tasks:
+        _, pending = await asyncio.wait(tasks, timeout=_SHUTDOWN_DRAIN_SECONDS)
+    else:
+        pending = set()
+    unfinished = {
+        job_id: _registry.stage_started_at.get(job_id, ("unknown", 0))[0]
+        for job_id, task in _registry.tasks.items()
+        if task in pending
+    }
+    if unfinished:
+        logger.warning("Jobs still active after shutdown drain: %s", unfinished)
+    return unfinished
+
+
 def recover_unfinished_jobs() -> None:
     for job in repo.list_recoverable_jobs():
+        if job.options.task_type == "distill":
+            continue
         logger.info("Recovering unfinished job %s from %s", job.id, job.status.value)
         if job.status in {JobStatus.PENDING, JobStatus.FETCHING_META, JobStatus.DOWNLOADING_AUDIO}:
             start_job(job.id)
         else:
+            if job.status == JobStatus.EMAILING:
+                message = "服务重启时邮件送达状态未知，不自动重发"
+                code = "DELIVERY_UNKNOWN"
+            else:
+                message = "服务重启时任务处于不可安全恢复的中间状态"
+                code = "RECOVERY_UNSAFE"
             repo.set_error(
                 job.id,
-                job.status.value,
-                "服务重启时任务处于不可安全恢复的中间状态",
-                "RECOVERY_UNSAFE",
+                "RECOVERY_UNSAFE" if job.status == JobStatus.EMAILING else job.status.value,
+                message,
+                code,
             )
-            repo.update_status(job.id, JobStatus.FAILED)
+            repo.transition_status(job.id, JobStatus.FAILED, expected_statuses={job.status})
     # 字幕已就绪但还没总结的任务：重启时自动续跑（正常流程已服务端自动续，这里兜底
     # 历史遗留 / 上传字幕 等停在 TRANSCRIPT_READY 的任务，确保总结/邮件不丢）。
     for job in repo.list_jobs_by_status({JobStatus.TRANSCRIPT_READY}):
+        if job.options.task_type == "distill":
+            continue
         logger.info("Recovering TRANSCRIPT_READY job %s → 自动续跑总结", job.id)
         # 老任务可能记着已停用的供应商快照（如 kimi + Moonshot base_url），配当前 key 会
         # 401。续跑前把 LLM 供应商刷成当前默认值，其它选项（语言 / 邮件等）保留。
@@ -292,7 +362,10 @@ async def _job_lifecycle(job_id: str, initial_stage: JobStatus):
     try:
         yield stage
     except (asyncio.CancelledError, CanceledError):
-        await transition(job_id, JobStatus.CANCELED)
+        if job_id in _registry.cancel_requested:
+            await transition(job_id, JobStatus.CANCELED)
+        else:
+            logger.warning("Job %s was cancelled without a user cancellation request", job_id)
         _registry.llm_api_keys.pop(job_id, None)
     except Exception as exc:
         logger.exception("Job %s failed at %s", job_id, stage.value)
