@@ -48,6 +48,22 @@ def test_status_transitions_and_error(monkeypatch, tmp_path):
     assert loaded.error == "boom"
 
 
+def test_status_cas_does_not_reverse_a_terminal_run(monkeypatch, tmp_path):
+    _init_db(monkeypatch, tmp_path)
+    run = distill_repo.create_run(1, video_limit=50, dir_path="d")
+
+    assert distill_repo.update_status(run.id, DistillRunStatus.COMPLETED) is True
+    assert (
+        distill_repo.update_status(
+            run.id,
+            DistillRunStatus.FETCHING_DYNAMICS,
+            expected_status=DistillRunStatus.COMPLETED,
+        )
+        is False
+    )
+    assert distill_repo.get_run(run.id).status == DistillRunStatus.COMPLETED
+
+
 def test_update_counters_merges_partial_updates(monkeypatch, tmp_path):
     _init_db(monkeypatch, tmp_path)
     run = distill_repo.create_run(1, video_limit=50, dir_path="d")

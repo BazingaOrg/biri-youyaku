@@ -4,14 +4,14 @@ import logging
 import shutil
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from biri_youyaku.auth import require_token
 from biri_youyaku.distill import orchestrator
 from biri_youyaku.distill import repo as distill_repo
 from biri_youyaku.distill.model import DistillRun, TERMINAL_DISTILL_RUN_STATUS_VALUES
-from biri_youyaku.events import event_bus
+from biri_youyaku.events import SubscriberClosed, event_bus
 from biri_youyaku.modules.storage import distill as distill_storage
 from biri_youyaku.rate_limit import limiter
 
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/v1", dependencies=[Depends(require_token)])
 
 
 class StartDistillPayload(BaseModel):
-    video_limit: int = 50
+    video_limit: int = Field(default=50, ge=1, le=200)
 
 
 def _serialize_run(run: DistillRun) -> dict:
@@ -79,6 +79,8 @@ async def stream_distill(run_id: str):
                 except asyncio.TimeoutError:
                     yield {"comment": "keepalive"}
                     continue
+                except SubscriberClosed:
+                    return
                 yield {
                     "event": message["event"],
                     "data": json.dumps(message["data"], ensure_ascii=False),

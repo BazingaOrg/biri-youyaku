@@ -156,3 +156,29 @@ def test_bvid_dedup_queries_exclude_distill_jobs_by_default(monkeypatch, tmp_pat
     repo.update_status(summary_job.id, JobStatus.COMPLETED)
     status = repo.summary_status_for_bvids(["BV9"])
     assert status["BV9"]["job_id"] == summary_job.id
+
+
+def test_find_active_distill_by_bvid_ignores_terminal_jobs(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    active = repo.create_job("https://www.bilibili.com/video/BV-active", JobOptions(task_type="distill"))
+    terminal = repo.create_job(
+        "https://www.bilibili.com/video/BV-active?p=2", JobOptions(task_type="distill")
+    )
+    for job in (active, terminal):
+        repo.update_meta(job.id, bvid="BV-active", cid=1, title="t", author="a", duration=1)
+    repo.update_status(terminal.id, JobStatus.COMPLETED)
+
+    found = repo.find_active_distill_by_bvid("BV-active")
+    assert found is not None and found.id == active.id
+
+
+def test_find_active_distill_by_bvid_falls_back_to_canonical_source_url(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    pending = repo.create_job(
+        "https://www.bilibili.com/video/BV-pending", JobOptions(task_type="distill")
+    )
+
+    found = repo.find_active_distill_by_bvid("BV-pending")
+    assert found is not None and found.id == pending.id

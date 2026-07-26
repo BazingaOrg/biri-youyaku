@@ -30,7 +30,7 @@ from biri_youyaku.distill._util import format_ts
 from biri_youyaku.distill.model import (
     DistillRun,
     DistillRunStatus,
-    TERMINAL_DISTILL_RUN_STATUS_VALUES,
+    TERMINAL_DISTILL_RUN_STATUSES,
 )
 from biri_youyaku.events import event_bus
 from biri_youyaku.jobs import repo as job_repo
@@ -63,9 +63,14 @@ _DYNAMIC_TYPE_LABELS = {
 # 但蒸馏没有取消 key / llm_api_key 这些额外状态，不需要一整个 registry 类）。
 _active_tasks: dict[str, asyncio.Task] = {}
 
-# run_id -> 该 run 已 spawn 的 job id 集合，仅内存态、不落库；用于 cancel_run 联动
-# `runner.cancel_job()` 打断正在跑的转写 job（_obtain_transcript 里注册）。
+# 服务关闭时不再接受或恢复任务；进程退出不等同于用户取消，数据库状态必须保留给下次启动。
+_stopping = False
+_NONTERMINAL_STATUSES = frozenset(DistillRunStatus) - TERMINAL_DISTILL_RUN_STATUSES
+
+# run_id -> job id，以及反向的 job id -> 所有等待它的 run。只有最后一个 owner 取消时，
+# 才能取消共享的转写 job。
 _run_job_ids: dict[str, set[str]] = {}
+_job_owners: dict[str, set[str]] = {}
 
 
 class DistillRunCancelled(Exception):
@@ -73,6 +78,8 @@ class DistillRunCancelled(Exception):
 
 
 async def start_run(mid: int, video_limit: int = 50) -> DistillRun:
+    if _stopping:
+        raise RuntimeError("服务正在关闭，暂不接受新的蒸馏任务")
     existing = distill_repo.find_active_by_mid(mid)
     if existing is not None:
         raise RuntimeError(f"UP {mid} 已有进行中的蒸馏任务（run_id={existing.id}）")
@@ -83,15 +90,27 @@ async def start_run(mid: int, video_limit: int = 50) -> DistillRun:
 
 
 def cancel_run(run_id: str) -> None:
-    run = distill_repo.get_run(run_id)
-    if run is None or run.status.value in TERMINAL_DISTILL_RUN_STATUS_VALUES:
+    if not distill_repo.update_status(
+        run_id,
+        DistillRunStatus.CANCELLED,
+        expected_status=_NONTERMINAL_STATUSES,
+    ):
         return
-    distill_repo.update_status(run_id, DistillRunStatus.CANCELLED)
-    for job_id in _run_job_ids.get(run_id, set()):
-        runner.cancel_job(job_id)
+    _release_job_owners(run_id, cancel_if_last=True)
+    task = _active_tasks.get(run_id)
+    if task is not None:
+        task.cancel()
 
 
 def recover_unfinished_runs() -> None:
+    """兼容旧调用方；新的 lifespan 应调用 ``prepare_startup``。"""
+    prepare_startup()
+
+
+def prepare_startup() -> None:
+    """允许接收任务，并续跑上次进程留下的非终态任务。"""
+    global _stopping
+    _stopping = False
     for run in distill_repo.list_unfinished_runs():
         logger.info(
             "Recovering unfinished distill run %s (mid=%s, status=%s)",
@@ -102,12 +121,46 @@ def recover_unfinished_runs() -> None:
         _spawn(run.id)
 
 
+def begin_shutdown() -> None:
+    """同步关闸，阻止关闭开始后创建或恢复新的编排 task。"""
+    global _stopping
+    _stopping = True
+
+
+async def shutdown() -> None:
+    """停止编排 task，但不将其误记为用户取消，留待下一次启动恢复。"""
+    begin_shutdown()
+    tasks = list(_active_tasks.values())
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 def has_active_task(run_id: str) -> bool:
     return run_id in _active_tasks
 
 
+def _register_job_owner(run_id: str, job_id: str) -> None:
+    _run_job_ids.setdefault(run_id, set()).add(job_id)
+    _job_owners.setdefault(job_id, set()).add(run_id)
+
+
+def _release_job_owners(run_id: str, *, cancel_if_last: bool) -> None:
+    for job_id in _run_job_ids.pop(run_id, set()):
+        owners = _job_owners.get(job_id)
+        if owners is None:
+            continue
+        owners.discard(run_id)
+        if owners:
+            continue
+        _job_owners.pop(job_id, None)
+        if cancel_if_last:
+            runner.cancel_job(job_id)
+
+
 def _spawn(run_id: str) -> None:
-    if run_id in _active_tasks:
+    if _stopping or run_id in _active_tasks:
         return
     task = asyncio.create_task(_run_pipeline(run_id))
     _active_tasks[run_id] = task
@@ -128,6 +181,11 @@ def _raise_if_cancelled(run_id: str) -> None:
         raise DistillRunCancelled()
 
 
+def _transition(run_id: str, status: DistillRunStatus, *, error: str | None = None) -> None:
+    if not distill_repo.update_status(run_id, status, error=error):
+        raise DistillRunCancelled()
+
+
 async def _run_pipeline(run_id: str) -> None:
     try:
         # 每个阶段开始前都先检查一次取消：光在阶段之间检查不够——每个 _do_* 一进
@@ -141,25 +199,25 @@ async def _run_pipeline(run_id: str) -> None:
         records = await _do_extract(run_id, records)
         _raise_if_cancelled(run_id)
 
-        distill_repo.update_status(run_id, DistillRunStatus.ASSEMBLING)
+        _transition(run_id, DistillRunStatus.ASSEMBLING)
         await _publish(run_id, DistillRunStatus.ASSEMBLING)
         run = distill_repo.get_run(run_id)
         if run is None:
             return
         assembler.assemble(run, records)
 
-        distill_repo.update_status(run_id, DistillRunStatus.COMPLETED)
+        _transition(run_id, DistillRunStatus.COMPLETED)
         await _publish(run_id, DistillRunStatus.COMPLETED)
     except DistillRunCancelled:
-        distill_repo.update_status(run_id, DistillRunStatus.CANCELLED)
-        await _publish(run_id, DistillRunStatus.CANCELLED)
+        if distill_repo.update_status(run_id, DistillRunStatus.CANCELLED):
+            await _publish(run_id, DistillRunStatus.CANCELLED)
     except Exception as exc:
         logger.exception("Distill run %s failed", run_id)
-        distill_repo.update_status(run_id, DistillRunStatus.FAILED, error=str(exc))
-        await _publish(run_id, DistillRunStatus.FAILED, error=str(exc))
+        if distill_repo.update_status(run_id, DistillRunStatus.FAILED, error=str(exc)):
+            await _publish(run_id, DistillRunStatus.FAILED, error=str(exc))
     finally:
         # run 结束（无论成功/取消/失败）：清掉本 run 的 job id 追踪，避免内存常驻。
-        _run_job_ids.pop(run_id, None)
+        _release_job_owners(run_id, cancel_if_last=False)
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +236,7 @@ async def _do_fetch_dynamics(run_id: str) -> None:
     run = distill_repo.get_run(run_id)
     if run is None:
         raise DistillRunCancelled()
-    distill_repo.update_status(run_id, DistillRunStatus.FETCHING_DYNAMICS)
+    _transition(run_id, DistillRunStatus.FETCHING_DYNAMICS)
     await _publish(run_id, DistillRunStatus.FETCHING_DYNAMICS)
 
     try:
@@ -248,10 +306,22 @@ async def _obtain_transcript(run_id: str, bvid: str) -> str | None:
         if items:
             return transcript_to_text(items)
 
+    active = job_repo.find_active_distill_by_bvid(bvid)
+    if active is not None:
+        _register_job_owner(run_id, active.id)
+        start_job(active.id)
+        final_status = await runner.await_job_completion(active.id)
+        if final_status == JobStatus.COMPLETED:
+            current = job_repo.get_job(active.id)
+            if current is not None:
+                items = transcript_items_from_job(current)
+                return transcript_to_text(items) if items else None
+        return None
+
     url = f"https://www.bilibili.com/video/{bvid}"
     options = JobOptions(task_type="distill", email_enabled=False)
     job = job_repo.create_job(url, options)
-    _run_job_ids.setdefault(run_id, set()).add(job.id)
+    _register_job_owner(run_id, job.id)
     start_job(job.id)
 
     final_status = await runner.await_job_completion(job.id)
@@ -274,7 +344,7 @@ async def _do_prepare_transcripts(run_id: str) -> list[dict]:
     run = distill_repo.get_run(run_id)
     if run is None:
         raise DistillRunCancelled()
-    distill_repo.update_status(run_id, DistillRunStatus.PREPARING_TRANSCRIPTS)
+    _transition(run_id, DistillRunStatus.PREPARING_TRANSCRIPTS)
     await _publish(run_id, DistillRunStatus.PREPARING_TRANSCRIPTS)
 
     author, up_videos = await _fetch_up_videos_limited(run.mid, run.video_limit)
@@ -367,7 +437,7 @@ async def _do_extract(run_id: str, records: list[dict]) -> list[dict]:
     run = distill_repo.get_run(run_id)
     if run is None:
         raise DistillRunCancelled()
-    distill_repo.update_status(run_id, DistillRunStatus.EXTRACTING)
+    _transition(run_id, DistillRunStatus.EXTRACTING)
     await _publish(run_id, DistillRunStatus.EXTRACTING)
 
     semaphore = asyncio.Semaphore(_EXTRACT_CONCURRENCY)

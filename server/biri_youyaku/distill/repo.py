@@ -1,5 +1,6 @@
 import json
 import uuid
+from collections.abc import Collection
 from typing import Any
 
 from biri_youyaku.db import connect
@@ -115,12 +116,36 @@ def list_unfinished_runs() -> list[DistillRun]:
     return [_row_to_run(row) for row in rows]
 
 
-def update_status(run_id: str, status: DistillRunStatus, *, error: str | None = None) -> None:
-    with connect() as connection:
-        connection.execute(
-            "UPDATE distill_runs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
-            (status.value, error, now_ms(), run_id),
+def update_status(
+    run_id: str,
+    status: DistillRunStatus,
+    *,
+    error: str | None = None,
+    expected_status: DistillRunStatus | Collection[DistillRunStatus] | None = None,
+) -> bool:
+    """原子更新状态，且绝不把终态改回非终态。
+
+    ``expected_status`` 用于调用者做 compare-and-swap，返回值表示本次是否实际写入。
+    """
+    terminal_values = [item.value for item in TERMINAL_DISTILL_RUN_STATUSES]
+    clauses = ["id = ?", f"status NOT IN ({','.join('?' for _ in terminal_values)})"]
+    values: list[Any] = [status.value, error, now_ms(), run_id, *terminal_values]
+    if expected_status is not None:
+        expected = (
+            [expected_status]
+            if isinstance(expected_status, DistillRunStatus)
+            else list(expected_status)
         )
+        if not expected:
+            return False
+        clauses.append(f"status IN ({','.join('?' for _ in expected)})")
+        values.extend(item.value for item in expected)
+    with connect() as connection:
+        result = connection.execute(
+            f"UPDATE distill_runs SET status = ?, error = ?, updated_at = ? WHERE {' AND '.join(clauses)}",
+            values,
+        )
+    return result.rowcount == 1
 
 
 def set_up_name(run_id: str, up_name: str) -> None:

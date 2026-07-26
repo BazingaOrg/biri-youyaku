@@ -168,6 +168,124 @@ async def test_cancel_run_marks_cancelled_and_pipeline_stops_between_steps(monke
 
 
 @pytest.mark.asyncio
+async def test_shutdown_cancels_tasks_without_marking_user_cancelled(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    orchestrator.prepare_startup()
+    run = distill_repo.create_run(9, video_limit=5, dir_path=str(tmp_path))
+    distill_repo.update_status(run.id, DistillRunStatus.EXTRACTING)
+    started = asyncio.Event()
+
+    async def blocked_pipeline(run_id):
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(orchestrator, "_run_pipeline", blocked_pipeline)
+    orchestrator._spawn(run.id)
+    await started.wait()
+
+    await orchestrator.shutdown()
+
+    assert not orchestrator.has_active_task(run.id)
+    assert distill_repo.get_run(run.id).status == DistillRunStatus.EXTRACTING
+    orchestrator.prepare_startup()
+
+
+def test_prepare_startup_keeps_unfinished_status_and_spawns_once(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    run = distill_repo.create_run(9, video_limit=5, dir_path=str(tmp_path))
+    distill_repo.update_status(run.id, DistillRunStatus.EXTRACTING)
+    spawned = []
+    monkeypatch.setattr(orchestrator, "_spawn", lambda run_id: spawned.append(run_id))
+
+    orchestrator.prepare_startup()
+
+    assert distill_repo.get_run(run.id).status == DistillRunStatus.EXTRACTING
+    assert spawned == [run.id]
+
+
+@pytest.mark.asyncio
+async def test_obtain_transcript_awaits_existing_active_distill_job(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    existing = Job(
+        id="active-distill",
+        url="https://www.bilibili.com/video/BV_ACTIVE",
+        status=JobStatus.TRANSCRIBING,
+        options=JobOptions(task_type="distill"),
+        created_at=0,
+        updated_at=0,
+    )
+    completed = Job(
+        id=existing.id,
+        url=existing.url,
+        status=JobStatus.COMPLETED,
+        options=existing.options,
+        transcript=[{"start": 0.0, "end": 1.0, "text": "共享转写"}],
+        created_at=0,
+        updated_at=0,
+    )
+    monkeypatch.setattr(
+        orchestrator.job_repo, "find_completed_by_bvid", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(
+        orchestrator.job_repo, "find_active_distill_by_bvid", lambda bvid: existing, raising=False
+    )
+    monkeypatch.setattr(
+        orchestrator.runner, "await_job_completion", lambda job_id: _completed_status()
+    )
+    started = []
+    monkeypatch.setattr(orchestrator, "start_job", lambda job_id: started.append(job_id))
+    monkeypatch.setattr(orchestrator.job_repo, "get_job", lambda job_id: completed)
+    monkeypatch.setattr(
+        orchestrator.job_repo,
+        "create_job",
+        lambda *args, **kwargs: pytest.fail("existing distill job must be reused"),
+    )
+
+    text = await orchestrator._obtain_transcript("run-id", "BV_ACTIVE")
+
+    assert text == "共享转写"
+    assert orchestrator._job_owners[existing.id] == {"run-id"}
+    assert started == [existing.id]
+    orchestrator._release_job_owners("run-id", cancel_if_last=False)
+
+
+def test_cancel_run_cancels_transcript_when_it_is_the_only_owner(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    run = distill_repo.create_run(1, video_limit=1, dir_path=str(tmp_path))
+    cancelled = []
+    monkeypatch.setattr(orchestrator.runner, "cancel_job", cancelled.append)
+    orchestrator._register_job_owner(run.id, "shared-job")
+
+    orchestrator.cancel_run(run.id)
+
+    assert cancelled == ["shared-job"]
+    assert "shared-job" not in orchestrator._job_owners
+
+
+def test_cancel_run_keeps_transcript_running_for_another_owner(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    first = distill_repo.create_run(1, video_limit=1, dir_path=str(tmp_path))
+    second = distill_repo.create_run(2, video_limit=1, dir_path=str(tmp_path))
+    cancelled = []
+    monkeypatch.setattr(orchestrator.runner, "cancel_job", cancelled.append)
+    orchestrator._register_job_owner(first.id, "shared-job")
+    orchestrator._register_job_owner(second.id, "shared-job")
+
+    orchestrator.cancel_run(first.id)
+
+    assert cancelled == []
+    assert orchestrator._job_owners["shared-job"] == {second.id}
+
+    orchestrator.cancel_run(second.id)
+
+    assert cancelled == ["shared-job"]
+
+
+async def _completed_status() -> JobStatus:
+    return JobStatus.COMPLETED
+
+
+@pytest.mark.asyncio
 async def test_prepare_transcripts_fan_out_respects_concurrency_limit(monkeypatch, tmp_path):
     """`_do_prepare_transcripts` 用 settings.distill_transcript_concurrency 做 fan-out
     上限；用一个记录高水位的假 _obtain_transcript 验证从未超过配置的并发数。"""
@@ -295,7 +413,7 @@ async def test_cancel_run_calls_cancel_job_for_spawned_jobs_and_stops_new_spawns
 
     async def fake_obtain_transcript(run_id, bvid):
         job_id = f"job-{bvid}"
-        orchestrator._run_job_ids.setdefault(run_id, set()).add(job_id)
+        orchestrator._register_job_owner(run_id, job_id)
         # 模拟第一个视频处理期间被取消。
         orchestrator.cancel_run(run_id)
         return f"transcript-{bvid}"

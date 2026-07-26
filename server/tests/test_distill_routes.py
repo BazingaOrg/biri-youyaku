@@ -1,10 +1,24 @@
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from biri_youyaku import db
 from biri_youyaku.distill import repo as distill_repo
 from biri_youyaku.distill.model import DistillRunStatus
 from biri_youyaku.routes import distill as distill_route
+
+
+@pytest.mark.parametrize("video_limit", [1, 200])
+def test_start_distill_payload_accepts_video_limit_bounds(video_limit):
+    assert distill_route.StartDistillPayload(video_limit=video_limit).video_limit == video_limit
+
+
+@pytest.mark.parametrize("video_limit", [0, -1, 201, 1_000_000])
+def test_start_distill_payload_rejects_invalid_video_limits(video_limit):
+    with pytest.raises(ValidationError) as exc:
+        distill_route.StartDistillPayload(video_limit=video_limit)
+
+    assert exc.value.errors()[0]["loc"] == ("video_limit",)
 
 
 def _init_db(monkeypatch, tmp_path):
