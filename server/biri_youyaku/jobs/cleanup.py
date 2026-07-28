@@ -6,11 +6,12 @@ import time
 from pathlib import Path
 
 from biri_youyaku.config import settings
-from biri_youyaku.db import maintenance_connection
+from biri_youyaku.db import connect, maintenance_connection
 from biri_youyaku.distill import repo as distill_repo
 from biri_youyaku.jobs import repo
 from biri_youyaku.jobs.model import Job, RETENTION_DELETE_JOB_STATUSES
 from biri_youyaku.jobs.runner import has_active_task
+from biri_youyaku.weekly import repo as weekly_summary_repo
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,110 @@ def delete_job_files(job: Job, *, audio_only: bool = False) -> None:
             logger.warning("Failed to remove summary file for job %s", job.id, exc_info=True)
 
 
+def collect_job_file_cleanup_targets(job: Job) -> list[dict[str, str]]:
+    """Snapshot every known file before a bulk-delete transaction commits."""
+    targets: list[dict[str, str]] = []
+    if job.audio_path:
+        audio_path = Path(job.audio_path)
+        targets.append({"job_id": job.id, "file_type": "audio", "path": str(audio_path)})
+        try:
+            siblings = list(audio_path.parent.glob(f"{job.id}*"))
+        except OSError:
+            logger.warning("Failed to list audio files for job %s", job.id, exc_info=True)
+            targets.append(
+                {
+                    "job_id": job.id,
+                    "file_type": "audio_siblings",
+                    "path": str(audio_path.parent),
+                }
+            )
+        else:
+            targets.extend(
+                {"job_id": job.id, "file_type": "audio", "path": str(sibling)}
+                for sibling in siblings
+                if sibling.is_file()
+            )
+    if job.summary_path:
+        targets.append({"job_id": job.id, "file_type": "summary", "path": job.summary_path})
+    return targets
+
+
+def delete_job_file_targets_with_result(targets: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Delete a pre-commit file snapshot and return any post-commit failures."""
+    failures: list[dict[str, str]] = []
+    for target in targets:
+        path = Path(target["path"])
+        try:
+            if path.is_file():
+                path.unlink()
+        except OSError:
+            logger.warning(
+                "Failed to remove %s file for job %s", target["file_type"], target["job_id"], exc_info=True
+            )
+            failures.append(target)
+    return failures
+
+
+def delete_job_files_with_result(job: Job) -> list[dict[str, str]]:
+    """Compatibility wrapper for callers that do not need transaction snapshots."""
+    return delete_job_file_targets_with_result(collect_job_file_cleanup_targets(job))
+
+
+def enqueue_pending_file_cleanup(failures: list[dict[str, str]]) -> None:
+    """Persist post-commit failures so maintenance can retry them immediately.
+
+    The caller has already committed job deletion.  Paths stay internal and are
+    never sent to the browser, while the returned API response reports a count
+    and file type for observability.
+    """
+    now = repo.now_ms()
+    rows = [
+        (failure["path"], failure["job_id"], failure["file_type"], now, now)
+        for failure in failures
+        if failure.get("path")
+    ]
+    if not rows:
+        return
+    with connect() as connection:
+        connection.executemany(
+            """INSERT INTO pending_file_cleanup (path, job_id, file_type, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(path) DO UPDATE SET job_id=excluded.job_id, file_type=excluded.file_type,
+                 updated_at=excluded.updated_at""",
+            rows,
+        )
+
+
+def retry_pending_file_cleanup_once() -> int:
+    """Retry every explicitly recorded post-commit cleanup failure once."""
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT path, job_id, file_type FROM pending_file_cleanup ORDER BY updated_at, path"
+        ).fetchall()
+    removed = 0
+    for row in rows:
+        path = Path(row["path"])
+        try:
+            if row["file_type"] == "audio_siblings":
+                for sibling in path.glob(f"{row['job_id']}*"):
+                    if sibling.is_file():
+                        sibling.unlink()
+            elif path.is_file():
+                path.unlink()
+        except OSError as exc:
+            with connect() as connection:
+                connection.execute(
+                    "UPDATE pending_file_cleanup SET attempts=attempts+1, updated_at=?, last_error=? WHERE path=?",
+                    (repo.now_ms(), str(exc)[:1000], str(path)),
+                )
+            logger.warning("Failed to retry pending file cleanup for %s", path, exc_info=True)
+        else:
+            with connect() as connection:
+                connection.execute("DELETE FROM pending_file_cleanup WHERE path=?", (str(path),))
+            removed += 1
+    return removed
+
+
 # --- 主循环：每轮做哪些事 -------------------------------------------------------
 
 
@@ -58,6 +163,7 @@ async def cleanup_once() -> dict[str, int]:
     expired_jobs = repo.list_jobs_by_status_before(RETENTION_DELETE_JOB_STATUSES, job_cutoff)
     for job in expired_jobs:
         delete_job_files(job)
+        weekly_summary_repo.mark_stale_for_job_ids([job.id])
         jobs_removed += repo.delete_job(job.id)
 
     return {"audio_removed": audio_removed, "jobs_removed": jobs_removed}
@@ -148,6 +254,7 @@ def _scan_orphan_distill_dirs(directory: Path, retention_days: int) -> int:
 
 async def scan_orphans_once() -> dict[str, int]:
     """文件 → DB 反向校验：DB 不引用的文件清掉。"""
+    retry_pending_file_cleanup_once()
     retention = max(0, settings.orphan_file_retention_days)
     audio_dir = Path(settings.audio_storage_dir)
     summary_dir = Path(settings.summary_storage_dir)

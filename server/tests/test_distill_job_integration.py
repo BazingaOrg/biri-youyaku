@@ -112,13 +112,14 @@ def test_list_jobs_excludes_distill_task_type_by_default(monkeypatch, tmp_path):
 def test_list_jobs_cursor_pagination_still_excludes_distill(monkeypatch, tmp_path):
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
     db.init_db()
-    repo.create_job("https://www.bilibili.com/video/BV1", JobOptions(task_type="summary"))
+    summary_job = repo.create_job("https://www.bilibili.com/video/BV1", JobOptions(task_type="summary"))
     distill_job = repo.create_job(
         "https://www.bilibili.com/video/BV2", JobOptions(task_type="distill")
     )
 
+    repo.update_status(summary_job.id, JobStatus.COMPLETED)
     first_page = repo.list_jobs(limit=50)
-    cursor = first_page[-1].created_at + 1  # 往后翻一页，覆盖 cursor 分支
+    cursor = repo.encode_history_cursor(first_page[-1])
     next_page = repo.list_jobs(limit=50, cursor=cursor)
 
     assert distill_job.id not in {job.id for job in first_page}

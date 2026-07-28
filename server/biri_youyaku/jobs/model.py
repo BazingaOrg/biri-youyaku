@@ -33,6 +33,10 @@ TERMINAL_JOB_STATUS_VALUES = frozenset(status.value for status in TERMINAL_JOB_S
 PAUSED_OR_TERMINAL_JOB_STATUSES = TERMINAL_JOB_STATUSES | frozenset({JobStatus.TRANSCRIPT_READY})
 RETENTION_DELETE_JOB_STATUSES = PAUSED_OR_TERMINAL_JOB_STATUSES
 
+# 用户从历史页发起的批量删除只覆盖已经结束的主任务。它刻意不复用
+# RETENTION_DELETE_JOB_STATUSES：TRANSCRIPT_READY 仍可继续总结，不应被当作历史清理掉。
+BULK_DELETE_JOB_STATUSES = TERMINAL_JOB_STATUSES
+
 
 @dataclass(frozen=True)
 class JobOptions:
@@ -70,9 +74,7 @@ class JobOptions:
         defaults = cls.from_settings(settings).as_dict()
         allowed = cls.__dataclass_fields__.keys()
         overrides = {
-            key: value
-            for key, value in data.items()
-            if key in allowed and value is not None
+            key: value for key, value in data.items() if key in allowed and value is not None
         }
         return cls.from_dict({**defaults, **overrides})
 

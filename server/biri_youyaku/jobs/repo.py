@@ -6,6 +6,7 @@ from typing import Any, Collection, Iterable
 
 from biri_youyaku.db import connect
 from biri_youyaku.jobs.model import (
+    BULK_DELETE_JOB_STATUSES,
     Job,
     JobOptions,
     JobStatus,
@@ -180,28 +181,154 @@ def get_job(job_id: str) -> Job | None:
 _EXCLUDE_DISTILL_CLAUSE = "AND json_extract(effective_options_json, '$.task_type') IS NOT 'distill'"
 
 
-def list_jobs(limit: int = 50, offset: int = 0, cursor: int | None = None) -> list[Job]:
-    """列表页接口：走 lite 投影，不拉 transcript/chapters/stage_timings；默认排除 distill 任务。"""
-    with connect() as connection:
-        if cursor is not None:
-            rows = connection.execute(
-                f"""
-                SELECT {_LITE_COLUMNS} FROM jobs
-                WHERE created_at < ? {_EXCLUDE_DISTILL_CLAUSE}
-                ORDER BY created_at DESC LIMIT ?
-                """,
-                (cursor, limit),
-            ).fetchall()
+UNKNOWN_AUTHOR_SENTINEL = "未知 UP"
+_HISTORY_EFFECTIVE_AT = "COALESCE(completed_at, created_at)"
+
+
+def encode_history_cursor(job: Job, *, terminal_only: bool = False) -> str:
+    """The ordered pair used by history pagination (newest first)."""
+    effective_at = job.completed_at if terminal_only and job.completed_at is not None else job.created_at
+    return f"{effective_at}:{job.id}"
+
+
+def _parse_history_cursor(cursor: str | int) -> tuple[int, str | None]:
+    """Accept the former timestamp-only cursor while emitting stable cursors."""
+    raw = str(cursor)
+    timestamp, separator, job_id = raw.partition(":")
+    try:
+        created_at = int(timestamp)
+    except ValueError as exc:
+        raise ValueError("invalid history cursor") from exc
+    if created_at < 0 or (separator and not job_id):
+        raise ValueError("invalid history cursor")
+    return created_at, job_id if separator else None
+
+
+def _history_filter_clauses(
+    *, query: str | None = None, author: str | None = None, tag: str | None = None
+) -> tuple[list[str], list[Any]]:
+    clauses = ["json_extract(effective_options_json, '$.task_type') IS NOT 'distill'"]
+    parameters: list[Any] = []
+    if query:
+        escaped_query = query.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped_query}%"
+        clauses.append(
+            """(
+                lower(COALESCE(title, '')) LIKE ? ESCAPE '\\'
+                OR lower(COALESCE(author, '')) LIKE ? ESCAPE '\\'
+                OR lower(COALESCE(bvid, '')) LIKE ? ESCAPE '\\'
+                OR lower(COALESCE(url, '')) LIKE ? ESCAPE '\\'
+                OR EXISTS (
+                    SELECT 1 FROM json_each(COALESCE(tags_json, '[]')) AS tag_item
+                    WHERE lower(CAST(tag_item.value AS TEXT)) LIKE ? ESCAPE '\\'
+                )
+            )"""
+        )
+        parameters.extend([pattern, pattern, pattern, pattern, pattern])
+    if author:
+        if author == UNKNOWN_AUTHOR_SENTINEL:
+            clauses.append("(author IS NULL OR TRIM(author) = '')")
         else:
-            rows = connection.execute(
-                f"""
-                SELECT {_LITE_COLUMNS} FROM jobs
-                WHERE 1=1 {_EXCLUDE_DISTILL_CLAUSE}
-                ORDER BY created_at DESC LIMIT ? OFFSET ?
-                """,
-                (limit, offset),
-            ).fetchall()
+            clauses.append("TRIM(COALESCE(author, '')) = ?")
+            parameters.append(author)
+    if tag:
+        clauses.append(
+            "EXISTS (SELECT 1 FROM json_each(COALESCE(tags_json, '[]')) AS tag_item WHERE tag_item.value = ?)"
+        )
+        parameters.append(tag)
+    return clauses, parameters
+
+
+def list_jobs(
+    limit: int = 50,
+    offset: int = 0,
+    cursor: str | int | None = None,
+    *,
+    query: str | None = None,
+    author: str | None = None,
+    tag: str | None = None,
+    active_only: bool = False,
+    terminal_only: bool = False,
+) -> list[Job]:
+    """Jobs with compatible default scope plus history-specific scopes.
+
+    Timestamp-only cursors are retained for older callers, while new cursors
+    include ``id`` so jobs completed in the same millisecond cannot be skipped.
+    """
+    clauses, parameters = _history_filter_clauses(query=query, author=author, tag=tag)
+    if active_only and terminal_only:
+        raise ValueError("active and terminal scopes are mutually exclusive")
+    terminal_placeholders, terminal_values = _status_filter(TERMINAL_JOB_STATUSES)
+    legacy_cursor = False
+    if active_only:
+        clauses.append(f"status NOT IN ({terminal_placeholders})")
+        parameters.extend(terminal_values)
+    elif terminal_only:
+        clauses.append(f"status IN ({terminal_placeholders})")
+        parameters.extend(terminal_values)
+    with connect() as connection:
+        cursor_field = _HISTORY_EFFECTIVE_AT if terminal_only else "created_at"
+        if cursor is not None and not active_only:
+            effective_at, job_id = _parse_history_cursor(cursor)
+            if job_id is None:
+                # Compatibility for the old API. It cannot distinguish peers
+                # with equal timestamps and always uses created_at ordering.
+                legacy_cursor = True
+                clauses.append("created_at < ?")
+                parameters.append(effective_at)
+            else:
+                clauses.append(
+                    f"({cursor_field} < ? OR ({cursor_field} = ? AND id < ?))"
+                )
+                parameters.extend([effective_at, effective_at, job_id])
+        elif not active_only:
+            # Offset is only for legacy callers; the history UI uses cursor.
+            pass
+        order_by = (
+            "created_at DESC, id DESC"
+            if active_only or not terminal_only or legacy_cursor
+            else f"{_HISTORY_EFFECTIVE_AT} DESC, id DESC"
+        )
+        pagination = "" if active_only else "LIMIT ? OFFSET ?"
+        statement = f"""
+            SELECT {_LITE_COLUMNS} FROM jobs
+            WHERE {' AND '.join(clauses)}
+            ORDER BY {order_by} {pagination}
+        """
+        page_parameters = [] if active_only else [limit, 0 if cursor is not None else offset]
+        rows = connection.execute(statement, [*parameters, *page_parameters]).fetchall()
     return [_row_to_job_lite(row) for row in rows]
+
+
+def list_job_facets(*, search: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    """All non-distill author/tag facets, independent from loaded history pages."""
+    query_clauses, parameters = _history_filter_clauses(query=search)
+    # Search applies to the facet universe, but never carries author/tag from
+    # the current filter; that would hide values needed to change filters.
+    where = " AND ".join(query_clauses)
+    with connect() as connection:
+        author_rows = connection.execute(
+            f"""
+            SELECT CASE WHEN author IS NULL OR TRIM(author) = '' THEN ? ELSE TRIM(author) END AS value,
+                   COUNT(*) AS count
+            FROM jobs WHERE {where}
+            GROUP BY value ORDER BY count DESC, value COLLATE NOCASE ASC
+            """,
+            [UNKNOWN_AUTHOR_SENTINEL, *parameters],
+        ).fetchall()
+        tag_rows = connection.execute(
+            f"""
+            SELECT TRIM(CAST(tag_item.value AS TEXT)) AS value, COUNT(*) AS count
+            FROM jobs JOIN json_each(COALESCE(jobs.tags_json, '[]')) AS tag_item
+            WHERE {where} AND TRIM(CAST(tag_item.value AS TEXT)) != ''
+            GROUP BY value ORDER BY count DESC, value COLLATE NOCASE ASC
+            """,
+            parameters,
+        ).fetchall()
+    return {
+        "authors": [{"key": row["value"], "label": row["value"], "count": row["count"]} for row in author_rows],
+        "tags": [{"key": row["value"], "label": row["value"], "count": row["count"]} for row in tag_rows],
+    }
 
 
 def list_recoverable_jobs() -> list[Job]:
@@ -637,6 +764,79 @@ def delete_jobs_by_status(statuses: Collection[JobStatus]) -> int:
             values,
         )
         return cursor.rowcount
+
+
+def list_bulk_delete_candidates(
+    *,
+    query: str | None = None,
+    author: str | None = None,
+    tag: str | None = None,
+    connection: Any | None = None,
+) -> list[Job]:
+    """Return every history-page bulk-delete candidate, independent of pagination.
+
+    This is intentionally a database query rather than a filter over the list API:
+    the browser may only have rendered a small, scroll-loaded subset of history.
+    """
+    placeholders, values = _status_filter(BULK_DELETE_JOB_STATUSES)
+    clauses = [
+        f"status IN ({placeholders})",
+        "json_extract(effective_options_json, '$.task_type') IS NOT 'distill'",
+    ]
+    parameters: list[Any] = list(values)
+
+    if query:
+        escaped_query = query.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped_query}%"
+        clauses.append(
+            """(
+                lower(COALESCE(title, '')) LIKE ? ESCAPE '\\'
+                OR lower(COALESCE(author, '')) LIKE ? ESCAPE '\\'
+                OR lower(COALESCE(bvid, '')) LIKE ? ESCAPE '\\'
+                OR lower(COALESCE(url, '')) LIKE ? ESCAPE '\\'
+                OR EXISTS (
+                    SELECT 1 FROM json_each(COALESCE(tags_json, '[]')) AS tag_item
+                    WHERE lower(CAST(tag_item.value AS TEXT)) LIKE ? ESCAPE '\\'
+                )
+            )"""
+        )
+        parameters.extend([pattern, pattern, pattern, pattern, pattern])
+    if author:
+        if author == "未知 UP":
+            clauses.append("(author IS NULL OR TRIM(author) = '')")
+        else:
+            clauses.append("TRIM(COALESCE(author, '')) = ?")
+            parameters.append(author)
+    if tag:
+        clauses.append(
+            "EXISTS (SELECT 1 FROM json_each(COALESCE(tags_json, '[]')) AS tag_item WHERE tag_item.value = ?)"
+        )
+        parameters.append(tag)
+
+    statement = f"""
+        SELECT {_LITE_COLUMNS} FROM jobs
+        WHERE {' AND '.join(clauses)}
+        ORDER BY created_at DESC, id DESC
+        """
+    if connection is None:
+        with connect() as read_connection:
+            rows = read_connection.execute(statement, parameters).fetchall()
+    else:
+        rows = connection.execute(statement, parameters).fetchall()
+    return [_row_to_job_lite(row) for row in rows]
+
+
+def delete_jobs_by_ids(job_ids: Collection[str], *, connection: Any | None = None) -> int:
+    if not job_ids:
+        return 0
+    placeholders = ",".join("?" for _ in job_ids)
+    statement = f"DELETE FROM jobs WHERE id IN ({placeholders})"
+    if connection is None:
+        with connect() as write_connection:
+            cursor = write_connection.execute(statement, list(job_ids))
+            return cursor.rowcount
+    cursor = connection.execute(statement, list(job_ids))
+    return cursor.rowcount
 
 
 def count_jobs_excluding_status(statuses: Collection[JobStatus]) -> int:

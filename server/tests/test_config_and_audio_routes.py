@@ -422,14 +422,17 @@ async def test_delete_rejects_in_flight_job(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_delete_all_reports_deleted_and_skipped_counts(monkeypatch):
-    monkeypatch.setattr(jobs_route.repo, "count_jobs_excluding_status", lambda statuses: 2)
-    monkeypatch.setattr(jobs_route.repo, "list_jobs_by_status", lambda statuses: [])
-    monkeypatch.setattr(jobs_route.repo, "delete_jobs_by_status", lambda statuses: 3)
+async def test_delete_all_is_gone_and_cannot_delete_jobs(monkeypatch):
+    monkeypatch.setattr(
+        jobs_route.repo,
+        "delete_jobs_by_status",
+        lambda _statuses: pytest.fail("legacy endpoint must not delete jobs"),
+    )
 
-    response = await jobs_route.delete_all()
+    with pytest.raises(HTTPException) as exc_info:
+        await jobs_route.delete_all()
 
-    assert response == {"ok": True, "deleted_count": 3, "skipped_count": 2}
+    assert exc_info.value.status_code == 410
 
 
 @pytest.mark.asyncio

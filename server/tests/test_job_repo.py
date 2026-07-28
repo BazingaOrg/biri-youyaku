@@ -1,8 +1,12 @@
+import pytest
+from fastapi import HTTPException
+
 from biri_youyaku import db
 from biri_youyaku.jobs import repo
 from biri_youyaku.jobs.model import JobOptions, JobStatus
 from biri_youyaku.modules.bilibili.meta import Chapter
 from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
+from biri_youyaku.routes import jobs as jobs_route
 
 
 def test_create_job_persists_overrides_and_effective_options(monkeypatch, tmp_path):
@@ -113,12 +117,220 @@ def test_list_jobs_supports_created_at_cursor(monkeypatch, tmp_path):
     first = repo.create_job("https://www.bilibili.com/video/BVfirst", JobOptions())
     second = repo.create_job("https://www.bilibili.com/video/BVsecond", JobOptions())
     with db.connect() as connection:
-        connection.execute("UPDATE jobs SET created_at = ? WHERE id = ?", (100, first.id))
-        connection.execute("UPDATE jobs SET created_at = ? WHERE id = ?", (200, second.id))
+        connection.execute(
+            "UPDATE jobs SET created_at = ?, status = ? WHERE id = ?",
+            (100, JobStatus.COMPLETED.value, first.id),
+        )
+        connection.execute(
+            "UPDATE jobs SET created_at = ?, status = ? WHERE id = ?",
+            (200, JobStatus.COMPLETED.value, second.id),
+        )
 
     jobs = repo.list_jobs(limit=10, cursor=200)
 
     assert [job.id for job in jobs] == [first.id]
+
+
+def test_history_pagination_filters_and_composite_cursor_do_not_skip_same_millisecond(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    matching = [
+        repo.create_job(f"https://www.bilibili.com/video/BVmatch{index}", JobOptions())
+        for index in range(3)
+    ]
+    unrelated = repo.create_job("https://www.bilibili.com/video/BVother", JobOptions())
+    unknown = repo.create_job("https://www.bilibili.com/video/BVunknown", JobOptions())
+    distill = repo.create_job(
+        "https://www.bilibili.com/video/BVdistill", JobOptions(task_type="distill")
+    )
+    for index, job in enumerate(matching):
+        repo.update_meta(
+            job.id,
+            bvid=f"BVmatch{index}",
+            cid=None,
+            title=f"AI review {index}",
+            author="Alice",
+            duration=1,
+        )
+        repo.set_tags(job.id, ["技术"])
+    repo.update_meta(
+        unrelated.id, bvid="BVother", cid=None, title="Other", author="Bob", duration=1
+    )
+    repo.update_meta(
+        unknown.id, bvid="BVunknown", cid=None, title="Unknown", author="", duration=1
+    )
+    repo.update_meta(
+        distill.id, bvid="BVdistill", cid=None, title="AI hidden", author="Alice", duration=1
+    )
+    with db.connect() as connection:
+        for job in [*matching, unrelated, unknown, distill]:
+            connection.execute(
+                "UPDATE jobs SET created_at = ?, status = ? WHERE id = ?",
+                (100, JobStatus.COMPLETED.value, job.id),
+            )
+
+    first_page = repo.list_jobs(
+        limit=2, query="ai", author="Alice", tag="技术", terminal_only=True
+    )
+    second_page = repo.list_jobs(
+        limit=2,
+        cursor=repo.encode_history_cursor(first_page[-1]),
+        query="ai",
+        author="Alice",
+        tag="技术",
+        terminal_only=True,
+    )
+
+    assert {job.id for job in [*first_page, *second_page]} == {job.id for job in matching}
+    assert [job.id for job in repo.list_jobs(limit=10, author="未知 UP")] == [unknown.id]
+
+
+def test_history_pagination_uses_completion_time_before_creation_time(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    old_but_just_completed = repo.create_job("https://www.bilibili.com/video/BVold", JobOptions())
+    recent_completed = repo.create_job("https://www.bilibili.com/video/BVrecent", JobOptions())
+    older_completed = repo.create_job("https://www.bilibili.com/video/BVolder", JobOptions())
+    with db.connect() as connection:
+        connection.execute(
+            "UPDATE jobs SET created_at = ?, completed_at = ?, status = ? WHERE id = ?",
+            (10, 1_000, JobStatus.COMPLETED.value, old_but_just_completed.id),
+        )
+        connection.execute(
+            "UPDATE jobs SET created_at = ?, completed_at = ?, status = ? WHERE id = ?",
+            (900, 900, JobStatus.COMPLETED.value, recent_completed.id),
+        )
+        connection.execute(
+            "UPDATE jobs SET created_at = ?, completed_at = ?, status = ? WHERE id = ?",
+            (800, 800, JobStatus.COMPLETED.value, older_completed.id),
+        )
+
+    first_page = repo.list_jobs(limit=2, terminal_only=True)
+    second_page = repo.list_jobs(
+        limit=2,
+        cursor=repo.encode_history_cursor(first_page[-1], terminal_only=True),
+        terminal_only=True,
+    )
+
+    assert [job.id for job in first_page] == [old_but_just_completed.id, recent_completed.id]
+    assert [job.id for job in second_page] == [older_completed.id]
+
+
+def test_legacy_numeric_cursor_keeps_created_at_semantics_after_completion(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    older = repo.create_job("https://www.bilibili.com/video/BVolder", JobOptions())
+    newer = repo.create_job("https://www.bilibili.com/video/BVnewer", JobOptions())
+    with db.connect() as connection:
+        connection.execute(
+            "UPDATE jobs SET created_at = ?, completed_at = ?, status = ? WHERE id = ?",
+            (100, 9_000, JobStatus.COMPLETED.value, older.id),
+        )
+        connection.execute(
+            "UPDATE jobs SET created_at = ?, completed_at = ?, status = ? WHERE id = ?",
+            (200, 300, JobStatus.COMPLETED.value, newer.id),
+        )
+
+    legacy_page = repo.list_jobs(limit=10, cursor=200)
+
+    assert [job.id for job in legacy_page] == [older.id]
+
+
+def test_history_active_scope_is_complete_and_excluded_from_terminal_pages(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    active = repo.create_job("https://www.bilibili.com/video/BVactive", JobOptions())
+    paused = repo.create_job("https://www.bilibili.com/video/BVpaused", JobOptions())
+    completed = repo.create_job("https://www.bilibili.com/video/BVcompleted", JobOptions())
+    distill = repo.create_job(
+        "https://www.bilibili.com/video/BVdistill", JobOptions(task_type="distill")
+    )
+    repo.update_status(paused.id, JobStatus.TRANSCRIPT_READY)
+    repo.update_status(completed.id, JobStatus.COMPLETED)
+
+    active_jobs = repo.list_jobs(active_only=True)
+    terminal_jobs = repo.list_jobs(limit=10, terminal_only=True)
+
+    assert {job.id for job in active_jobs} == {active.id, paused.id}
+    assert [job.id for job in terminal_jobs] == [completed.id]
+    assert distill.id not in {job.id for job in [*active_jobs, *terminal_jobs]}
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_scope_cursor_response_contract(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    job = repo.create_job("https://www.bilibili.com/video/BV1", JobOptions())
+    repo.update_status(job.id, JobStatus.COMPLETED)
+
+    legacy = await jobs_route.list_jobs(
+        limit=1,
+        offset=0,
+        cursor=None,
+        query=None,
+        author=None,
+        tag=None,
+        active_only=False,
+        terminal_only=False,
+    )
+    terminal = await jobs_route.list_jobs(
+        limit=1,
+        offset=0,
+        cursor=None,
+        query=None,
+        author=None,
+        tag=None,
+        active_only=False,
+        terminal_only=True,
+    )
+    with pytest.raises(HTTPException, match="不能同时使用") as exc_info:
+        await jobs_route.list_jobs(
+            limit=50,
+            offset=0,
+            cursor=None,
+            query=None,
+            author=None,
+            tag=None,
+            active_only=True,
+            terminal_only=True,
+        )
+
+    assert legacy["next_cursor"] == job.created_at
+    assert terminal["next_cursor"] == repo.encode_history_cursor(job, terminal_only=True)
+    assert exc_info.value.status_code == 422
+
+
+def test_history_facets_are_complete_and_exclude_distill(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    first = repo.create_job("https://www.bilibili.com/video/BVfirst", JobOptions())
+    second = repo.create_job("https://www.bilibili.com/video/BVsecond", JobOptions())
+    unknown = repo.create_job("https://www.bilibili.com/video/BVunknown", JobOptions())
+    hidden = repo.create_job(
+        "https://www.bilibili.com/video/BVhidden", JobOptions(task_type="distill")
+    )
+    for job, title, author, tags in [
+        (first, "Alpha", "Alice", ["AI", "技术"]),
+        (second, "Beta", "Alice", ["AI"]),
+        (unknown, "Gamma", "", ["生活"]),
+        (hidden, "Hidden", "Alice", ["隐藏"]),
+    ]:
+        repo.update_meta(job.id, bvid=job.id, cid=None, title=title, author=author, duration=1)
+        repo.set_tags(job.id, tags)
+
+    facets = repo.list_job_facets()
+
+    assert facets["authors"] == [
+        {"key": "Alice", "label": "Alice", "count": 2},
+        {"key": "未知 UP", "label": "未知 UP", "count": 1},
+    ]
+    assert facets["tags"] == [
+        {"key": "AI", "label": "AI", "count": 2},
+        {"key": "技术", "label": "技术", "count": 1},
+        {"key": "生活", "label": "生活", "count": 1},
+    ]
 
 
 def test_stage_timings_and_token_usage_are_persisted(monkeypatch, tmp_path):

@@ -1,7 +1,11 @@
 import asyncio
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import re
+import secrets
 from pathlib import Path
 from typing import Literal
 
@@ -12,10 +16,17 @@ from sse_starlette.sse import EventSourceResponse
 
 from biri_youyaku.auth import require_token
 from biri_youyaku.config import settings
+from biri_youyaku.db import connect
 from biri_youyaku.events import SubscriberClosed, event_bus
 from biri_youyaku.jobs import repo
-from biri_youyaku.jobs.cleanup import delete_job_files
+from biri_youyaku.jobs.cleanup import (
+    collect_job_file_cleanup_targets,
+    delete_job_files,
+    delete_job_file_targets_with_result,
+    enqueue_pending_file_cleanup,
+)
 from biri_youyaku.jobs.model import (
+    BULK_DELETE_JOB_STATUSES,
     Job,
     JobOptions,
     JobStatus,
@@ -35,6 +46,7 @@ from biri_youyaku.modules.bilibili import meta as bili_meta
 from biri_youyaku.modules.email.webhook import send as send_email
 from biri_youyaku.llm_url import validate_llm_base_url
 from biri_youyaku.rate_limit import limiter
+from biri_youyaku.weekly import repo as weekly_summary_repo
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +82,124 @@ class RetryJobPayload(BaseModel):
 
 class ResummarizeJobPayload(BaseModel):
     options: JobOptionsPayload = Field(default_factory=JobOptionsPayload)
+
+
+class BulkDeleteFilterPayload(BaseModel):
+    query: str | None = Field(default=None, max_length=200)
+    author: str | None = Field(default=None, max_length=200)
+    tag: str | None = Field(default=None, max_length=100)
+
+
+class BulkDeleteExecutePayload(BaseModel):
+    preview_token: str = Field(min_length=1, max_length=4096)
+
+
+_BULK_DELETE_PREVIEW_TTL_MS = 5 * 60 * 1000
+_bulk_delete_signing_secret = secrets.token_bytes(32)
+
+
+def _normalize_bulk_delete_filters(payload: BulkDeleteFilterPayload) -> dict[str, str | None]:
+    raw = {"query": payload.query, "author": payload.author, "tag": payload.tag}
+    return {
+        key: (value.strip() or None) if value is not None else None for key, value in raw.items()
+    }
+
+
+def _bulk_delete_candidate_hash(jobs: list[Job]) -> str:
+    # The preview displays status counts.  Hash the status with each id so a
+    # COMPLETED -> FAILED transition cannot execute against stale preview text.
+    candidates = [f"{job.id}\x1f{job.status.value}" for job in jobs]
+    return hashlib.sha256("\n".join(candidates).encode("utf-8")).hexdigest()
+
+
+def _encode_bulk_delete_preview(
+    filters: dict[str, str | None],
+    jobs: list[Job],
+    affected_week_starts: list[str],
+    *,
+    expires_at: int,
+) -> str:
+    payload = {
+        "expires_at": expires_at,
+        "filters": filters,
+        "candidate_hash": _bulk_delete_candidate_hash(jobs),
+        "affected_week_starts": affected_week_starts,
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    signature = hmac.new(_bulk_delete_signing_secret, raw, hashlib.sha256).digest()
+    return f"{base64.urlsafe_b64encode(raw).decode().rstrip('=')}.{base64.urlsafe_b64encode(signature).decode().rstrip('=')}"
+
+
+def _decode_bulk_delete_preview(token: str) -> dict:
+    try:
+        encoded_payload, encoded_signature = token.split(".", maxsplit=1)
+        raw = base64.urlsafe_b64decode(encoded_payload + "=" * (-len(encoded_payload) % 4))
+        signature = base64.urlsafe_b64decode(
+            encoded_signature + "=" * (-len(encoded_signature) % 4)
+        )
+    except (ValueError, UnicodeEncodeError):
+        raise HTTPException(status_code=400, detail="删除预览无效，请重新预览") from None
+    expected = hmac.new(_bulk_delete_signing_secret, raw, hashlib.sha256).digest()
+    if not hmac.compare_digest(signature, expected):
+        raise HTTPException(status_code=400, detail="删除预览无效，请重新预览")
+    try:
+        payload = json.loads(raw)
+        filters = payload["filters"]
+        if not isinstance(filters, dict) or set(filters) != {"query", "author", "tag"}:
+            raise ValueError
+        if any(value is not None and not isinstance(value, str) for value in filters.values()):
+            raise ValueError
+        if not isinstance(payload["candidate_hash"], str) or not isinstance(
+            payload["expires_at"], int
+        ):
+            raise ValueError
+        week_starts = payload["affected_week_starts"]
+        if not isinstance(week_starts, list) or week_starts != sorted(week_starts):
+            raise ValueError
+        if any(not isinstance(week_start, str) for week_start in week_starts):
+            raise ValueError
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        raise HTTPException(status_code=400, detail="删除预览无效，请重新预览") from None
+    if payload["expires_at"] < repo.now_ms():
+        raise HTTPException(status_code=409, detail="删除预览已过期，请重新预览")
+    return payload
+
+
+def _bulk_delete_preview_response(filters: dict[str, str | None], jobs: list[Job]) -> dict:
+    affected_week_starts = weekly_summary_repo.affected_week_starts_for_job_ids(
+        [job.id for job in jobs]
+    )
+    expires_at = repo.now_ms() + _BULK_DELETE_PREVIEW_TTL_MS
+    by_status = {
+        status.value: 0
+        for status in sorted(BULK_DELETE_JOB_STATUSES, key=lambda status: status.value)
+    }
+    for job in jobs:
+        by_status[job.status.value] += 1
+    sample = [
+        {
+            "id": job.id,
+            "title": job.title or job.bvid or job.id,
+            "author": job.author,
+            "created_at": job.created_at,
+            "status": job.status.value,
+        }
+        for job in jobs[:5]
+    ]
+    return {
+        "ok": True,
+        "matched_count": len(jobs),
+        "by_status": by_status,
+        "sample": sample,
+        "sample_truncated_count": max(0, len(jobs) - len(sample)),
+        "affected_weekly_summaries": len(affected_week_starts),
+        "expires_at": expires_at,
+        "preview_token": _encode_bulk_delete_preview(
+            filters, jobs, affected_week_starts, expires_at=expires_at
+        ),
+    }
 
 
 def _has_audio(job: Job) -> bool:
@@ -169,7 +299,9 @@ async def create_job(request: Request, payload: CreateJobPayload) -> dict:
     except ValueError:
         bvid = None
     source_url = (
-        bili_meta.canonical_video_url(bvid, bili_meta.extract_page_number(payload.url)) if bvid else payload.url
+        bili_meta.canonical_video_url(bvid, bili_meta.extract_page_number(payload.url))
+        if bvid
+        else payload.url
     )
     if payload.dedupe and bvid:
         existing = repo.find_completed_by_bvid(bvid)
@@ -212,14 +344,109 @@ async def resummarize(
 async def list_jobs(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    cursor: int | None = Query(default=None, ge=0),
+    cursor: str | None = Query(default=None, max_length=200),
+    query: str | None = Query(default=None, max_length=200),
+    author: str | None = Query(default=None, max_length=200),
+    tag: str | None = Query(default=None, max_length=100),
+    active_only: bool = Query(default=False),
+    terminal_only: bool = Query(default=False),
 ) -> dict:
-    jobs = repo.list_jobs(limit=limit, offset=offset, cursor=cursor)
-    next_cursor = jobs[-1].created_at if len(jobs) == limit else None
+    if active_only and terminal_only:
+        raise HTTPException(status_code=422, detail="active_only 与 terminal_only 不能同时使用")
+    filters = {
+        "query": query.strip() or None if query is not None else None,
+        "author": author.strip() or None if author is not None else None,
+        "tag": tag.strip() or None if tag is not None else None,
+    }
+    try:
+        jobs = repo.list_jobs(
+            limit=limit,
+            offset=offset,
+            cursor=cursor,
+            active_only=active_only,
+            terminal_only=terminal_only,
+            **filters,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="历史游标无效") from exc
+    if active_only or len(jobs) != limit:
+        next_cursor = None
+    elif terminal_only:
+        next_cursor = repo.encode_history_cursor(jobs[-1], terminal_only=True)
+    else:
+        # Keep the original list endpoint contract for existing clients.
+        next_cursor = jobs[-1].created_at
     return {
         "ok": True,
         "jobs": [serialize_job(job, lite=True) for job in jobs],
         "next_cursor": next_cursor,
+    }
+
+
+@router.get("/jobs/facets")
+async def job_facets(search: str | None = Query(default=None, max_length=200)) -> dict:
+    return {"ok": True, **repo.list_job_facets(search=search.strip() or None if search else None)}
+
+
+@router.post("/jobs/bulk-delete/preview")
+async def preview_bulk_delete(payload: BulkDeleteFilterPayload) -> dict:
+    filters = _normalize_bulk_delete_filters(payload)
+    jobs = repo.list_bulk_delete_candidates(**filters)
+    return _bulk_delete_preview_response(filters, jobs)
+
+
+@router.post("/jobs/bulk-delete/execute")
+async def execute_bulk_delete(payload: BulkDeleteExecutePayload) -> dict:
+    preview = _decode_bulk_delete_preview(payload.preview_token)
+    filters = preview["filters"]
+    connection = connect()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        jobs = repo.list_bulk_delete_candidates(**filters, connection=connection)
+        if _bulk_delete_candidate_hash(jobs) != preview["candidate_hash"]:
+            connection.rollback()
+            raise HTTPException(status_code=409, detail="删除范围已变化，请重新预览")
+        job_ids = [job.id for job in jobs]
+        if weekly_summary_repo.affected_week_starts_for_job_ids(
+            job_ids, connection=connection
+        ) != preview["affected_week_starts"]:
+            connection.rollback()
+            raise HTTPException(status_code=409, detail="删除范围已变化，请重新预览")
+        cleanup_targets = [
+            target for job in jobs for target in collect_job_file_cleanup_targets(job)
+        ]
+        affected_weekly_summaries = weekly_summary_repo.mark_stale_for_job_ids(
+            job_ids, connection=connection
+        )
+        deleted_count = repo.delete_jobs_by_ids(job_ids, connection=connection)
+        if deleted_count != len(jobs):
+            connection.rollback()
+            raise HTTPException(status_code=409, detail="删除范围已变化，请重新预览")
+        connection.commit()
+    except HTTPException:
+        raise
+    except Exception:
+        connection.rollback()
+        raise
+
+    cleanup_failures = delete_job_file_targets_with_result(cleanup_targets)
+    if cleanup_failures:
+        enqueue_pending_file_cleanup(cleanup_failures)
+    for job in jobs:
+        clear_job_state(job.id)
+    return {
+        "ok": True,
+        "deleted_count": deleted_count,
+        "affected_weekly_summaries": affected_weekly_summaries,
+        "cleanup_pending_count": len(cleanup_failures),
+        "cleanup_failures": [
+            {
+                "job_id": failure["job_id"],
+                "file_type": "audio" if failure["file_type"] == "audio_siblings" else failure["file_type"],
+            }
+            for failure in cleanup_failures
+        ],
+        "cleanup_retry": "pending_file_cleanup" if cleanup_failures else None,
     }
 
 
@@ -373,12 +600,10 @@ async def download_audio(job_id: str):
 
 @router.delete("/jobs")
 async def delete_all() -> dict:
-    skipped_count = repo.count_jobs_excluding_status(RETENTION_DELETE_JOB_STATUSES)
-    for job in repo.list_jobs_by_status(RETENTION_DELETE_JOB_STATUSES):
-        delete_job_files(job)
-        clear_job_state(job.id)
-    deleted_count = repo.delete_jobs_by_status(RETENTION_DELETE_JOB_STATUSES)
-    return {"ok": True, "deleted_count": deleted_count, "skipped_count": skipped_count}
+    raise HTTPException(
+        status_code=410,
+        detail="批量删除已迁移到删除预览接口，请先调用 /v1/jobs/bulk-delete/preview",
+    )
 
 
 @router.delete("/jobs/{job_id}")
@@ -389,6 +614,7 @@ async def delete(job_id: str) -> dict:
     if job.status not in RETENTION_DELETE_JOB_STATUSES:
         raise HTTPException(status_code=409, detail="任务进行中，请先取消再删除")
 
+    weekly_summary_repo.mark_stale_for_job_ids([job.id])
     delete_job_files(job)
     deleted = repo.delete_job(job_id)
     if deleted == 0:
