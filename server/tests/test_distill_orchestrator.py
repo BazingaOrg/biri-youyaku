@@ -75,7 +75,7 @@ async def test_pipeline_happy_path_reuses_transcript_skips_existing_and_degrades
 
     extract_calls = []
 
-    async def fake_extract_video_viewpoints(title, transcript_text, language):
+    async def fake_extract_video_viewpoints(title, transcript_text, language, *, run_id=None):
         extract_calls.append((title, transcript_text, language))
         return "## 观点与立场\n- 测试观点。原话：「示例」"
 

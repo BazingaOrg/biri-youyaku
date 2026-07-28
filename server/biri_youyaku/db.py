@@ -61,6 +61,81 @@ CREATE TABLE IF NOT EXISTS distill_runs (
 
 CREATE INDEX IF NOT EXISTS idx_distill_runs_mid ON distill_runs(mid);
 CREATE INDEX IF NOT EXISTS idx_distill_runs_status ON distill_runs(status);
+
+-- 每次 LLM 请求的供应商用量。金额只存供应商确认的最小货币单位（micros），
+-- 不从 token 数或静态价目表推算。
+CREATE TABLE IF NOT EXISTS llm_usage_events (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  occurred_at           INTEGER NOT NULL,
+  job_id                TEXT,
+  operation             TEXT NOT NULL,
+  provider              TEXT NOT NULL,
+  key_fingerprint       TEXT NOT NULL,
+  requested_model       TEXT,
+  settled_model         TEXT,
+  input_tokens          INTEGER NOT NULL DEFAULT 0,
+  output_tokens         INTEGER NOT NULL DEFAULT 0,
+  total_tokens          INTEGER NOT NULL DEFAULT 0,
+  cached_tokens         INTEGER NOT NULL DEFAULT 0,
+  request_id            TEXT NOT NULL,
+  provider_event_id     TEXT,
+  actual_cost_micros    INTEGER,
+  currency              TEXT,
+  cost_status           TEXT NOT NULL,
+  UNIQUE(provider, key_fingerprint, provider_event_id)
+);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_events_occurred ON llm_usage_events(occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_events_job ON llm_usage_events(job_id);
+
+CREATE TABLE IF NOT EXISTS provider_balance_snapshots (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  observed_at           INTEGER NOT NULL,
+  provider              TEXT NOT NULL,
+  key_fingerprint       TEXT NOT NULL,
+  balance_micros        INTEGER NOT NULL,
+  currency              TEXT NOT NULL,
+  scope                 TEXT NOT NULL DEFAULT 'account_balance'
+);
+CREATE INDEX IF NOT EXISTS idx_provider_balance_snapshots_latest
+  ON provider_balance_snapshots(provider, key_fingerprint, observed_at DESC);
+
+-- 周总结是派生缓存，和单条总结文件分开保存；来源快照用于检测新来源和删除失效。
+CREATE TABLE IF NOT EXISTS weekly_summaries (
+  week_start       TEXT PRIMARY KEY,
+  week_end         TEXT NOT NULL,
+  timezone         TEXT NOT NULL,
+  status           TEXT NOT NULL,
+  content          TEXT,
+  references_json  TEXT,
+  sources_fingerprint TEXT,
+  generation_token  TEXT,
+  generation_expires_at INTEGER,
+  error            TEXT,
+  generated_at     INTEGER,
+  created_at       INTEGER NOT NULL,
+  updated_at       INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_weekly_summaries_status ON weekly_summaries(status);
+
+CREATE TABLE IF NOT EXISTS weekly_summary_sources (
+  week_start       TEXT NOT NULL REFERENCES weekly_summaries(week_start) ON DELETE CASCADE,
+  job_id           TEXT NOT NULL,
+  PRIMARY KEY (week_start, job_id)
+);
+CREATE INDEX IF NOT EXISTS idx_weekly_summary_sources_job ON weekly_summary_sources(job_id);
+
+-- 批量删除先提交数据库、再清理磁盘。失败的文件留在此处供后续维护任务重试，
+-- 避免把“数据库已删除”误报为“文件已全部删除”。
+CREATE TABLE IF NOT EXISTS pending_file_cleanup (
+  path            TEXT PRIMARY KEY,
+  job_id          TEXT NOT NULL,
+  file_type       TEXT NOT NULL,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  last_error      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_pending_file_cleanup_updated ON pending_file_cleanup(updated_at);
 """
 
 # 已废弃的旧列：去重改走 bvid 查询（不再用 content_hash），旧 SELECT * 兼容列也不再需要。
@@ -124,6 +199,38 @@ def init_db() -> None:
         for column, statement in migrations.items():
             if column not in columns:
                 connection.execute(statement)
+        usage_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(llm_usage_events)").fetchall()
+        }
+        if "request_id" not in usage_columns:
+            connection.execute("ALTER TABLE llm_usage_events ADD COLUMN request_id TEXT")
+            connection.execute(
+                "UPDATE llm_usage_events SET request_id = 'legacy-' || id WHERE request_id IS NULL"
+            )
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_usage_events_request_id ON llm_usage_events(request_id)"
+        )
+        balance_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(provider_balance_snapshots)"
+            ).fetchall()
+        }
+        if "scope" not in balance_columns:
+            connection.execute(
+                "ALTER TABLE provider_balance_snapshots ADD COLUMN scope TEXT NOT NULL DEFAULT 'account_balance'"
+            )
+        weekly_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(weekly_summaries)").fetchall()
+        }
+        if "generation_token" not in weekly_columns:
+            connection.execute("ALTER TABLE weekly_summaries ADD COLUMN generation_token TEXT")
+        if "generation_expires_at" not in weekly_columns:
+            connection.execute(
+                "ALTER TABLE weekly_summaries ADD COLUMN generation_expires_at INTEGER"
+            )
         connection.execute(
             """
             UPDATE jobs

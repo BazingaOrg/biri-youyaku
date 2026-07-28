@@ -34,7 +34,9 @@ async def backfill_missing_tags(*, limit: int = 500, delay_seconds: float = 1.0)
             repo.set_tags(job.id, [])
             continue
         try:
-            tags = await llm_client.generate_tags(summary, options, raise_on_error=True)
+            tags = await llm_client.generate_tags(
+                summary, options, raise_on_error=True, usage_job_id=job.id, usage_operation="tags_backfill"
+            )
         except Exception:
             # 多半是网络/限流的瞬时失败：不写，下次启动再试。
             logger.warning("标签回填失败（稍后重试）：%s", job.id)

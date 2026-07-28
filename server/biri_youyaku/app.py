@@ -22,16 +22,19 @@ from biri_youyaku.jobs.cleanup import (
     scan_orphans_once,
 )
 from biri_youyaku.distill import orchestrator as distill_orchestrator
+from biri_youyaku.weekly import orchestrator as weekly_orchestrator
 from biri_youyaku.jobs import runner
 from biri_youyaku.logging import configure_logging
 from biri_youyaku.modules._http import aclose_all
 from biri_youyaku.routes import (
     config_public_router,
     config_router,
+    costs_router,
     distill_router,
     healthz_router,
     jobs_router,
     up_router,
+    weekly_summaries_router,
 )
 
 _deferred_http_close_tasks: set[asyncio.Task[None]] = set()
@@ -111,6 +114,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await scan_orphans_once()
     runner.prepare_startup()
     distill_orchestrator.prepare_startup()
+    weekly_orchestrator.prepare_startup()
     runner.recover_unfinished_jobs()
     cleanup_task = asyncio.create_task(cleanup_loop())
     warmup_task = asyncio.create_task(_warmup_asr())
@@ -120,7 +124,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         runner.begin_shutdown()
         distill_orchestrator.begin_shutdown()
+        weekly_orchestrator.begin_shutdown()
         await distill_orchestrator.shutdown()
+        await weekly_orchestrator.shutdown()
         unfinished_jobs = await runner.shutdown()
         for task in (cleanup_task, warmup_task, tags_task):
             task.cancel()
@@ -202,10 +208,12 @@ def create_app() -> FastAPI:
     )
     app.include_router(config_public_router)
     app.include_router(config_router)
+    app.include_router(costs_router)
     app.include_router(distill_router)
     app.include_router(healthz_router)
     app.include_router(jobs_router)
     app.include_router(up_router)
+    app.include_router(weekly_summaries_router)
     return app
 
 

@@ -68,6 +68,18 @@ async def test_zero_balance_is_reported_not_dropped(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_deepseek_usd_balance_keeps_its_currency(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"balance_infos": [{"currency": "USD", "total_balance": "4.50"}]})
+
+    async_client = httpx.AsyncClient
+    monkeypatch.setattr(balance.httpx, "AsyncClient", lambda **kwargs: async_client(transport=httpx.MockTransport(handler), **kwargs))
+    result = await balance.fetch_balance(base_url="https://api.deepseek.com/v1", api_key="secret-key")
+
+    assert result == balance.Balance(provider="DeepSeek", balance=4.5, currency="USD")
+
+
+@pytest.mark.asyncio
 async def test_transient_failure_is_not_cached(monkeypatch):
     calls = 0
 
@@ -97,6 +109,34 @@ async def test_unsupported_provider_returns_none():
     result = await balance.fetch_balance(base_url="https://api.openai.com/v1", api_key="secret-key")
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_openrouter_regular_key_reads_key_limit(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url == "https://openrouter.ai/api/v1/key"
+        assert request.headers["authorization"] == "Bearer inference-key"
+        return httpx.Response(200, json={"data": {"limit_remaining": "3.25"}})
+
+    async_client = httpx.AsyncClient
+    monkeypatch.setattr(balance.httpx, "AsyncClient", lambda **kwargs: async_client(transport=httpx.MockTransport(handler), **kwargs))
+    result = await balance.fetch_balance(base_url="https://openrouter.ai/api/v1", api_key="inference-key")
+
+    assert result == balance.Balance(provider="OpenRouter", balance=3.25, currency="USD", scope="key_limit")
+
+
+@pytest.mark.asyncio
+async def test_openrouter_management_key_reads_account_credits(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url == "https://openrouter.ai/api/v1/credits"
+        assert request.headers["authorization"] == "Bearer management-key"
+        return httpx.Response(200, json={"data": {"total_credits": 10, "total_usage": 1.5}})
+
+    async_client = httpx.AsyncClient
+    monkeypatch.setattr(balance.httpx, "AsyncClient", lambda **kwargs: async_client(transport=httpx.MockTransport(handler), **kwargs))
+    result = await balance.fetch_balance(base_url="https://openrouter.ai/api/v1", api_key="inference-key", openrouter_management_api_key="management-key")
+
+    assert result == balance.Balance(provider="OpenRouter", balance=8.5, currency="USD", scope="account_credits")
 
 
 @pytest.mark.asyncio

@@ -70,6 +70,7 @@ async def summarize(
         on_chunk=on_chunk,
         on_usage=on_usage,
         on_segment=on_segment,
+        usage_job_id=job.id,
     )
     summary_path = summary_storage.save(job.id, summary_md)
     repo.set_summary_path(job.id, summary_path)
@@ -81,7 +82,9 @@ async def send_email(video_meta: VideoMeta, summary_md: str, options: JobOptions
 
 
 async def generate_tags(job: Job, summary_md: str, *, llm_api_key: str | None = None) -> list[str]:
-    return await llm_client.generate_tags(summary_md, job.options, api_key=llm_api_key)
+    return await llm_client.generate_tags(
+        summary_md, job.options, api_key=llm_api_key, usage_job_id=job.id
+    )
 
 
 async def fetch_meta(url: str) -> VideoMeta:

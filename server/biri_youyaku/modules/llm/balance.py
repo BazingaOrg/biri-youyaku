@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
 import time
 from urllib.parse import urlparse
 
 import httpx
+
+from biri_youyaku.modules.llm.usage import key_fingerprint, record_balance_snapshot
 
 
 @dataclass(frozen=True)
@@ -13,6 +14,8 @@ class Balance:
     provider: str
     balance: float
     currency: str
+    # key_limit is a key-level spending limit, not an account balance.
+    scope: str = "account_balance"
 
 
 @dataclass
@@ -65,17 +68,22 @@ def _deepseek_balance(payload: dict) -> Balance | None:
     infos = payload.get("balance_infos")
     if not isinstance(infos, list):
         return None
-    cny_total = 0.0
-    found = False
+    # A scalar balance cannot safely add CNY and USD. Select the first valid
+    # currency and sum only entries in that same currency.
+    selected_currency: str | None = None
+    total = 0.0
     for item in infos:
         if not isinstance(item, dict):
             continue
         currency = str(item.get("currency") or "CNY").upper()
         amount = _safe_float(item.get("total_balance"))
-        if currency == "CNY" and amount is not None:
-            cny_total += amount
-            found = True
-    return Balance(provider="DeepSeek", balance=cny_total, currency="CNY") if found else None
+        if amount is None:
+            continue
+        if selected_currency is None:
+            selected_currency = currency
+        if currency == selected_currency:
+            total += amount
+    return Balance(provider="DeepSeek", balance=total, currency=selected_currency) if selected_currency else None
 
 
 def _moonshot_balance(payload: dict) -> Balance | None:
@@ -100,7 +108,7 @@ def _siliconflow_balance(payload: dict) -> Balance | None:
     )
 
 
-def _openrouter_balance(payload: dict) -> Balance | None:
+def _openrouter_credits(payload: dict) -> Balance | None:
     data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
     if not isinstance(data, dict):
         return None
@@ -108,11 +116,19 @@ def _openrouter_balance(payload: dict) -> Balance | None:
     usage = _safe_float(data.get("total_usage")) or 0.0
     if total is None:
         return None
-    return Balance(provider="OpenRouter", balance=max(total - usage, 0.0), currency="USD")
+    return Balance(provider="OpenRouter", balance=max(total - usage, 0.0), currency="USD", scope="account_credits")
+
+
+def _openrouter_key_limit(payload: dict) -> Balance | None:
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    if not isinstance(data, dict):
+        return None
+    remaining = _safe_float(data.get("limit_remaining"))
+    return Balance(provider="OpenRouter", balance=remaining, currency="USD", scope="key_limit") if remaining is not None else None
 
 
 async def fetch_balance(
-    *, base_url: str, api_key: str, force_refresh: bool = False
+    *, base_url: str, api_key: str, force_refresh: bool = False, openrouter_management_api_key: str = ""
 ) -> Balance | None:
     if not api_key:
         return None
@@ -121,8 +137,11 @@ async def fetch_balance(
     if provider is None:
         return None
 
-    key_fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
-    cache_key = (provider, key_fingerprint)
+    # A management key intentionally switches the OpenRouter endpoint and cache
+    # identity: it represents account credits, whereas a normal key exposes only
+    # its own remaining limit.
+    lookup_key = openrouter_management_api_key if provider == "OpenRouter" and openrouter_management_api_key else api_key
+    cache_key = (provider, key_fingerprint(lookup_key))
     now = time.monotonic()
     if not force_refresh:
         entry = _CACHE.get(cache_key)
@@ -139,12 +158,16 @@ async def fetch_balance(
         url = "https://api.siliconflow.cn/v1/user/info"
         parser = _siliconflow_balance
     else:
-        url = "https://openrouter.ai/api/v1/credits"
-        parser = _openrouter_balance
+        if openrouter_management_api_key:
+            url = "https://openrouter.ai/api/v1/credits"
+            parser = _openrouter_credits
+        else:
+            url = "https://openrouter.ai/api/v1/key"
+            parser = _openrouter_key_limit
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url, headers={"Authorization": f"Bearer {api_key}"})
+            response = await client.get(url, headers={"Authorization": f"Bearer {lookup_key}"})
             response.raise_for_status()
             payload = response.json()
     except (httpx.HTTPError, ValueError):
@@ -156,6 +179,9 @@ async def fetch_balance(
     # 下次进统计页也不会重试。失败就让下次打开重新探测。
     if value is not None:
         _CACHE[cache_key] = _CacheEntry(value=value, expires_at=now + _TTL_SECONDS)
+        record_balance_snapshot(
+            provider=value.provider, api_key=lookup_key, balance=value.balance, currency=value.currency, scope=value.scope
+        )
     return value
 
 

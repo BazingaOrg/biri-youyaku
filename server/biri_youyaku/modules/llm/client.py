@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+import uuid
 from collections.abc import Awaitable, Callable
 
 from openai import AsyncOpenAI
@@ -21,6 +22,7 @@ from biri_youyaku.modules.llm.prompts import (
     TAGS_PROMPT,
 )
 from biri_youyaku.modules.llm.segmenter import should_chunk, split_transcript
+from biri_youyaku.modules.llm.usage import UsageContext, make_context, record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -148,14 +150,24 @@ async def _complete(
     messages: list[dict[str, str]],
     temperature: float,
     on_usage: TokenUsageCallback | None = None,
+    usage_context: UsageContext | None = None,
 ) -> str:
     base_kwargs = _build_create_kwargs(model, temperature, messages=messages)
+    request_id = f"local:{uuid.uuid4()}"
     try:
         response = await client.chat.completions.create(**base_kwargs)
     except Exception as exc:
         logger.error("LLM 调用失败 model=%s: %s", model, _format_llm_error(exc))
         raise
     usage = _usage_to_dict(getattr(response, "usage", None))
+    if usage_context is not None:
+        record_usage(
+            usage_context,
+            getattr(response, "usage", None),
+            response_id=getattr(response, "id", None),
+            settled_model=getattr(response, "model", None),
+            request_id=request_id,
+        )
     if usage is not None and on_usage is not None:
         await on_usage(usage)
     return response.choices[0].message.content or ""
@@ -169,6 +181,7 @@ async def _complete_stream(
     temperature: float,
     on_chunk: SummaryChunkCallback,
     on_usage: TokenUsageCallback | None = None,
+    usage_context: UsageContext | None = None,
 ) -> str:
     base_kwargs = _build_create_kwargs(
         model,
@@ -177,6 +190,7 @@ async def _complete_stream(
         stream=True,
         stream_options={"include_usage": True},
     )
+    request_id = f"local:{uuid.uuid4()}"
     try:
         stream = await client.chat.completions.create(**base_kwargs)
     except Exception as exc:
@@ -187,6 +201,7 @@ async def _complete_stream(
     pending: list[str] = []
     pending_length = 0
     last_emitted: str | None = None
+    saw_usage = False
 
     async def flush() -> None:
         nonlocal pending_length, last_emitted
@@ -222,6 +237,15 @@ async def _complete_stream(
             next_chunk = asyncio.create_task(anext(iterator))
 
             usage = _usage_to_dict(getattr(chunk, "usage", None))
+            if usage_context is not None and usage is not None:
+                saw_usage = True
+                record_usage(
+                    usage_context,
+                    getattr(chunk, "usage", None),
+                    response_id=getattr(chunk, "id", None),
+                    settled_model=getattr(chunk, "model", None),
+                    request_id=request_id,
+                )
             if usage is not None and on_usage is not None:
                 await on_usage(usage)
             if not chunk.choices:
@@ -242,6 +266,10 @@ async def _complete_stream(
                 # Timer 与下一次 __anext__ 并行等待，保证稀疏流的首块不会一直滞留。
                 flush_timer = asyncio.create_task(asyncio.sleep(_STREAM_FLUSH_INTERVAL))
         await flush()
+        if usage_context is not None and not saw_usage:
+            # Successful streams without a usage chunk still count toward
+            # coverage. A late usage callback with this request id updates it.
+            record_usage(usage_context, None, request_id=request_id)
     finally:
         for task in (next_chunk, flush_timer):
             if task is not None and not task.done():
@@ -259,6 +287,7 @@ async def _repair_summary_json(
     model: str,
     content: str,
     on_usage: TokenUsageCallback | None = None,
+    usage_context: UsageContext | None = None,
 ) -> str:
     repaired = await _complete(
         client,
@@ -269,6 +298,7 @@ async def _repair_summary_json(
         ],
         temperature=0,
         on_usage=on_usage,
+        usage_context=usage_context,
     )
     return _extract_summary_json(repaired)
 
@@ -279,6 +309,7 @@ async def _complete_json_summary(
     model: str,
     prompt: str,
     on_usage: TokenUsageCallback | None = None,
+    usage_context: UsageContext | None = None,
 ) -> str:
     content = await _complete(
         client,
@@ -286,11 +317,14 @@ async def _complete_json_summary(
         messages=[{"role": "user", "content": prompt}],
         temperature=resolve_temperature(),
         on_usage=on_usage,
+        usage_context=usage_context,
     )
     try:
         return _extract_summary_json(content)
     except (ValueError, json.JSONDecodeError):
-        return await _repair_summary_json(client, model=model, content=content, on_usage=on_usage)
+        return await _repair_summary_json(
+            client, model=model, content=content, on_usage=on_usage, usage_context=usage_context
+        )
 
 
 async def _summarize_segment_markdown(
@@ -299,6 +333,7 @@ async def _summarize_segment_markdown(
     model: str,
     prompt: str,
     on_usage: TokenUsageCallback | None,
+    usage_context: UsageContext | None = None,
 ) -> str:
     """段级总结直接出 markdown，不再走 JSON wrap → 省一轮 JSON repair。
 
@@ -310,6 +345,7 @@ async def _summarize_segment_markdown(
         messages=[{"role": "user", "content": prompt}],
         temperature=resolve_temperature(),
         on_usage=on_usage,
+        usage_context=usage_context,
     )
 
 
@@ -324,6 +360,7 @@ async def _summarize_chunked(
     on_chunk: SummaryChunkCallback | None = None,
     on_usage: TokenUsageCallback | None = None,
     on_segment: SegmentProgressCallback | None = None,
+    usage_context: UsageContext | None = None,
 ) -> str:
     segments = list(split_transcript(items, settings.llm_chunk_token_threshold))
     total = len(segments)
@@ -346,7 +383,9 @@ async def _summarize_chunked(
             subtitle_source=subtitle_source_label(subtitle_source),
         )
         async with semaphore:
-            text = await _summarize_segment_markdown(client, model=model, prompt=prompt, on_usage=on_usage)
+            text = await _summarize_segment_markdown(
+                client, model=model, prompt=prompt, on_usage=on_usage, usage_context=usage_context
+            )
         # 单线程 asyncio：done_count 自增在两个 await 之间是原子的
         done_count += 1
         if on_segment is not None:
@@ -398,8 +437,11 @@ async def _summarize_chunked(
             temperature=resolve_temperature(),
             on_chunk=on_chunk,
             on_usage=on_usage,
+            usage_context=usage_context,
         )
-    return await _complete_json_summary(client, model=model, prompt=merge_prompt, on_usage=on_usage)
+    return await _complete_json_summary(
+        client, model=model, prompt=merge_prompt, on_usage=on_usage, usage_context=usage_context
+    )
 
 
 async def summarize(
@@ -412,6 +454,8 @@ async def summarize(
     on_chunk: SummaryChunkCallback | None = None,
     on_usage: TokenUsageCallback | None = None,
     on_segment: SegmentProgressCallback | None = None,
+    usage_job_id: str | None = None,
+    usage_operation: str = "summary",
 ) -> str:
     resolved_api_key = api_key or settings.llm_api_key
     if not resolved_api_key:
@@ -429,6 +473,13 @@ async def summarize(
         max_retries=settings.llm_max_retries,
     )
     model = options.llm_model or settings.llm_model
+    usage_context = make_context(
+        job_id=usage_job_id,
+        operation=usage_operation,
+        base_url=options.llm_base_url or settings.llm_base_url,
+        api_key=resolved_api_key,
+        model=model,
+    )
     language = options.summary_language or settings.summary_language
 
     if options.prompt_template:
@@ -449,6 +500,7 @@ async def summarize(
                 temperature=resolve_temperature(),
                 on_chunk=on_chunk,
                 on_usage=on_usage,
+                usage_context=usage_context,
             )
         return await _complete(
             client,
@@ -456,6 +508,7 @@ async def summarize(
             messages=[{"role": "user", "content": prompt}],
             temperature=resolve_temperature(),
             on_usage=on_usage,
+            usage_context=usage_context,
         )
 
     if should_chunk(items, settings.llm_chunk_token_threshold):
@@ -469,6 +522,7 @@ async def summarize(
             on_chunk=on_chunk,
             on_usage=on_usage,
             on_segment=on_segment,
+            usage_context=usage_context,
         )
 
     prompt = render_prompt(
@@ -488,9 +542,12 @@ async def summarize(
             temperature=resolve_temperature(),
             on_chunk=on_chunk,
             on_usage=on_usage,
+            usage_context=usage_context,
         )
 
-    return await _complete_json_summary(client, model=model, prompt=prompt, on_usage=on_usage)
+    return await _complete_json_summary(
+        client, model=model, prompt=prompt, on_usage=on_usage, usage_context=usage_context
+    )
 
 
 def _parse_tags(content: str) -> list[str]:
@@ -515,6 +572,8 @@ async def generate_tags(
     *,
     api_key: str | None = None,
     raise_on_error: bool = False,
+    usage_job_id: str | None = None,
+    usage_operation: str = "tags",
 ) -> list[str]:
     """从已生成的笔记里提炼 3-6 个主题标签。
 
@@ -532,10 +591,21 @@ async def generate_tags(
         max_retries=settings.llm_max_retries,
     )
     model = options.llm_model or settings.llm_model
+    usage_context = make_context(
+        job_id=usage_job_id,
+        operation=usage_operation,
+        base_url=options.llm_base_url or settings.llm_base_url,
+        api_key=resolved_api_key,
+        model=model,
+    )
     prompt = TAGS_PROMPT.replace("{{summary}}", text[:4000])  # 截断省 token
     try:
         content = await _complete(
-            client, model=model, messages=[{"role": "user", "content": prompt}], temperature=0
+            client,
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            usage_context=usage_context,
         )
     except Exception as exc:
         logger.warning("生成标签失败 model=%s: %s", model, _format_llm_error(exc))

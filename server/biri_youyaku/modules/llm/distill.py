@@ -14,6 +14,7 @@ import logging
 from biri_youyaku.config import settings
 from biri_youyaku.modules._http import openai_client
 from biri_youyaku.modules.llm.client import _complete, resolve_temperature
+from biri_youyaku.modules.llm.usage import make_context
 from biri_youyaku.modules.llm.distill_prompts import (
     DISTILL_EXTRACT_MERGE_PROMPT,
     DISTILL_EXTRACT_PROMPT,
@@ -47,13 +48,21 @@ def _render(template: str, **tokens: str) -> str:
     return text
 
 
-async def _complete_prompt(prompt: str) -> str:
+async def _complete_prompt(prompt: str, *, operation: str, run_id: str | None = None) -> str:
     client = _client()
+    api_key = settings.llm_api_key
     return await _complete(
         client,
         model=settings.llm_model,
         messages=[{"role": "user", "content": prompt}],
         temperature=resolve_temperature(),
+        usage_context=make_context(
+            job_id=run_id,
+            operation=operation,
+            base_url=settings.llm_base_url,
+            api_key=api_key,
+            model=settings.llm_model,
+        ),
     )
 
 
@@ -68,7 +77,9 @@ def _pseudo_items(text: str) -> list[TranscriptItem]:
     return [TranscriptItem(start=0.0, end=0.0, text=line) for line in lines]
 
 
-async def extract_video_viewpoints(title: str, transcript_text: str, language: str) -> str:
+async def extract_video_viewpoints(
+    title: str, transcript_text: str, language: str, *, run_id: str | None = None
+) -> str:
     """单视频观点提取。转写超过 `settings.llm_chunk_token_threshold` 时按分段
     提取、再用 MERGE 合并（模式仿 `client._summarize_chunked`，但不需要流式/
     并发进度回调）；分段内部顺序执行——分段间没有并发要求，编排层面的并发
@@ -80,7 +91,7 @@ async def extract_video_viewpoints(title: str, transcript_text: str, language: s
         prompt = _render(
             DISTILL_EXTRACT_PROMPT, title=title, transcript=transcript_text, language=language
         )
-        return await _complete_prompt(prompt)
+        return await _complete_prompt(prompt, operation="distill_extract", run_id=run_id)
 
     segments = split_transcript(items, settings.llm_chunk_token_threshold)
     extracts: list[str] = []
@@ -92,7 +103,7 @@ async def extract_video_viewpoints(title: str, transcript_text: str, language: s
             transcript=segment_text,
             language=language,
         )
-        text = await _complete_prompt(prompt)
+        text = await _complete_prompt(prompt, operation="distill_extract", run_id=run_id)
         extracts.append(f"### 分段 {index}\n{text}")
 
     merge_prompt = _render(
@@ -101,10 +112,12 @@ async def extract_video_viewpoints(title: str, transcript_text: str, language: s
         transcript="\n\n".join(extracts),
         language=language,
     )
-    return await _complete_prompt(merge_prompt)
+    return await _complete_prompt(merge_prompt, operation="distill_extract_merge", run_id=run_id)
 
 
-async def clean_dynamics_batch(batch_lines: list[str], language: str) -> str:
+async def clean_dynamics_batch(
+    batch_lines: list[str], language: str, *, run_id: str | None = None
+) -> str:
     """一批动态（每条已格式化成「[日期][类型] 原文」）走 DYNAMICS_CLEAN_PROMPT 清洗。"""
     prompt = _render(DYNAMICS_CLEAN_PROMPT, dynamics="\n".join(batch_lines), language=language)
-    return await _complete_prompt(prompt)
+    return await _complete_prompt(prompt, operation="distill_dynamics", run_id=run_id)

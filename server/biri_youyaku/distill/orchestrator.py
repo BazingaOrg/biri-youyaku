@@ -256,7 +256,7 @@ async def _do_fetch_dynamics(run_id: str) -> None:
         _raise_if_cancelled(run_id)
         batch = dynamics[start : start + _DYNAMICS_BATCH_SIZE]
         lines = [_format_dynamic_line(item) for item in batch]
-        cleaned = (await clean_dynamics_batch(lines, _DISTILL_LANGUAGE)).strip()
+        cleaned = (await clean_dynamics_batch(lines, _DISTILL_LANGUAGE, run_id=run_id)).strip()
         if cleaned and cleaned != "（本批无有效观点内容）":
             cleaned_batches.append(cleaned)
             dynamics_count += sum(
@@ -452,7 +452,7 @@ async def _do_extract(run_id: str, records: list[dict]) -> list[dict]:
                 return
             try:
                 body = await extract_video_viewpoints(
-                    record["title"], record["transcript_text"], _DISTILL_LANGUAGE
+                    record["title"], record["transcript_text"], _DISTILL_LANGUAGE, run_id=run_id
                 )
                 content = _render_video_markdown(record, body)
                 distill_storage.save_video(run.mid, record["bvid"], content)

@@ -84,11 +84,11 @@ async def test_summarize_chunked_summarizes_segments_then_merges(monkeypatch):
     JSON wrap（_complete_json_summary）。两路 stub 都拦。"""
     calls = []
 
-    async def fake_segment_markdown(fake_client, *, model, prompt, on_usage=None):
+    async def fake_segment_markdown(fake_client, *, model, prompt, on_usage=None, usage_context=None):
         calls.append(prompt)
         return f"segment-{len(calls)}"
 
-    async def fake_complete_json_summary(fake_client, *, model, prompt, on_usage=None):
+    async def fake_complete_json_summary(fake_client, *, model, prompt, on_usage=None, usage_context=None):
         calls.append(prompt)
         return "merged"
 
@@ -128,7 +128,7 @@ async def test_summarize_chunked_cancels_sibling_segments_on_failure(monkeypatch
     started_sibling = asyncio.Event()
     canceled_sibling = asyncio.Event()
 
-    async def fake_segment_markdown(fake_client, *, model, prompt, on_usage=None):
+    async def fake_segment_markdown(fake_client, *, model, prompt, on_usage=None, usage_context=None):
         if "分段 1" in prompt:
             await started_sibling.wait()
             raise RuntimeError("segment failed")
@@ -239,6 +239,113 @@ async def test_complete_stream_publishes_accumulated_chunks():
     assert calls[0]["stream"] is True
     assert calls[0]["stream_options"] == {"include_usage": True}
     assert usages == [{"input_tokens": 3, "output_tokens": 2, "total_tokens": 5, "cost_estimate": None}]
+
+
+@pytest.mark.asyncio
+async def test_complete_stream_reuses_request_id_for_duplicate_usage_without_response_id(monkeypatch):
+    class Usage:
+        prompt_tokens = 3
+        completion_tokens = 2
+        total_tokens = 5
+
+    class UsageChunk:
+        choices = []
+        usage = Usage()
+
+    class FakeStream:
+        def __aiter__(self):
+            self.items = iter([UsageChunk(), UsageChunk()])
+            return self
+
+        async def __anext__(self):
+            try:
+                return next(self.items)
+            except StopIteration as exc:
+                raise StopAsyncIteration from exc
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            return FakeStream()
+
+    class FakeClient:
+        class chat:
+            completions = FakeCompletions()
+
+    recorded = []
+    monkeypatch.setattr(client, "record_usage", lambda *args, **kwargs: recorded.append(kwargs))
+
+    async def on_chunk(text):
+        return None
+
+    await client._complete_stream(
+        FakeClient(), model="provider-model", messages=[], temperature=0.2,
+        on_chunk=on_chunk, usage_context=object(),
+    )
+
+    assert len(recorded) == 2
+    assert recorded[0]["request_id"] == recorded[1]["request_id"]
+
+
+@pytest.mark.asyncio
+async def test_complete_records_success_without_provider_usage(monkeypatch):
+    class Response:
+        usage = None
+        id = None
+        model = "provider-model"
+
+        class Choice:
+            class message:
+                content = "done"
+
+        choices = [Choice()]
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            return Response()
+
+    class FakeClient:
+        class chat:
+            completions = FakeCompletions()
+
+    recorded = []
+    monkeypatch.setattr(client, "record_usage", lambda *args, **kwargs: recorded.append((args, kwargs)))
+
+    result = await client._complete(FakeClient(), model="provider-model", messages=[], temperature=0.2, usage_context=object())
+
+    assert result == "done"
+    assert len(recorded) == 1
+    assert recorded[0][0][1] is None
+    assert recorded[0][1]["request_id"].startswith("local:")
+
+
+@pytest.mark.asyncio
+async def test_complete_stream_records_success_without_provider_usage(monkeypatch):
+    class FakeStream:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            return FakeStream()
+
+    class FakeClient:
+        class chat:
+            completions = FakeCompletions()
+
+    recorded = []
+    monkeypatch.setattr(client, "record_usage", lambda *args, **kwargs: recorded.append((args, kwargs)))
+
+    async def on_chunk(text):
+        return None
+
+    await client._complete_stream(FakeClient(), model="provider-model", messages=[], temperature=0.2, on_chunk=on_chunk, usage_context=object())
+
+    assert len(recorded) == 1
+    assert recorded[0][0][1] is None
+    assert recorded[0][1]["request_id"].startswith("local:")
 
 
 @pytest.mark.asyncio

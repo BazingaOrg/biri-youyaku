@@ -45,7 +45,7 @@ async def test_backfill_sets_tags_and_skips_processed(monkeypatch, tmp_path):
     repo.set_summary_path(job.id, str(summary_path))
     repo.update_status(job.id, JobStatus.COMPLETED)
 
-    async def fake_generate_tags(summary, options, *, raise_on_error=False):
+    async def fake_generate_tags(summary, options, *, raise_on_error=False, usage_job_id=None, usage_operation="tags"):
         return ["A", "B"]
 
     monkeypatch.setattr(tags_backfill.llm_client, "generate_tags", fake_generate_tags)

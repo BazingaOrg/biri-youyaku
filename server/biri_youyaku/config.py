@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     sensevoice_model_dir: str = ""
 
     llm_api_key: str = ""
+    # OpenRouter 管理 Key 才能读取账户 credits；普通推理 Key 只读取自身 limit_remaining。
+    openrouter_management_api_key: str = ""
+    # 用于不可逆标识 API Key。留空时从本实例已有密钥安全派生，仍不写入原始 Key。
+    usage_fingerprint_secret: str = ""
     llm_base_url: str = "https://api.deepseek.com/v1"
     # DeepSeek 最新基础款（替代已弃用的 deepseek-chat/deepseek-reasoner）。
     # 旗舰 deepseek-v4-pro 也可换用，但贵 3 倍、并发上限低，本场景不必。
@@ -42,6 +46,7 @@ class Settings(BaseSettings):
     llm_thinking_enabled: bool = False
 
     summary_language: str = "中文简体"
+    weekly_summary_timezone: str = "Asia/Shanghai"
 
     # 邮件默认关闭：fork 的人开箱即用不会因为没配 webhook 而 fail；
     # email_default_recipient 默认空：避免「忘了改收件人 → 发到陌生人邮箱」。
