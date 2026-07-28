@@ -214,6 +214,94 @@ export function getLlmBalance(refresh = false) {
   return request<LlmBalanceResponse>(`/v1/llm/balance${suffix}`)
 }
 
+export type CostStatus = 'confirmed' | 'pending' | 'not_supported'
+
+export interface CostAmount {
+  currency: string
+  micros: number
+}
+
+export interface CostOperation extends CostAmount {
+  operation: string
+  requests: number
+}
+
+export interface WeeklyCost extends CostAmount {
+  /** 用户时区的周一日期（YYYY-MM-DD）。 */
+  week_start: string
+}
+
+export interface BalanceSnapshot {
+  provider: string
+  balance_micros: number
+  currency: string
+  scope: 'account_balance' | 'key_limit' | 'account_credits'
+  observed_at: number
+}
+
+/** 供应商确认的费用与请求用量；金额绝不会由 tokens 或静态费率估算。 */
+export interface CostSummaryResponse {
+  ok: true
+  current_balance: {provider: string; balance: number; currency: string; scope: 'account_balance' | 'key_limit' | 'account_credits'} | null
+  tracking_started_at: number | null
+  timezone: string
+  current_week_start: string
+  tokens: {
+    input_tokens: number
+    output_tokens: number
+    total_tokens: number
+    /** 全部已记录 tokens：逐请求事件 + 尚无事件的旧 jobs.token_usage_json，互斥不双算。 */
+    all_recorded_input_tokens: number
+    all_recorded_output_tokens: number
+    all_recorded_total_tokens: number
+    legacy_input_tokens: number
+    legacy_output_tokens: number
+    legacy_total_tokens: number
+    confirmed_requests: number
+    pending_requests: number
+    unsupported_requests: number
+  }
+  confirmed_costs: CostAmount[]
+  by_operation: CostOperation[]
+  balances: BalanceSnapshot[]
+  weekly: WeeklyCost[]
+}
+
+export function getCostSummary(refreshBalance = false) {
+  return request<CostSummaryResponse>(`/v1/stats/costs${refreshBalance ? '?refresh_balance=true' : ''}`)
+}
+
+/** 周总结接口使用用户时区的周一日期（YYYY-MM-DD）。 */
+export interface WeeklySummaryReference {
+  job_id: string
+  title: string
+  author?: string | null
+  url?: string
+}
+
+export interface WeeklySummary {
+  week_start: string
+  week_end: string
+  timezone?: string | null
+  status: 'MISSING' | 'EMPTY' | 'GENERATING' | 'COMPLETED' | 'FAILED' | 'STALE'
+  source_count: number
+  content: string | null
+  references: WeeklySummaryReference[]
+  error: string | null
+  generated_at: number | null
+}
+
+export function getWeeklySummary(weekStart: string) {
+  return request<{ok: true} & WeeklySummary>(`/v1/weekly-summaries?week_start=${encodeURIComponent(weekStart)}`)
+}
+
+export function generateWeeklySummary(weekStart: string, refresh = false) {
+  return request<{ok: true} & WeeklySummary>(`/v1/weekly-summaries/${encodeURIComponent(weekStart)}/generate`, {
+    method: 'POST',
+    body: JSON.stringify({refresh}),
+  })
+}
+
 export function createJob(url: string, options: JobOptionOverrides, params: {dedupe?: boolean} = {}) {
   // deduped: 后端发现这条视频之前已总结完成，直接复用了旧任务（没有新建、没有再烧 token）。
   return request<{ok: true; job_id: string; deduped?: boolean}>('/v1/jobs', {
@@ -247,7 +335,25 @@ export function retryJob(jobId: string, options: JobOptionOverrides = {}) {
   })
 }
 
-export function listJobs(params: {limit?: number; offset?: number; cursor?: number | null} = {}, init?: RequestInit) {
+export interface HistoryFilters {
+  query?: string
+  author?: string
+  tag?: string
+}
+
+export interface HistoryFacet {
+  key: string
+  label: string
+  count: number
+}
+
+export interface HistoryFacetsResponse {
+  ok: true
+  authors: HistoryFacet[]
+  tags: HistoryFacet[]
+}
+
+export function listJobs(params: HistoryFilters & {limit?: number; offset?: number; cursor?: string | number | null; active_only?: boolean; terminal_only?: boolean} = {}, init?: RequestInit) {
   const search = new URLSearchParams()
   search.set('limit', String(params.limit ?? 50))
   if (params.offset) {
@@ -256,7 +362,17 @@ export function listJobs(params: {limit?: number; offset?: number; cursor?: numb
   if (params.cursor != null) {
     search.set('cursor', String(params.cursor))
   }
-  return request<{ok: true; jobs: Job[]; next_cursor?: number | null}>(`/v1/jobs?${search.toString()}`, init)
+  if (params.active_only) search.set('active_only', 'true')
+  if (params.terminal_only) search.set('terminal_only', 'true')
+  for (const key of ['query', 'author', 'tag'] as const) {
+    if (params[key]) search.set(key, params[key]!)
+  }
+  return request<{ok: true; jobs: Job[]; next_cursor?: string | number | null}>(`/v1/jobs?${search.toString()}`, init)
+}
+
+export function getHistoryFacets(search?: string, init?: RequestInit) {
+  const suffix = search?.trim() ? `?search=${encodeURIComponent(search.trim())}` : ''
+  return request<HistoryFacetsResponse>(`/v1/jobs/facets${suffix}`, init)
 }
 
 export function resendEmail(jobId: string) {
@@ -271,8 +387,43 @@ export function deleteJob(jobId: string) {
   return request<{ok: true}>(`/v1/jobs/${jobId}`, {method: 'DELETE'})
 }
 
-export function deleteAllJobs() {
-  return request<{ok: true; deleted_count: number; skipped_count: number}>('/v1/jobs', {method: 'DELETE'})
+export interface BulkDeleteQuery {
+  query?: string
+  author?: string
+  tag?: string
+}
+
+export interface BulkDeletePreview {
+  ok: true
+  matched_count: number
+  by_status: Partial<Record<'COMPLETED' | 'FAILED' | 'CANCELED', number>>
+  sample: Array<{id: string; title?: string; author?: string; completed_at?: number; created_at?: number}>
+  sample_truncated_count: number
+  affected_weekly_summaries: number
+  preview_token: string
+  /** 预览令牌的过期时间；旧服务端可能不返回，执行时仍会以 409 拒绝过期令牌。 */
+  expires_at: number
+}
+
+/** 预览与执行均由服务端用完整数据库查询，绝不以当前已加载/可见条目为删除边界。 */
+export function previewBulkDelete(filters: BulkDeleteQuery) {
+  return request<BulkDeletePreview>('/v1/jobs/bulk-delete/preview', {
+    method: 'POST',
+    body: JSON.stringify(filters),
+  })
+}
+
+export function executeBulkDelete(previewToken: string) {
+  return request<{
+    ok: true
+    deleted_count: number
+    affected_weekly_summaries: number
+    cleanup_pending_count?: number
+    cleanup_failures?: Array<{job_id: string; file_type: 'audio' | 'summary' | 'subtitle'}>
+  }>('/v1/jobs/bulk-delete/execute', {
+    method: 'POST',
+    body: JSON.stringify({preview_token: previewToken}),
+  })
 }
 
 export function downloadJobAudio(jobId: string) {
