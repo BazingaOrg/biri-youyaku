@@ -31,7 +31,10 @@
 | LLM | `LLM_CHUNK_TOKEN_THRESHOLD` | `30000` | 长字幕分段阈值 |
 | LLM | `LLM_SEGMENT_CONCURRENCY` | `3` | 段级总结并发数；长视频实际 LLM 并发约为 `MAX_CONCURRENT_SUMMARIES * LLM_SEGMENT_CONCURRENCY` |
 | LLM | `LLM_BASE_URL_ALLOWED_HOSTS` | 内置常见供应商列表 | SSRF 白名单；空 = 不限制（仅本地） |
+| LLM | `OPENROUTER_MANAGEMENT_API_KEY` | 空 | OpenRouter 管理 Key，用于读取账户 credits；普通推理 Key 只看自身限额 |
+| LLM | `USAGE_FINGERPRINT_SECRET` | 空 | 稳定指纹密钥（不存原始 Key）；空则从本实例已有密钥安全派生 |
 | 总结 | `SUMMARY_LANGUAGE` | `中文简体` | 输出语言 |
+| 周报 | `WEEKLY_SUMMARY_TIMEZONE` | `Asia/Shanghai` | 周报周界与「本周」划分所用时区 |
 | 邮件 | `EMAIL_ENABLED` | `false` | |
 | 邮件 | `EMAIL_WEBHOOK_URL` | 空 | 收 webhook 的 URL（如 Cloudflare Worker） |
 | 邮件 | `EMAIL_WEBHOOK_TOKEN` | 空 | 启用邮件时必填；后端 → Worker 的鉴权 token，与 Worker 端 `BIRI_YOUYAKU_TOKEN` 一致 |
@@ -41,6 +44,7 @@
 | 知识库 | `KNOWLEDGE_REGISTER_ENABLED` | `true` | 关闭后 register/reconcile 空操作（回滚开关）；已落盘 artifact 不删 |
 | 知识库 | `KNOWLEDGE_SEARCH_ENABLED` | `true` | 基于总结的 FTS 检索；需 register 开启才对外暴露 |
 | 知识库 | `KNOWLEDGE_CHAT_ENABLED` | `false` | 基于总结的知识问答（默认关；开启后 query+片段会发往已配置 LLM） |
+| 知识库 | `KNOWLEDGE_TRANSCRIPT_INDEX_ENABLED` | `true` | 原始字幕 FTS 索引层；检索时可叠加总结层 |
 | 知识库 | `KNOWLEDGE_SOFT_DELETE_DAYS` | `30` | 软删除文档超过该天数后由 cleanup 自动永久清理 |
 | 知识库 | `KNOWLEDGE_BACKUP_DIR` | `data/backups` | 本地一致性备份目录（`sqlite` backup + knowledge + summaries + manifest） |
 | 清理 | `AUDIO_RETENTION_DAYS` | `7` | 自动清 audio 文件并清空 path；job 行保留 |
@@ -85,7 +89,10 @@ All tunable settings live in `server/.env`; defaults are in
 | LLM | `LLM_CHUNK_TOKEN_THRESHOLD` | `30000` | long-transcript split threshold |
 | LLM | `LLM_SEGMENT_CONCURRENCY` | `3` | per-segment summarize concurrency; long-video LLM concurrency is roughly `MAX_CONCURRENT_SUMMARIES * LLM_SEGMENT_CONCURRENCY` |
 | LLM | `LLM_BASE_URL_ALLOWED_HOSTS` | built-in providers | SSRF allowlist; empty = no limit (local only) |
+| LLM | `OPENROUTER_MANAGEMENT_API_KEY` | empty | OpenRouter management key for account credits; normal inference keys only show their own limit |
+| LLM | `USAGE_FINGERPRINT_SECRET` | empty | stable fingerprint secret (never stores raw keys); empty → derived from this instance's secrets |
 | Summary | `SUMMARY_LANGUAGE` | `中文简体` | output language |
+| Weekly | `WEEKLY_SUMMARY_TIMEZONE` | `Asia/Shanghai` | timezone used for weekly boundaries / "this week" |
 | Email | `EMAIL_ENABLED` | `false` | |
 | Email | `EMAIL_WEBHOOK_URL` | empty | the webhook receiver URL (e.g. a Cloudflare Worker) |
 | Email | `EMAIL_WEBHOOK_TOKEN` | empty | required when email is enabled; auth token from backend → worker; must match the worker's `BIRI_YOUYAKU_TOKEN` |
@@ -95,6 +102,7 @@ All tunable settings live in `server/.env`; defaults are in
 | Knowledge | `KNOWLEDGE_REGISTER_ENABLED` | `true` | when false, register/reconcile no-op (rollback switch); existing artifacts kept |
 | Knowledge | `KNOWLEDGE_SEARCH_ENABLED` | `true` | FTS search over active summaries; exposed only when register is on |
 | Knowledge | `KNOWLEDGE_CHAT_ENABLED` | `false` | opt-in knowledge Q&A over summaries (default off; when on, query+chunks go to configured LLM) |
+| Knowledge | `KNOWLEDGE_TRANSCRIPT_INDEX_ENABLED` | `true` | raw transcript FTS layer; layered retrieve uses it when present |
 | Knowledge | `KNOWLEDGE_SOFT_DELETE_DAYS` | `30` | soft-deleted docs older than this are permanently purged by cleanup |
 | Knowledge | `KNOWLEDGE_BACKUP_DIR` | `data/backups` | local consistent backups (sqlite backup API + knowledge + summaries + hash manifest) |
 | Cleanup | `AUDIO_RETENTION_DAYS` | `7` | auto: delete audio file(s) and clear path; job row kept |
@@ -116,7 +124,7 @@ Create a consistent snapshot (prefer while writers are idle):
 
 ```bash
 # API (Bearer if API_TOKEN set)
-curl -X POST http://127.0.0.1:8000/v1/knowledge/backup \
+curl -X POST http://127.0.0.1:17821/v1/knowledge/backup \
   -H 'Content-Type: application/json' -d '{"dry_run": false}'
 
 # or CLI from server/

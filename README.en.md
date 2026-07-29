@@ -18,7 +18,8 @@ Paste a Bilibili video link and get a readable Markdown summary, a mind map, and
 - **Any LLM**: any OpenAI-compatible endpoint (DeepSeek by default; OpenAI / Gemini / local ollama all work).
 - **Browse by uploader**: list an uploader's whole catalog, see which are summarized, one-click the rest.
 - **Uploader corpus distillation**: scrape an uploader's video transcripts, extract viewpoints with LLM, and compile them into a persona corpus (e.g. for roleplay).
-- **Stats page**: token usage and per-stage timing dashboard.
+- **Personal knowledge base**: register completed summaries; local FTS search; optional chat (off by default); soft-delete / restore / purge.
+- **History usage & weekly digests**: token/cost stats and weekly summaries live on the history page (no standalone `/stats` route).
 - **Dedup to save tokens**: re-pasting an already-summarized video reuses the old result.
 - **Per-job fixes**: resummarize (reuse existing transcript), force re-transcription (ignore existing transcript/subtitles and redo ASR), resend email for a failed job.
 - **Audio download**: download the audio file used for transcription.
@@ -36,7 +37,7 @@ bash scripts/dev.sh                  # starts both servers (auto-copies .env, in
 Open <http://127.0.0.1:5173> and paste a Bilibili link.
 
 > Windows: `powershell -ExecutionPolicy Bypass -File scripts\dev.ps1`
-> Docker: `docker compose up --build` (hot-reload via `docker compose -f docker-compose.dev.yml up --build`).
+> Docker: `docker compose up --build` (hot-reload via `docker compose -f docker-compose.dev.yml up --build`). Default server image **does not install ASR extras** (funasr/torch); for no-subtitle videos edit Dockerfile to `uv sync --extra asr`.
 
 <details>
 <summary>Run the two servers manually</summary>
@@ -111,7 +112,7 @@ Combined with local ASR below, this is fully offline (except fetching from Bilib
 flowchart LR
     user([Browser]) -->|paste BV link| web[Vite + React]
     web -->|REST + SSE| api[FastAPI]
-    web -->|browse-by-uploader/distill/stats| api
+    web -->|UP/distill/history/knowledge| api
     api --> ytdlp[yt-dlp<br/>subtitles/audio]
     ytdlp -->|has subtitles| llm
     ytdlp -->|no subtitles| asr[local ASR<br/>SenseVoice / Parakeet]
@@ -120,15 +121,19 @@ flowchart LR
     distill --> llm
     llm -->|streamed chunks| api
     api --> db[(SQLite)]
-    api --> stats[stats<br/>tokens/timing]
+    api --> knowledge[knowledge<br/>FTS / soft-delete]
+    api --> weekly[weekly digests]
+    api --> stats[history stats<br/>tokens/cost]
     api -. optional .-> mail[Cloudflare Worker → Resend]
 ```
 
 > All data stays local (`server/data/`); nothing is reported to third parties besides the LLM endpoint and Bilibili. No telemetry.
+> Weekly timezone, knowledge backup, and related knobs: [`CONFIG.md`](CONFIG.md).
 
 ## 📦 Deploy & docs
 
-- [`DEPLOY.md`](DEPLOY.md) — public deployment (Vercel + Cloudflare Tunnel)
+- Same-host: `docker compose up --build` (Web `5173`, API `17821`)
+- Public split: [`DEPLOY.md`](DEPLOY.md) — Vercel frontend + Cloudflare Tunnel backend
 - [`CONFIG.md`](CONFIG.md) — every `server/.env` option
 
 Pre-commit local checks: `cd server && uv run pytest -q && uv run ruff check .`, `cd web && npm run build` (includes tsc).

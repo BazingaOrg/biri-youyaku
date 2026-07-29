@@ -6,7 +6,10 @@
 
 ## 部署到公网
 
-一种常见架构：
+**公网推荐**：前端 Vercel + 后端本机/VPS + Cloudflare Tunnel（下文）。
+**同机自托管**：仓库根目录 `docker compose up --build`（Web 映射 `5173`，API `17821`）；默认 `APP_CORS_ORIGINS` 已允许 `localhost:5173` / `127.0.0.1:5173`，本机 compose 一般不用改 CORS。
+
+一种常见公网架构：
 
 - 前端部署到 Vercel；
 - 后端跑在自己的机器（VPS / 树莓派 / 工作站）；
@@ -56,7 +59,10 @@ your-api-domain.example.com -> http://localhost:17821
 
 ## Deploy
 
-A common setup:
+**Public recipe (recommended below):** Vercel frontend + own-machine backend + Cloudflare Tunnel.
+**Same-host self-host:** from the repo root, `docker compose up --build` (Web on `5173`, API on `17821`). Default `APP_CORS_ORIGINS` already allows `localhost:5173` / `127.0.0.1:5173`, so local compose usually needs no CORS change.
+
+A common public setup:
 
 - Frontend on Vercel.
 - Backend on your own machine (VPS / Raspberry Pi / workstation).

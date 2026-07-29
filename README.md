@@ -18,7 +18,8 @@
 - **任意 LLM**：任何 OpenAI 兼容接口（默认 DeepSeek，OpenAI / Gemini / 本地 ollama 等都行）。
 - **按 UP 主浏览**：列出某 UP 全部投稿、标记已/未总结、未总结一键补。
 - **UP 主蒸馏语料**：抓取某 UP 的投稿字幕，LLM 提取观点后编译成一份人设语料（corpus），可用于角色扮演等场景。
-- **数据统计页**：Token 用量、各阶段耗时等统计看板。
+- **个人知识库**：总结完成后可登记；本地 FTS 检索；可选问答（默认关）；文档软删 / 恢复 / 清理。
+- **历史页用量与周报**：Token / 费用统计与周报摘要都在历史页内（非独立 `/stats` 路由）。
 - **去重省钱**：同一视频已总结过就直接复用，不重复烧 token。
 - **单任务补救**：重新总结（复用已有字幕）、强制重新转写（忽略已有字幕/转写重新走 ASR）、失败任务重发邮件。
 - **音频下载**：转写用到的音频文件可直接下载。
@@ -36,7 +37,7 @@ bash scripts/dev.sh                  # 一键起前后端（自动 cp .env、装
 打开 <http://127.0.0.1:5173>，粘贴一个 B 站视频链接即可。
 
 > Windows：`powershell -ExecutionPolicy Bypass -File scripts\dev.ps1`
-> Docker：`docker compose up --build`（热重载用 `docker compose -f docker-compose.dev.yml up --build`）。
+> Docker：`docker compose up --build`（热重载用 `docker compose -f docker-compose.dev.yml up --build`）。默认 server 镜像**不装 ASR extras**（funasr/torch）；无字幕视频需改 Dockerfile 里 `uv sync --extra asr`。
 
 <details>
 <summary>不用脚本，手动分别起</summary>
@@ -111,7 +112,7 @@ LLM_BASE_URL_ALLOWED_HOSTS=   # 仅本地留空；公网部署不要放开白名
 flowchart LR
     user([浏览器]) -->|粘贴 BV 链接| web[Vite + React]
     web -->|REST + SSE| api[FastAPI]
-    web -->|按 UP 浏览/蒸馏/统计| api
+    web -->|UP/蒸馏/历史/知识库| api
     api --> ytdlp[yt-dlp<br/>抓字幕/音频]
     ytdlp -->|有字幕| llm
     ytdlp -->|无字幕| asr[本地 ASR<br/>SenseVoice / Parakeet]
@@ -120,15 +121,19 @@ flowchart LR
     distill --> llm
     llm -->|流式 chunk| api
     api --> db[(SQLite)]
-    api --> stats[统计<br/>Token/耗时]
+    api --> knowledge[知识库<br/>FTS / 软删]
+    api --> weekly[周报 weekly]
+    api --> stats[历史页统计<br/>Token/费用]
     api -. 可选 .-> mail[Cloudflare Worker → Resend]
 ```
 
 > 数据全部落在本地（`server/data/`）；除主动调用的 LLM 接口和 B 站外，不向任何第三方上报，无遥测、无统计。
+> 周报时区、知识库备份等细节见 [`CONFIG.md`](CONFIG.md)。
 
 ## 📦 部署与文档
 
-- [`DEPLOY.md`](DEPLOY.md) — 公网部署（Vercel + Cloudflare Tunnel）
+- 本机一体：`docker compose up --build`（Web `5173`，API `17821`）
+- 公网拆分：[`DEPLOY.md`](DEPLOY.md) — Vercel 前端 + Cloudflare Tunnel 后端
 - [`CONFIG.md`](CONFIG.md) — `server/.env` 全部可调项
 
 提交前本地检查：`cd server && uv run pytest -q && uv run ruff check .`，`cd web && npm run build`（含 tsc）。

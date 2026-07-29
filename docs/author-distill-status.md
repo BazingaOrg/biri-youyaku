@@ -1,5 +1,7 @@
 # author-distill 进度
 
+> 实施/进度笔记；产品真相以 README 为准。 / Progress notes; product truth is README.
+
 规格：`docs/specs/author-distill.md`（已批准 2026-07-07；A2 修订为 video-only）。
 
 | Step | 内容 | 状态 | commit |
