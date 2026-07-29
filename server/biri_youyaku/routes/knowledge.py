@@ -239,7 +239,7 @@ async def knowledge_audit(limit: int = Query(default=50, ge=1, le=200)) -> dict[
 
 
 @router.post("/knowledge/backup")
-async def knowledge_backup(body: BackupBody | None = None) -> dict[str, Any]:
+async def create_knowledge_backup(body: BackupBody | None = None) -> dict[str, Any]:
     dry_run = bool(body.dry_run) if body else False
     try:
         result = knowledge_backup.create_backup(dry_run=dry_run, actor="api")

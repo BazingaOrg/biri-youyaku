@@ -454,6 +454,7 @@ async def test_delete_removes_terminal_job_and_files(monkeypatch, tmp_path):
     calls = {}
     monkeypatch.setattr(jobs_route.repo, "get_job", lambda job_id: job)
     monkeypatch.setattr(jobs_route.repo, "delete_job", lambda job_id: calls.setdefault("deleted", job_id) and 1)
+    monkeypatch.setattr("biri_youyaku.knowledge.unlink_job", lambda *a, **k: None)
 
     response = await jobs_route.delete("job-1")
 

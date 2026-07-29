@@ -264,6 +264,9 @@ async def test_list_jobs_scope_cursor_response_contract(monkeypatch, tmp_path):
     db.init_db()
     job = repo.create_job("https://www.bilibili.com/video/BV1", JobOptions())
     repo.update_status(job.id, JobStatus.COMPLETED)
+    # terminal_only cursor uses completed_at; re-read after status update.
+    job = repo.get_job(job.id)
+    assert job is not None
 
     legacy = await jobs_route.list_jobs(
         limit=1,
