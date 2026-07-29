@@ -418,6 +418,10 @@ async def execute_bulk_delete(payload: BulkDeleteExecutePayload) -> dict:
         affected_weekly_summaries = weekly_summary_repo.mark_stale_for_job_ids(
             job_ids, connection=connection
         )
+        # A3: unlink knowledge job links inside the same transaction; never delete artifacts.
+        from biri_youyaku.knowledge import unlink_jobs as knowledge_unlink_jobs
+
+        knowledge_unlink_jobs(job_ids, connection=connection)
         deleted_count = repo.delete_jobs_by_ids(job_ids, connection=connection)
         if deleted_count != len(jobs):
             connection.rollback()
@@ -615,6 +619,10 @@ async def delete(job_id: str) -> dict:
         raise HTTPException(status_code=409, detail="任务进行中，请先取消再删除")
 
     weekly_summary_repo.mark_stale_for_job_ids([job.id])
+    # A3: unlink knowledge job link; keep knowledge artifacts on disk/DB.
+    from biri_youyaku.knowledge import unlink_job as knowledge_unlink_job
+
+    knowledge_unlink_job(job_id)
     delete_job_files(job)
     deleted = repo.delete_job(job_id)
     if deleted == 0:

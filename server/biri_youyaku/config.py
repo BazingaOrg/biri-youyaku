@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     audio_storage_dir: Path = Path("data/audio")
     summary_storage_dir: Path = Path("data/summaries")
     distill_storage_dir: Path = Path("data/distill")
+    # A3 knowledge artifacts: data/knowledge/artifacts/<document_id>/{summary,transcript}/
+    knowledge_storage_dir: Path = Path("data/knowledge")
+    # Rollback switch: when False, register/reconcile no-op (artifacts already written stay).
+    knowledge_register_enabled: bool = True
     db_path: Path = Path("data/biri_youyaku.db")
 
     # Auto: clear audio files/paths after N days; job row stays.
@@ -111,7 +115,12 @@ class Settings(BaseSettings):
         ]
 
     @field_validator(
-        "audio_storage_dir", "summary_storage_dir", "distill_storage_dir", "db_path", mode="before"
+        "audio_storage_dir",
+        "summary_storage_dir",
+        "distill_storage_dir",
+        "knowledge_storage_dir",
+        "db_path",
+        mode="before",
     )
     @classmethod
     def default_paths(cls, value: object, info):
@@ -121,6 +130,7 @@ class Settings(BaseSettings):
             "audio_storage_dir": Path("data/audio"),
             "summary_storage_dir": Path("data/summaries"),
             "distill_storage_dir": Path("data/distill"),
+            "knowledge_storage_dir": Path("data/knowledge"),
             "db_path": Path("data/biri_youyaku.db"),
         }
         return defaults[info.field_name]

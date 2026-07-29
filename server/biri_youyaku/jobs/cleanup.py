@@ -376,6 +376,13 @@ async def cleanup_loop() -> None:
             await cleanup_once()
             await fail_stale_running_once()
             await scan_orphans_once()
+            # A3 knowledge reconcile: best-effort register pending completed jobs.
+            try:
+                from biri_youyaku.knowledge import reconcile_once
+
+                reconcile_once(limit=50)
+            except Exception:
+                logger.exception("knowledge reconcile in cleanup_loop failed")
         except Exception:
             logger.exception("Cleanup loop tick failed")
         now = time.monotonic()

@@ -136,6 +136,74 @@ CREATE TABLE IF NOT EXISTS pending_file_cleanup (
   last_error      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_pending_file_cleanup_updated ON pending_file_cleanup(updated_at);
+
+-- A3 knowledge registry: durable summary/transcript artifacts linked from jobs.
+-- History delete unlinks jobs only; knowledge files stay until permanent document delete (D).
+CREATE TABLE IF NOT EXISTS knowledge_documents (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  external_bvid TEXT NOT NULL,
+  external_cid INTEGER NOT NULL,
+  title TEXT,
+  author TEXT,
+  mid INTEGER,
+  source_url TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(provider, external_bvid, external_cid)
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_artifacts (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL REFERENCES knowledge_documents(id),
+  kind TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  storage_path TEXT NOT NULL,
+  byte_size INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE(document_id, kind, content_hash)
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_content_revisions (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL REFERENCES knowledge_documents(id),
+  artifact_id TEXT NOT NULL REFERENCES knowledge_artifacts(id),
+  content_hash TEXT NOT NULL,
+  subtitle_source TEXT,
+  created_at INTEGER NOT NULL,
+  UNIQUE(document_id, content_hash)
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_summary_revisions (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL REFERENCES knowledge_documents(id),
+  artifact_id TEXT NOT NULL REFERENCES knowledge_artifacts(id),
+  content_hash TEXT NOT NULL,
+  source_job_id TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_summary_active
+  ON knowledge_summary_revisions(document_id, is_active);
+
+CREATE TABLE IF NOT EXISTS knowledge_job_links (
+  job_id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL REFERENCES knowledge_documents(id),
+  summary_revision_id TEXT,
+  content_revision_id TEXT,
+  linked_at INTEGER NOT NULL,
+  unlinked_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_reconcile (
+  job_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  reason TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 """
 
 # 已废弃的旧列：去重改走 bvid 查询（不再用 content_hash），旧 SELECT * 兼容列也不再需要。

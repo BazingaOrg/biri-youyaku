@@ -593,6 +593,13 @@ async def _do_summarize(job_id: str, stage: _RunStage) -> None:
         email_error=email_error,
         tags=tags,
     )
+    # A3 knowledge registry: best-effort; never fail the job on register errors.
+    try:
+        from biri_youyaku.knowledge import try_register_job
+
+        try_register_job(job_id)
+    except Exception:
+        logger.exception("knowledge register hook failed for job %s", job_id)
 
 
 async def run_after_resume(job_id: str) -> None:

@@ -112,6 +112,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await cleanup_once()
     await fail_stale_running_once()
     await scan_orphans_once()
+    # A3 knowledge: backfill register completed summary jobs (best-effort).
+    try:
+        from biri_youyaku.knowledge import reconcile_once
+
+        reconcile_once(limit=50)
+    except Exception:
+        log.warning("knowledge reconcile at startup failed", exc_info=True)
     runner.prepare_startup()
     distill_orchestrator.prepare_startup()
     weekly_orchestrator.prepare_startup()

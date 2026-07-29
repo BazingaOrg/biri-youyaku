@@ -37,7 +37,8 @@
 | 邮件 | `EMAIL_WEBHOOK_TOKEN` | 空 | 启用邮件时必填；后端 → Worker 的鉴权 token，与 Worker 端 `BIRI_YOUYAKU_TOKEN` 一致 |
 | 邮件 | `EMAIL_DEFAULT_RECIPIENT` | 空 | **唯一**收件人；后端永远只发到这里（无 per-job 收件人，防滥发） |
 | 邮件 | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | 支持 `{{title}}` / `{{author}}` |
-| 存储 | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DISTILL_STORAGE_DIR / DB_PATH` | `data/...` | `DISTILL_STORAGE_DIR` 存蒸馏语料 |
+| 存储 | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DISTILL_STORAGE_DIR / KNOWLEDGE_STORAGE_DIR / DB_PATH` | `data/...` | `KNOWLEDGE_STORAGE_DIR` 存 knowledge artifacts；`KNOWLEDGE_REGISTER_ENABLED` 默认 true，关则跳过登记/回填 |
+| 知识库 | `KNOWLEDGE_REGISTER_ENABLED` | `true` | 关闭后 register/reconcile 空操作（回滚开关）；已落盘 artifact 不删 |
 | 清理 | `AUDIO_RETENTION_DAYS` | `7` | 自动清 audio 文件并清空 path；job 行保留 |
 | 清理 | `JOB_RETENTION_DAYS` | `180` | 仅自动删除 FAILED/CANCELED 且无 summary 的 job；COMPLETED 永久保留至用户手动删除 |
 | 清理 | `ORPHAN_FILE_RETENTION_DAYS` | `3` | DB 不引用的孤儿文件多久后清 |
@@ -86,7 +87,8 @@ All tunable settings live in `server/.env`; defaults are in
 | Email | `EMAIL_WEBHOOK_TOKEN` | empty | required when email is enabled; auth token from backend → worker; must match the worker's `BIRI_YOUYAKU_TOKEN` |
 | Email | `EMAIL_DEFAULT_RECIPIENT` | empty | the **only** recipient; backend always sends here (no per-job recipient, anti-abuse) |
 | Email | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | `{{title}}` / `{{author}}` allowed |
-| Storage | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DISTILL_STORAGE_DIR / DB_PATH` | `data/...` | `DISTILL_STORAGE_DIR` holds distilled author corpora |
+| Storage | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DISTILL_STORAGE_DIR / KNOWLEDGE_STORAGE_DIR / DB_PATH` | `data/...` | `KNOWLEDGE_STORAGE_DIR` holds knowledge artifacts; `KNOWLEDGE_REGISTER_ENABLED` defaults true (disable to skip register/reconcile) |
+| Knowledge | `KNOWLEDGE_REGISTER_ENABLED` | `true` | when false, register/reconcile no-op (rollback switch); existing artifacts kept |
 | Cleanup | `AUDIO_RETENTION_DAYS` | `7` | auto: delete audio file(s) and clear path; job row kept |
 | Cleanup | `JOB_RETENTION_DAYS` | `180` | auto-delete only FAILED/CANCELED jobs with no summary; COMPLETED kept until explicit user delete |
 | Cleanup | `ORPHAN_FILE_RETENTION_DAYS` | `3` | how long DB-unreferenced files linger |
