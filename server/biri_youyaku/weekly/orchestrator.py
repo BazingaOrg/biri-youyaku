@@ -10,7 +10,7 @@ from biri_youyaku.jobs import repo as jobs_repo
 from biri_youyaku.jobs import runner
 from biri_youyaku.jobs.model import JobOptions
 from biri_youyaku.modules._http import openai_client
-from biri_youyaku.modules.llm.client import _complete, resolve_temperature
+from biri_youyaku.modules.llm.client import complete, resolve_temperature
 from biri_youyaku.modules.llm.usage import make_context
 from biri_youyaku.weekly import repo
 
@@ -84,7 +84,7 @@ async def _run(
             # process. Verify/renew immediately before the billable request.
             if not repo.renew_generation_lease(week_start, generation_token):
                 return
-            raw = await _complete(
+            raw = await complete(
                 client,
                 model=options.llm_model,
                 messages=[{"role": "user", "content": _prompt(sources)}],

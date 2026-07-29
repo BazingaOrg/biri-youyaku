@@ -1,6 +1,6 @@
 import pytest
 
-from biri_youyaku.modules.storage import distill
+from biri_youyaku.modules.storage import atomic, distill
 
 
 def _patch_storage_dir(monkeypatch, tmp_path):
@@ -22,7 +22,7 @@ def test_save_corpus_keeps_old_file_and_cleans_temp_after_partial_write_failure(
     _patch_storage_dir(monkeypatch, tmp_path)
     distill.save_corpus(1, "old corpus")
     path = distill.corpus_path(1)
-    original_named_temporary_file = distill.tempfile.NamedTemporaryFile
+    original_named_temporary_file = atomic.tempfile.NamedTemporaryFile
 
     class PartialWriteFile:
         def __init__(self, file):
@@ -44,10 +44,10 @@ def test_save_corpus_keeps_old_file_and_cleans_temp_after_partial_write_failure(
     def partial_named_temporary_file(*args, **kwargs):
         return PartialWriteFile(original_named_temporary_file(*args, **kwargs))
 
-    monkeypatch.setattr(distill.tempfile, "NamedTemporaryFile", partial_named_temporary_file)
+    monkeypatch.setattr(atomic.tempfile, "NamedTemporaryFile", partial_named_temporary_file)
 
     with pytest.raises(OSError, match="simulated partial write"):
-        distill._atomic_write_text(path, "new corpus")
+        atomic.atomic_write_text(path, "new corpus")
 
     assert path.read_text(encoding="utf-8") == "old corpus"
     assert not list(path.parent.glob(f".{path.name}.*"))

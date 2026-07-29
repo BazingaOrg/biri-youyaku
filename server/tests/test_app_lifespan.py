@@ -14,7 +14,7 @@ async def test_lifespan_shuts_down_distill_before_runner_maintenance_and_http(
     events = []
 
     monkeypatch.setattr(app_module, "configure_logging", lambda: None)
-    monkeypatch.setattr(app_module, "_expected_token", lambda: "")
+    monkeypatch.setattr(app_module, "expected_token", lambda: "")
     monkeypatch.setattr(app_module, "init_db", lambda: None)
     monkeypatch.setattr(app_module, "clean_tempfile_residues", lambda: None)
     monkeypatch.setattr(app_module, "cleanup_once", lambda: _done())
@@ -73,7 +73,7 @@ async def test_lifespan_closes_http_once_after_unfinished_job_completes(monkeypa
     closed = []
 
     monkeypatch.setattr(app_module, "configure_logging", lambda: None)
-    monkeypatch.setattr(app_module, "_expected_token", lambda: "")
+    monkeypatch.setattr(app_module, "expected_token", lambda: "")
     monkeypatch.setattr(app_module, "init_db", lambda: None)
     monkeypatch.setattr(app_module, "clean_tempfile_residues", lambda: None)
     monkeypatch.setattr(app_module, "cleanup_once", lambda: _done())
@@ -123,7 +123,7 @@ async def test_old_deferred_close_does_not_close_a_new_lifespan_client(monkeypat
     shutdown_results = iter([{"job-1": "TRANSCRIBING"}, {"job-1": "TRANSCRIBING"}])
 
     monkeypatch.setattr(app_module, "configure_logging", lambda: None)
-    monkeypatch.setattr(app_module, "_expected_token", lambda: "")
+    monkeypatch.setattr(app_module, "expected_token", lambda: "")
     monkeypatch.setattr(app_module, "init_db", lambda: None)
     monkeypatch.setattr(app_module, "clean_tempfile_residues", lambda: None)
     monkeypatch.setattr(app_module, "cleanup_once", lambda: _done())

@@ -1,6 +1,6 @@
 """作者蒸馏语料的 LLM 调用层：视频观点提取。
 
-复用 `client.py` 的底层非流式补全（`_complete`）与分段阈值判断
+复用 `client.py` 的底层非流式补全（`complete`）与分段阈值判断
 （`segmenter.should_chunk` / `split_transcript`），但走蒸馏专用 prompt
 （`distill_prompts.py`）而非笔记总结 prompt——两条链路目标不同（观点密度 vs
 操作步骤/结构化摘要），不共享 prompt。这里不发邮件、不打标签，那是 summary
@@ -13,7 +13,7 @@ import logging
 
 from biri_youyaku.config import settings
 from biri_youyaku.modules._http import openai_client
-from biri_youyaku.modules.llm.client import _complete, resolve_temperature
+from biri_youyaku.modules.llm.client import complete, resolve_temperature
 from biri_youyaku.modules.llm.usage import make_context
 from biri_youyaku.modules.llm.distill_prompts import (
     DISTILL_EXTRACT_MERGE_PROMPT,
@@ -50,7 +50,7 @@ def _render(template: str, **tokens: str) -> str:
 async def _complete_prompt(prompt: str, *, operation: str, run_id: str | None = None) -> str:
     client = _client()
     api_key = settings.llm_api_key
-    return await _complete(
+    return await complete(
         client,
         model=settings.llm_model,
         messages=[{"role": "user", "content": prompt}],

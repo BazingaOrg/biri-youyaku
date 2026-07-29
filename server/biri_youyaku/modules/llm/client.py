@@ -130,7 +130,7 @@ def _usage_to_dict(usage) -> dict | None:
     }
 
 
-def _build_create_kwargs(model: str, temperature: float, **base) -> dict:
+def build_create_kwargs(model: str, temperature: float, **base) -> dict:
     """组装 chat.completions.create 的 kwargs，统一处理思考模式与 temperature。"""
     kwargs = dict(base)
     kwargs["model"] = model
@@ -143,7 +143,11 @@ def _build_create_kwargs(model: str, temperature: float, **base) -> dict:
     return kwargs
 
 
-async def _complete(
+# Back-compat for in-module callers and tests that still patch/import private names.
+_build_create_kwargs = build_create_kwargs
+
+
+async def complete(
     client: AsyncOpenAI,
     *,
     model: str,
@@ -152,7 +156,7 @@ async def _complete(
     on_usage: TokenUsageCallback | None = None,
     usage_context: UsageContext | None = None,
 ) -> str:
-    base_kwargs = _build_create_kwargs(model, temperature, messages=messages)
+    base_kwargs = build_create_kwargs(model, temperature, messages=messages)
     request_id = f"local:{uuid.uuid4()}"
     try:
         response = await client.chat.completions.create(**base_kwargs)
@@ -171,6 +175,9 @@ async def _complete(
     if usage is not None and on_usage is not None:
         await on_usage(usage)
     return response.choices[0].message.content or ""
+
+
+_complete = complete
 
 
 async def _complete_stream(

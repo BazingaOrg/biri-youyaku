@@ -10,7 +10,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from biri_youyaku.auth import _expected_token
+from biri_youyaku.auth import expected_token
 from biri_youyaku.config import settings
 from biri_youyaku.db import init_db
 from biri_youyaku.rate_limit import limiter
@@ -79,7 +79,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     generation = _lifespan_generation
     configure_logging()
     log = logging.getLogger("biri_youyaku.startup")
-    token = _expected_token()
+    token = expected_token()
     log.info(
         "API_TOKEN auth %s (token length=%d)",
         "enabled" if token else "disabled",

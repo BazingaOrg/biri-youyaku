@@ -16,7 +16,7 @@ from biri_youyaku.knowledge.retrieve import (
     retrieve,
 )
 from biri_youyaku.modules._http import openai_client
-from biri_youyaku.modules.llm.client import _build_create_kwargs, resolve_temperature
+from biri_youyaku.modules.llm.client import build_create_kwargs, resolve_temperature
 
 logger = logging.getLogger("biri_youyaku.knowledge.chat")
 
@@ -238,7 +238,7 @@ async def stream_chat(
     try:
         model = settings.llm_model
         temperature = resolve_temperature()
-        base_kwargs = _build_create_kwargs(
+        base_kwargs = build_create_kwargs(
             model,
             temperature,
             messages=messages,

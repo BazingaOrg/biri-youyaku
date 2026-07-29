@@ -779,39 +779,9 @@ def list_bulk_delete_candidates(
     the browser may only have rendered a small, scroll-loaded subset of history.
     """
     placeholders, values = _status_filter(BULK_DELETE_JOB_STATUSES)
-    clauses = [
-        f"status IN ({placeholders})",
-        "json_extract(effective_options_json, '$.task_type') IS NOT 'distill'",
-    ]
-    parameters: list[Any] = list(values)
-
-    if query:
-        escaped_query = query.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        pattern = f"%{escaped_query}%"
-        clauses.append(
-            """(
-                lower(COALESCE(title, '')) LIKE ? ESCAPE '\\'
-                OR lower(COALESCE(author, '')) LIKE ? ESCAPE '\\'
-                OR lower(COALESCE(bvid, '')) LIKE ? ESCAPE '\\'
-                OR lower(COALESCE(url, '')) LIKE ? ESCAPE '\\'
-                OR EXISTS (
-                    SELECT 1 FROM json_each(COALESCE(tags_json, '[]')) AS tag_item
-                    WHERE lower(CAST(tag_item.value AS TEXT)) LIKE ? ESCAPE '\\'
-                )
-            )"""
-        )
-        parameters.extend([pattern, pattern, pattern, pattern, pattern])
-    if author:
-        if author == "未知 UP":
-            clauses.append("(author IS NULL OR TRIM(author) = '')")
-        else:
-            clauses.append("TRIM(COALESCE(author, '')) = ?")
-            parameters.append(author)
-    if tag:
-        clauses.append(
-            "EXISTS (SELECT 1 FROM json_each(COALESCE(tags_json, '[]')) AS tag_item WHERE tag_item.value = ?)"
-        )
-        parameters.append(tag)
+    filter_clauses, filter_params = _history_filter_clauses(query=query, author=author, tag=tag)
+    clauses = [f"status IN ({placeholders})", *filter_clauses]
+    parameters: list[Any] = [*values, *filter_params]
 
     statement = f"""
         SELECT {_LITE_COLUMNS} FROM jobs
