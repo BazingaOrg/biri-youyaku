@@ -342,7 +342,7 @@ export function KnowledgePage() {
   }
 
   return (
-    <div className="grid min-h-[calc(100dvh-3rem)] animate-fade-in-up content-start gap-5 sm:min-h-[calc(100dvh-5rem)]">
+    <div className="grid min-h-[calc(100dvh-3rem)] min-w-0 animate-fade-in-up content-start gap-5 sm:min-h-[calc(100dvh-5rem)]">
       <header className="grid gap-4 px-4 sm:px-5">
         <button
           type="button"
@@ -533,38 +533,44 @@ export function KnowledgePage() {
           </p>
         )}
         {!docsLoading && docs.length > 0 && (
-          <ul className="mt-4 grid gap-2">
+          <ul className="mt-4 grid min-w-0 gap-2">
             {docs.map((doc) => {
               const deleted = doc.deleted_at != null
               const rowBusy = docBusyId === doc.id
               return (
                 <li
                   key={doc.id}
-                  className="flex flex-wrap items-center gap-3 rounded-2xl border border-line/70 bg-panel px-4 py-3 shadow-card"
+                  className="grid min-w-0 gap-3 rounded-2xl border border-line/70 bg-panel px-4 py-3 shadow-card sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-ink">
-                      {doc.title || '无标题'}
+                  <div className="min-w-0 overflow-hidden">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
+                        {doc.title || '无标题'}
+                      </p>
                       {deleted && (
-                        <span className="ml-2 rounded-full bg-lift px-2 py-0.5 text-xs text-muted">
+                        <span className="shrink-0 rounded-full bg-lift px-2 py-0.5 text-xs text-muted">
                           已删除
                         </span>
                       )}
-                    </p>
-                    <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-muted">
-                      {doc.author && <span className="truncate">{doc.author}</span>}
-                      {doc.author && doc.bvid && <span>·</span>}
-                      {doc.bvid && <span className="font-mono">{doc.bvid}</span>}
+                    </div>
+                    <p className="mt-1 flex min-w-0 items-center gap-x-2 overflow-hidden text-xs text-muted">
+                      {doc.author && (
+                        <span className="min-w-0 truncate">{doc.author}</span>
+                      )}
+                      {doc.author && doc.bvid && <span className="shrink-0">·</span>}
+                      {doc.bvid && (
+                        <span className="min-w-0 shrink truncate font-mono">{doc.bvid}</span>
+                      )}
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
                     {deleted ? (
                       <>
                         <button
                           type="button"
                           disabled={rowBusy}
                           onClick={() => void handleRestore(doc)}
-                          className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-lift px-3 text-sm text-ink transition hover:bg-line/70 disabled:opacity-40"
+                          className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl bg-lift px-3 text-sm text-ink transition hover:bg-line/70 disabled:opacity-40"
                         >
                           <RotateCcw size={14} />
                           恢复
@@ -576,7 +582,7 @@ export function KnowledgePage() {
                             setPurgeTarget(doc)
                             setPurgeConfirmText('')
                           }}
-                          className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-danger/10 px-3 text-sm text-danger transition hover:bg-danger/15 disabled:opacity-40"
+                          className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl bg-danger/10 px-3 text-sm text-danger transition hover:bg-danger/15 disabled:opacity-40"
                         >
                           <Trash2 size={14} />
                           永久删除
@@ -588,7 +594,7 @@ export function KnowledgePage() {
                           type="button"
                           disabled={rowBusy}
                           onClick={() => setSoftDeleteTarget(doc)}
-                          className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-lift px-3 text-sm text-muted transition hover:bg-line/70 hover:text-ink disabled:opacity-40"
+                          className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl bg-lift px-3 text-sm text-muted transition hover:bg-line/70 hover:text-ink disabled:opacity-40"
                         >
                           <Trash2 size={14} />
                           删除
@@ -600,7 +606,7 @@ export function KnowledgePage() {
                             setPurgeTarget(doc)
                             setPurgeConfirmText('')
                           }}
-                          className="inline-flex min-h-9 items-center gap-1.5 rounded-xl px-3 text-sm text-danger/80 transition hover:bg-danger/10 disabled:opacity-40"
+                          className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl px-3 text-sm text-danger/80 transition hover:bg-danger/10 disabled:opacity-40"
                         >
                           永久删除
                         </button>
@@ -641,7 +647,7 @@ export function KnowledgePage() {
               <p>
                 将删除磁盘产物、全部修订与索引，且不可恢复。请输入文档标题或 bvid 以确认：
               </p>
-              <p className="rounded-xl bg-lift px-3 py-2 font-mono text-xs text-ink">
+              <p className="break-all rounded-xl bg-lift px-3 py-2 font-mono text-xs text-ink">
                 {purgeExpected || '（无标题也无 bvid）'}
               </p>
               <input
