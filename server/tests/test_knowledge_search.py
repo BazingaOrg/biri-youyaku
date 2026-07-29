@@ -163,6 +163,30 @@ def test_chinese_term_match_via_fts_prepare(monkeypatch, tmp_path):
     assert any("量子" in h.chunk_text for h in hits)
 
 
+def test_cjk_phrase_avoids_reversed_character_false_positive(monkeypatch, tmp_path):
+    """「张三」must not match a chunk that only has 「三张…」(order reversed)."""
+    _setup(monkeypatch, tmp_path)
+    noise = _make_completed_job(
+        bvid="BV1noise",
+        cid=1,
+        title="扑克教学",
+        summary_body="## 笔记\n先发三张牌再看公共牌。\n",
+    )
+    target = _make_completed_job(
+        bvid="BV1name",
+        cid=2,
+        title="人物访谈",
+        summary_body="## 笔记\n嘉宾张三谈到创业经历。\n",
+    )
+    assert try_register_job(noise.id) == RECONCILE_REGISTERED
+    assert try_register_job(target.id) == RECONCILE_REGISTERED
+
+    hits = search_summaries("张三", limit=10)
+    assert hits
+    assert all("三张" not in h.chunk_text for h in hits)
+    assert any("张三" in h.chunk_text for h in hits)
+
+
 def test_empty_query_returns_empty(monkeypatch, tmp_path):
     _setup(monkeypatch, tmp_path)
     assert search_summaries("") == []

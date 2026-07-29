@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass
 
 _HEADING_RE = re.compile(r"^(#{2,3})\s+(.+?)\s*$")
+# Exported for search phrase heuristics (same CJK ranges as fts_prepare_text).
 _CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 
 

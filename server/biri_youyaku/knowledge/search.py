@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from biri_youyaku.db import connect
 from biri_youyaku.knowledge.chunker import fts_prepare_text
+
+# List cards: short preview; full chunk_text is always returned for expand.
+_SNIPPET_MAX = 160
 
 
 @dataclass(frozen=True)
@@ -23,26 +27,43 @@ class Hit:
     score: float
 
 
+def _safe_token(token: str) -> str:
+    return token.replace('"', '""')
+
+
 def escape_fts_query(query: str) -> str:
     """Build a safe FTS5 MATCH expression from user text.
 
-    Uses phrase-ish AND of tokens; strips empty; empty input → empty string.
+    - Continuous query with no whitespace (e.g. 人名「张三」): FTS **phrase** so
+      tokens must appear in order and adjacent. Avoids 「张三」 matching 「三张牌」
+      (which only has 三 then 张 under character tokenization).
+    - Multi-word queries: AND of quoted tokens (broader recall).
     """
-    prepared = fts_prepare_text(query or "").strip()
+    raw = (query or "").strip()
+    prepared = fts_prepare_text(raw)
     if not prepared:
         return ""
-    # Split on whitespace; each token quoted with " and internal " doubled.
     tokens: list[str] = []
-    for raw in prepared.split():
-        token = raw.strip()
-        if not token:
+    for part in prepared.split():
+        token = part.strip()
+        if not token or token in {"AND", "OR", "NOT", "NEAR"}:
             continue
-        # Drop pure operator-ish tokens.
-        if token in {"AND", "OR", "NOT", "NEAR"}:
-            continue
-        safe = token.replace('"', '""')
-        tokens.append(f'"{safe}"')
-    return " ".join(tokens)
+        tokens.append(_safe_token(token))
+    if not tokens:
+        return ""
+    if len(tokens) == 1:
+        return f'"{tokens[0]}"'
+    # No whitespace in original → one phrase (names, fixed terms, product ids).
+    if not re.search(r"\s", raw):
+        return f'"{" ".join(tokens)}"'
+    return " ".join(f'"{t}"' for t in tokens)
+
+
+def make_snippet(text: str, *, max_len: int = _SNIPPET_MAX) -> str:
+    body = (text or "").strip()
+    if len(body) <= max_len:
+        return body
+    return body[: max_len - 1].rstrip() + "…"
 
 
 def search_summaries(query: str, *, limit: int = 10) -> list[Hit]:
@@ -84,7 +105,7 @@ def search_summaries(query: str, *, limit: int = 10) -> list[Hit]:
     hits: list[Hit] = []
     for row in rows:
         text = row["chunk_text"] or ""
-        snippet = text if len(text) <= 280 else text[:277] + "…"
+        snippet = make_snippet(text)
         hits.append(
             Hit(
                 chunk_id=row["chunk_id"],
