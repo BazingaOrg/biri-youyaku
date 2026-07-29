@@ -22,11 +22,24 @@ function formatWeek(weekStart: string) {
   return `${start.getMonth() + 1}月${start.getDate()}日—${end.getMonth() + 1}月${end.getDate()}日`
 }
 
+export type WeeklySummaryStatus = WeeklySummary['status']
+
 /**
  * A summary is fetched only while this card is mounted. History mounts it solely
  * for the selected week, so opening one week never fetches every archive.
  */
-export function WeeklySummaryCard({weekStart, compact = false, onReferenceNavigate}: {weekStart: string; compact?: boolean; onReferenceNavigate?: (jobId: string) => void}) {
+export function WeeklySummaryCard({
+  weekStart,
+  compact = false,
+  onReferenceNavigate,
+  onStatusChange,
+}: {
+  weekStart: string
+  compact?: boolean
+  onReferenceNavigate?: (jobId: string) => void
+  /** Notify parent (e.g. week header pill) when status loads or changes. */
+  onStatusChange?: (status: WeeklySummaryStatus | null) => void
+}) {
   const [summary, setSummary] = useState<WeeklySummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
@@ -43,13 +56,21 @@ export function WeeklySummaryCard({weekStart, compact = false, onReferenceNaviga
     } catch {
       setSummary(null)
       setFailed(true)
+      onStatusChange?.(null)
     } finally {
       setLoading(false)
     }
-  }, [weekStart])
+  }, [onStatusChange, weekStart])
 
   useEffect(() => { void load() }, [load])
-  useEffect(() => { setExpanded(false); setConfirmDelete(false) }, [weekStart])
+  useEffect(() => {
+    setExpanded(false)
+    setConfirmDelete(false)
+    onStatusChange?.(null)
+  }, [onStatusChange, weekStart])
+  useEffect(() => {
+    if (summary?.status) onStatusChange?.(summary.status)
+  }, [onStatusChange, summary?.status])
   useEffect(() => {
     if (summary?.status !== 'GENERATING') return
     const timer = window.setTimeout(() => void load(), 1200)
@@ -109,10 +130,13 @@ export function WeeklySummaryCard({weekStart, compact = false, onReferenceNaviga
               <p className="mt-0.5 text-xs text-muted">{formatWeek(weekStart)}</p>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {status === 'COMPLETED' && <span className="rounded-full bg-brandSoft px-2.5 py-1 text-xs text-brand">已生成</span>}
-            {stale && <span className="rounded-full bg-warning/15 px-2.5 py-1 text-xs text-warning">待更新</span>}
-          </div>
+          {/* compact 时状态上移到周切换标题，避免与 header pill 重复 */}
+          {!compact && (
+            <div className="flex shrink-0 items-center gap-2">
+              {status === 'COMPLETED' && <span className="rounded-full bg-brandSoft px-2.5 py-1 text-xs text-brand">已总结</span>}
+              {stale && <span className="rounded-full bg-warning/15 px-2.5 py-1 text-xs text-warning">待更新</span>}
+            </div>
+          )}
         </div>
         {loading ? (
           <div className="mt-3 h-10 animate-pulse rounded-xl bg-lift" />

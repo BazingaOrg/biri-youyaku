@@ -126,6 +126,30 @@ def get(week_start: str) -> WeeklySummary | None:
     )
 
 
+def statuses_for_weeks(week_starts: list[str]) -> dict[str, str]:
+    """Return persisted weekly-summary status per Monday date (YYYY-MM-DD).
+
+    Weeks with no row are reported as MISSING. Does not recompute staleness
+    against live sources — navigator only needs a cheap glance map.
+    """
+    if not week_starts:
+        return {}
+    result = {week_start: "MISSING" for week_start in week_starts}
+    with connect() as connection:
+        if not _source_tables_exist(connection):
+            return result
+        placeholders = ",".join("?" for _ in week_starts)
+        rows = connection.execute(
+            f"SELECT week_start, status FROM weekly_summaries WHERE week_start IN ({placeholders})",
+            week_starts,
+        ).fetchall()
+    for row in rows:
+        status = str(row["status"] or "MISSING")
+        if status in WEEKLY_STATUSES:
+            result[str(row["week_start"])] = status
+    return result
+
+
 def generation_lease_ms() -> int:
     """Longer than all configured LLM attempts, with a small scheduler margin."""
     attempts = max(1, settings.llm_max_retries + 1)

@@ -414,3 +414,24 @@ async def test_delete_weekly_summary_route_returns_missing_shape(monkeypatch, tm
     assert body["status"] == "MISSING"
     assert body["content"] is None
     assert jobs_repo.get_job(job.id) is not None
+
+
+def test_statuses_for_weeks_maps_missing_and_completed(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    monkeypatch.setattr(jobs_repo, "now_ms", lambda: MONDAY_MS + 1)
+    db.init_db()
+    job = _completed_with_summary(tmp_path)
+    sources = repo.sources_for_week("2026-07-27")
+    fingerprint_value = repo.fingerprint(sources)
+    repo.begin_generation("2026-07-27", fingerprint_value=fingerprint_value)
+    repo.save_completed(
+        "2026-07-27",
+        fingerprint_value=fingerprint_value,
+        sources=sources,
+        content="周总结",
+        references=[{"job_id": job.id, "title": "本周视频"}],
+    )
+
+    statuses = repo.statuses_for_weeks(["2026-07-27", "2026-07-20"])
+    assert statuses["2026-07-27"] == "COMPLETED"
+    assert statuses["2026-07-20"] == "MISSING"

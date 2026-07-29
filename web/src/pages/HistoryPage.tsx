@@ -2,7 +2,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import {ArrowLeft, ChevronLeft, ChevronRight, Filter, MoreHorizontal, Plus, RotateCw, Search, Trash2} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
 import {
-  ApiError, executeBulkDelete, previewBulkDelete, deleteJob, getHistoryFacets, listJobs, resummarizeJob,
+  ApiError, executeBulkDelete, previewBulkDelete, deleteJob, getHistoryFacets, getWeeklySummaryStatuses, listJobs, resummarizeJob,
   type BulkDeletePreview, type BulkDeleteQuery, type HistoryFacet, type Job, type JobOptionOverrides,
 } from '../lib/api'
 import {writeActive} from '../lib/activeJob'
@@ -13,7 +13,7 @@ import {Skeleton} from '../components/Skeleton'
 import {useToast} from '../components/ToastProvider'
 import {ConfirmDialog} from '../components/ConfirmDialog'
 import {WeekNavigator} from '../components/WeekNavigator'
-import {WeeklySummaryCard} from '../components/WeeklySummaryCard'
+import {WeeklySummaryCard, type WeeklySummaryStatus} from '../components/WeeklySummaryCard'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
 import {IconTooltip} from './history/IconTooltip'
 import {SearchableSelect} from './history/SearchableSelect'
@@ -122,6 +122,8 @@ export function HistoryPage() {
     if (restoreSnapshot?.anchorWeek != null) return restoreSnapshot.anchorWeek
     return null
   })
+  /** week_start YYYY-MM-DD → 周总结状态，供周柱底点标注 */
+  const [weekSummaryStatuses, setWeekSummaryStatuses] = useState<Partial<Record<string, WeeklySummaryStatus>>>({})
   const [filterPanelOpen, setFilterPanelOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [deletePreview, setDeletePreview] = useState<BulkDeletePreview | null>(null)
@@ -289,6 +291,43 @@ export function HistoryPage() {
     () => weekGroups.find((group) => group.weekStart === selectedWeek) ?? null,
     [weekGroups, selectedWeek],
   )
+
+  const weekStartKeys = useMemo(
+    () => weekGroups.map((group) => weekStartDate(group.weekStart)),
+    [weekGroups],
+  )
+
+  useEffect(() => {
+    if (weekStartKeys.length === 0) {
+      setWeekSummaryStatuses({})
+      return
+    }
+    let cancelled = false
+    void getWeeklySummaryStatuses(weekStartKeys)
+      .then((response) => {
+        if (!cancelled) setWeekSummaryStatuses(response.statuses)
+      })
+      .catch(() => {
+        // Status dots are secondary chrome; empty map keeps bars usable.
+        if (!cancelled) setWeekSummaryStatuses({})
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [weekStartKeys])
+
+  const handleWeekSummaryStatus = useCallback((weekKey: string, status: WeeklySummaryStatus | null) => {
+    setWeekSummaryStatuses((current) => {
+      if (status == null) {
+        if (!(weekKey in current)) return current
+        const next = {...current}
+        delete next[weekKey]
+        return next
+      }
+      if (current[weekKey] === status) return current
+      return {...current, [weekKey]: status}
+    })
+  }, [])
   const selectedWeekIndex = useMemo(
     () => weekGroups.findIndex((group) => group.weekStart === selectedWeek),
     [weekGroups, selectedWeek],
@@ -530,6 +569,7 @@ export function HistoryPage() {
                   weeks={weekGroups.map((group) => ({weekStart: group.weekStart, count: group.jobs.length}))}
                   selectedWeek={selectedWeek}
                   onSelect={setSelectedWeek}
+                  summaryStatuses={weekSummaryStatuses}
                 />
               )}
               {selectedGroup && (
@@ -565,7 +605,12 @@ export function HistoryPage() {
                     </button>
                   </div>
                   <div className="border-t border-line/60 px-3 pb-1">
-                    <WeeklySummaryCard weekStart={weekStartDate(selectedGroup.weekStart)} compact onReferenceNavigate={(jobId) => saveHistoryState(jobId, selectedGroup.weekStart)} />
+                    <WeeklySummaryCard
+                      weekStart={weekStartDate(selectedGroup.weekStart)}
+                      compact
+                      onReferenceNavigate={(jobId) => saveHistoryState(jobId, selectedGroup.weekStart)}
+                      onStatusChange={(status) => handleWeekSummaryStatus(weekStartDate(selectedGroup.weekStart), status)}
+                    />
                     {selectedByDay.map(([key, dayJobs]) => (
                       <div key={key}>
                         <h3 className="pt-3 text-xs font-medium text-muted">{dayLabel(dayJobs[0].completed_at ?? dayJobs[0].created_at)}</h3>

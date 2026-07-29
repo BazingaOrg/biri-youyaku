@@ -295,6 +295,18 @@ export function getWeeklySummary(weekStart: string) {
   return request<{ok: true} & WeeklySummary>(`/v1/weekly-summaries?week_start=${encodeURIComponent(weekStart)}`)
 }
 
+/** 批量查询各周周总结状态（仅 status，供历史周柱标注）。 */
+export function getWeeklySummaryStatuses(weekStarts: string[]) {
+  type StatusMap = Record<string, WeeklySummary['status']>
+  if (!weekStarts.length) {
+    return Promise.resolve({ok: true as const, statuses: {} as StatusMap})
+  }
+  const query = weekStarts.map(encodeURIComponent).join(',')
+  return request<{ok: true; statuses: StatusMap}>(
+    `/v1/weekly-summaries/statuses?week_starts=${query}`,
+  )
+}
+
 export function generateWeeklySummary(weekStart: string, refresh = false) {
   return request<{ok: true} & WeeklySummary>(`/v1/weekly-summaries/${encodeURIComponent(weekStart)}/generate`, {
     method: 'POST',

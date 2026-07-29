@@ -51,6 +51,24 @@ async def get_weekly_summary(week_start: str = Query()) -> dict:
     return _serialize(week_start)
 
 
+@router.get("/weekly-summaries/statuses")
+async def list_weekly_summary_statuses(
+    week_starts: str = Query(description="Comma-separated Monday dates YYYY-MM-DD"),
+) -> dict:
+    """Lightweight status map for history week bars (no content payloads)."""
+    raw = [part.strip() for part in week_starts.split(",") if part.strip()]
+    if len(raw) > 52:
+        raise HTTPException(status_code=422, detail="week_starts 最多 52 个")
+    valid: list[str] = []
+    for value in raw:
+        try:
+            repo.week_bounds(value)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        valid.append(value)
+    return {"ok": True, "statuses": repo.statuses_for_weeks(valid)}
+
+
 @router.post("/weekly-summaries/{week_start}/generate")
 @limiter.limit("10/minute")
 async def generate_weekly_summary(
