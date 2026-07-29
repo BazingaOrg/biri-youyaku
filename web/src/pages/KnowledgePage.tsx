@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useRef, useState, type FormEvent} from 'react'
-import {ArrowLeft, ChevronDown, ChevronUp, Search, Send} from 'lucide-react'
+import {ArrowLeft, ChevronDown, ChevronUp, MessageCircle, Search, Send} from 'lucide-react'
 import {useLocation} from 'wouter'
 import ReactMarkdown from 'react-markdown'
 import {
@@ -64,7 +64,6 @@ export function KnowledgePage() {
   const searchEnabled = Boolean(
     runtime?.knowledge_search_enabled ?? status?.search_enabled ?? true,
   )
-  // When chat is off, always stay in search mode and hide the switcher.
   const activeMode: QueryMode = chatEnabled ? mode : 'search'
 
   const [chatAnswer, setChatAnswer] = useState('')
@@ -95,7 +94,6 @@ export function KnowledgePage() {
     }
   }, [])
 
-  // If chat gets disabled at runtime, force search mode.
   useEffect(() => {
     if (!chatEnabled && mode === 'ask') {
       setMode('search')
@@ -128,61 +126,64 @@ export function KnowledgePage() {
     }
   }, [])
 
-  const runChat = useCallback((q: string) => {
-    const trimmed = q.trim()
-    if (!trimmed || chatBusy || !chatEnabled) return
+  const runChat = useCallback(
+    (q: string) => {
+      const trimmed = q.trim()
+      if (!trimmed || chatBusy || !chatEnabled) return
 
-    streamRef.current?.close()
-    setChatBusy(true)
-    setChatAnswer('')
-    setCitations([])
-    setChatError(null)
-    setChatPhase('searching')
-    setHasAsked(true)
-    setHits([])
-    setSearchError(null)
-    setHasSearched(false)
+      streamRef.current?.close()
+      setChatBusy(true)
+      setChatAnswer('')
+      setCitations([])
+      setChatError(null)
+      setChatPhase('searching')
+      setHasAsked(true)
+      setHits([])
+      setSearchError(null)
+      setHasSearched(false)
 
-    streamRef.current = openKnowledgeChatStream(
-      {query: trimmed, limit: 6},
-      (message) => {
-        let payload: Record<string, unknown> = {}
-        try {
-          payload = JSON.parse(message.data) as Record<string, unknown>
-        } catch {
-          payload = {}
-        }
-        if (message.event === 'status') {
-          setChatPhase(typeof payload.phase === 'string' ? payload.phase : null)
-        } else if (message.event === 'delta') {
-          if (typeof payload.text === 'string') setChatAnswer(payload.text)
-        } else if (message.event === 'citations') {
-          const list = payload.citations
-          if (Array.isArray(list)) {
-            setCitations(list as KnowledgeCitation[])
+      streamRef.current = openKnowledgeChatStream(
+        {query: trimmed, limit: 6},
+        (message) => {
+          let payload: Record<string, unknown> = {}
+          try {
+            payload = JSON.parse(message.data) as Record<string, unknown>
+          } catch {
+            payload = {}
           }
-        } else if (message.event === 'error') {
-          setChatError(typeof payload.message === 'string' ? payload.message : '问答失败')
+          if (message.event === 'status') {
+            setChatPhase(typeof payload.phase === 'string' ? payload.phase : null)
+          } else if (message.event === 'delta') {
+            if (typeof payload.text === 'string') setChatAnswer(payload.text)
+          } else if (message.event === 'citations') {
+            const list = payload.citations
+            if (Array.isArray(list)) {
+              setCitations(list as KnowledgeCitation[])
+            }
+          } else if (message.event === 'error') {
+            setChatError(typeof payload.message === 'string' ? payload.message : '问答失败')
+            setChatBusy(false)
+            setChatPhase(null)
+          } else if (message.event === 'done') {
+            if (typeof payload.text === 'string' && payload.text) {
+              setChatAnswer(payload.text)
+            }
+            setChatBusy(false)
+            setChatPhase(null)
+          }
+        },
+        (error) => {
+          setChatError(error.message)
           setChatBusy(false)
           setChatPhase(null)
-        } else if (message.event === 'done') {
-          if (typeof payload.text === 'string' && payload.text) {
-            setChatAnswer(payload.text)
-          }
+        },
+        () => {
           setChatBusy(false)
-          setChatPhase(null)
-        }
-      },
-      (error) => {
-        setChatError(error.message)
-        setChatBusy(false)
-        setChatPhase(null)
-      },
-      () => {
-        setChatBusy(false)
-      },
-    )
-  }, [chatBusy, chatEnabled])
+        },
+      )
+    },
+    [chatBusy, chatEnabled],
+  )
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault()
@@ -195,15 +196,20 @@ export function KnowledgePage() {
     }
   }
 
+  const toggleMode = () => {
+    if (!chatEnabled || busy) return
+    setMode((current) => (current === 'search' ? 'ask' : 'search'))
+  }
+
   const busy = activeMode === 'ask' ? chatBusy : searching
-  const submitLabel = activeMode === 'ask' ? '提问' : '搜索'
-  const placeholder =
-    activeMode === 'ask'
-      ? '根据已总结的视频提问…'
-      : '搜总结里的关键词、人名、术语…'
+  const isAsk = activeMode === 'ask'
+  const submitLabel = isAsk ? '提问' : '搜索'
+  const placeholder = isAsk
+    ? '根据已总结的视频提问…'
+    : '搜总结里的关键词、人名、术语…'
 
   const subtitle = chatEnabled
-    ? '在已总结的笔记中检索，或切换到提问让 AI 基于命中片段作答。'
+    ? '点输入框左侧图标可在「检索」与「提问」间切换。'
     : '在已总结的视频笔记里检索；列表默认显示摘录，可展开全文。'
 
   return (
@@ -245,72 +251,49 @@ export function KnowledgePage() {
         ) : (
           <>
             <div className="border-y border-line/70 py-3">
-              <form onSubmit={onSubmit} className="grid gap-3">
-                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                  <label className="relative block min-w-0">
+              <form onSubmit={onSubmit} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                <label className="relative block min-w-0">
+                  {chatEnabled ? (
+                    <button
+                      type="button"
+                      onClick={toggleMode}
+                      disabled={busy}
+                      title={isAsk ? '当前：提问，点击改为检索' : '当前：检索，点击改为提问'}
+                      aria-label={isAsk ? '切换为检索' : '切换为提问'}
+                      className="absolute left-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-xl text-muted transition hover:bg-line/60 hover:text-ink disabled:opacity-40"
+                    >
+                      {isAsk ? <MessageCircle size={16} /> : <Search size={16} />}
+                    </button>
+                  ) : (
                     <Search
                       size={15}
                       className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
                     />
-                    <input
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                      placeholder={placeholder}
-                      disabled={busy}
-                      className="min-h-11 w-full rounded-2xl bg-lift py-2 pl-10 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30 disabled:opacity-60"
-                    />
-                  </label>
-                  <button
-                    type="submit"
-                    disabled={busy || !query.trim()}
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-brand px-4 text-sm font-medium text-white shadow-card disabled:opacity-40"
-                  >
-                    {busy ? (
-                      <Spinner size={14} />
-                    ) : activeMode === 'ask' ? (
-                      <Send size={15} />
-                    ) : null}
-                    {submitLabel}
-                  </button>
-                </div>
-
-                {chatEnabled && (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div
-                      className="inline-flex rounded-2xl bg-lift p-1"
-                      role="group"
-                      aria-label="查询方式"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setMode('search')}
-                        className={`min-h-9 rounded-xl px-3 text-sm transition ${
-                          activeMode === 'search'
-                            ? 'bg-panel font-medium text-ink shadow-card'
-                            : 'text-muted hover:text-ink'
-                        }`}
-                      >
-                        检索
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setMode('ask')}
-                        className={`min-h-9 rounded-xl px-3 text-sm transition ${
-                          activeMode === 'ask'
-                            ? 'bg-panel font-medium text-ink shadow-card'
-                            : 'text-muted hover:text-ink'
-                        }`}
-                      >
-                        提问
-                      </button>
-                    </div>
-                    <p className="text-sm text-muted">
-                      {activeMode === 'search'
-                        ? '直接在总结片段中匹配关键词。'
-                        : '先检索相关总结，再交给已配置的 LLM 作答。'}
-                    </p>
-                  </div>
-                )}
+                  )}
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder={placeholder}
+                    disabled={busy}
+                    className={`min-h-11 w-full rounded-2xl bg-lift py-2 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30 disabled:opacity-60 ${
+                      chatEnabled ? 'pl-11' : 'pl-10'
+                    }`}
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={busy || !query.trim()}
+                  className="inline-flex min-h-11 min-w-[5.5rem] items-center justify-center gap-2 rounded-2xl bg-brand px-4 text-sm font-medium text-white shadow-card disabled:opacity-40"
+                >
+                  {busy ? (
+                    <Spinner size={14} />
+                  ) : isAsk ? (
+                    <Send size={15} />
+                  ) : (
+                    <Search size={15} />
+                  )}
+                  {submitLabel}
+                </button>
               </form>
             </div>
 
