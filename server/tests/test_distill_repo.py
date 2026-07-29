@@ -39,8 +39,8 @@ def test_status_transitions_and_error(monkeypatch, tmp_path):
     _init_db(monkeypatch, tmp_path)
     run = distill_repo.create_run(1, video_limit=50, dir_path="d")
 
-    distill_repo.update_status(run.id, DistillRunStatus.FETCHING_DYNAMICS)
-    assert distill_repo.get_run(run.id).status == DistillRunStatus.FETCHING_DYNAMICS
+    distill_repo.update_status(run.id, DistillRunStatus.PREPARING_TRANSCRIPTS)
+    assert distill_repo.get_run(run.id).status == DistillRunStatus.PREPARING_TRANSCRIPTS
 
     distill_repo.update_status(run.id, DistillRunStatus.FAILED, error="boom")
     loaded = distill_repo.get_run(run.id)
@@ -56,7 +56,7 @@ def test_status_cas_does_not_reverse_a_terminal_run(monkeypatch, tmp_path):
     assert (
         distill_repo.update_status(
             run.id,
-            DistillRunStatus.FETCHING_DYNAMICS,
+            DistillRunStatus.PREPARING_TRANSCRIPTS,
             expected_status=DistillRunStatus.COMPLETED,
         )
         is False
@@ -89,16 +89,16 @@ def test_add_failed_bvid_dedupes_and_updates_count(monkeypatch, tmp_path):
     assert loaded.counters["videos_failed"] == 2
 
 
-def test_set_up_name_and_dynamics_status(monkeypatch, tmp_path):
+def test_set_up_name(monkeypatch, tmp_path):
     _init_db(monkeypatch, tmp_path)
     run = distill_repo.create_run(1, video_limit=50, dir_path="d")
 
     distill_repo.set_up_name(run.id, "某UP")
-    distill_repo.set_dynamics_status(run.id, "unavailable")
 
     loaded = distill_repo.get_run(run.id)
     assert loaded.up_name == "某UP"
-    assert loaded.dynamics_status == "unavailable"
+    # Legacy column remains NULL for new runs.
+    assert loaded.dynamics_status is None
 
 
 def test_list_unfinished_runs_excludes_terminal(monkeypatch, tmp_path):

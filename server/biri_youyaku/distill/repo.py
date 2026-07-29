@@ -156,14 +156,6 @@ def set_up_name(run_id: str, up_name: str) -> None:
         )
 
 
-def set_dynamics_status(run_id: str, dynamics_status: str) -> None:
-    with connect() as connection:
-        connection.execute(
-            "UPDATE distill_runs SET dynamics_status = ?, updated_at = ? WHERE id = ?",
-            (dynamics_status, now_ms(), run_id),
-        )
-
-
 def update_counters(run_id: str, **updates: Any) -> dict[str, Any]:
     """局部更新 counters JSON 里的几个 key，返回更新后的完整 counters。"""
     run = get_run(run_id)

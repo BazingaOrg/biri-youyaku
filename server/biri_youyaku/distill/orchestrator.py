@@ -1,4 +1,4 @@
-"""作者蒸馏语料的编排：抓动态 → 补齐转写 → 逐视频提取 → 组装。
+"""作者蒸馏语料的编排（video-only）：补齐转写 → 逐视频提取 → 组装。
 
 一个 mid 同时只允许一个非终态 run（见 `repo.find_active_by_mid`，`start_run` 里检查）。
 整条流程跑在一个后台 asyncio task 里（`_run_pipeline`）。
@@ -8,12 +8,11 @@
 `repo.update_status(..., CANCELLED)` + 循环间隙检查已经足够及时，也更简单。
 
 断点续跑：`recover_unfinished_runs()`（app 启动时调用）对每个非终态 run 重新跑一遍
-`_run_pipeline`。三步都设计成幂等/可重入：
-  - 动态：每次都重新抓 + 重新清洗（B 站接口本身有限流保护，浪费一点调用可接受，
-    换来不用维护"抓到哪一页"这类额外状态）；
+`_run_pipeline`。各步都设计成幂等/可重入：
   - 转写：已有 `videos/<bvid>.md` 的视频直接跳过；否则先查有没有可复用的已完成
     job，没有才新建 job；
   - 提取：同样按 `videos/<bvid>.md` 是否存在跳过。
+  - 若旧库行仍是 FETCHING_DYNAMICS（已废弃阶段），恢复后会直接进入准备转写。
 manifest.json 只在 assembling 步骤由 assembler.py 整体重写，不是运行时续跑依据——
 续跑靠 `distill_runs` 表的行 + 上面这些文件是否存在。
 """
@@ -26,7 +25,6 @@ import logging
 from biri_youyaku.config import settings
 from biri_youyaku.distill import assembler
 from biri_youyaku.distill import repo as distill_repo
-from biri_youyaku.distill._util import format_ts
 from biri_youyaku.distill.model import (
     DistillRun,
     DistillRunStatus,
@@ -38,26 +36,15 @@ from biri_youyaku.jobs import runner
 from biri_youyaku.jobs.model import JobOptions, JobStatus
 from biri_youyaku.jobs.runner import start_job
 from biri_youyaku.modules.asr.formatter import transcript_to_text
-from biri_youyaku.modules.bilibili import dynamic as dynamic_module
 from biri_youyaku.modules.bilibili import space as space_module
-from biri_youyaku.modules.llm.distill import clean_dynamics_batch, extract_video_viewpoints
+from biri_youyaku.modules.llm.distill import extract_video_viewpoints
 from biri_youyaku.modules.storage import distill as distill_storage
 from biri_youyaku.modules.transcript import transcript_items_from_job
 
 logger = logging.getLogger(__name__)
 
-_DYNAMICS_BATCH_SIZE = 50
 _EXTRACT_CONCURRENCY = 2
 _DISTILL_LANGUAGE = "中文简体"
-
-_DYNAMIC_TYPE_LABELS = {
-    "video": "视频",
-    "text": "文字",
-    "image": "图文",
-    "article": "文章",
-    "forward": "转发",
-    "other": "其他",
-}
 
 # 单进程内正在跑的编排 task，key 为 run_id（镜像 jobs/runner.py 的 _registry.tasks，
 # 但蒸馏没有取消 key / llm_api_key 这些额外状态，不需要一整个 registry 类）。
@@ -192,8 +179,6 @@ async def _run_pipeline(run_id: str) -> None:
         # 门就会无条件把 status 写成自己的阶段名，如果 run 在上一阶段结束、下一
         # 阶段开始前的空隙被取消，这一检查缺失就会把 CANCELLED 状态覆盖回运行中。
         _raise_if_cancelled(run_id)
-        await _do_fetch_dynamics(run_id)
-        _raise_if_cancelled(run_id)
         records = await _do_prepare_transcripts(run_id)
         _raise_if_cancelled(run_id)
         records = await _do_extract(run_id, records)
@@ -221,64 +206,7 @@ async def _run_pipeline(run_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Step 1：动态
-# ---------------------------------------------------------------------------
-
-
-def _format_dynamic_line(item: dict) -> str:
-    date = format_ts(item.get("ts"))
-    label = _DYNAMIC_TYPE_LABELS.get(item.get("type"), item.get("type") or "其他")
-    text = (item.get("text") or "").replace("\n", " ").strip()
-    return f"[{date}][{label}] {text}"
-
-
-async def _do_fetch_dynamics(run_id: str) -> None:
-    run = distill_repo.get_run(run_id)
-    if run is None:
-        raise DistillRunCancelled()
-    _transition(run_id, DistillRunStatus.FETCHING_DYNAMICS)
-    await _publish(run_id, DistillRunStatus.FETCHING_DYNAMICS)
-
-    try:
-        dynamics = await dynamic_module.fetch_all_dynamics(run.mid)
-    except Exception as exc:
-        # 动态接口失败（含频控重试后仍失败）：降级，不中断整个 run。
-        logger.warning(
-            "Distill run %s: dynamics fetch failed, degrading to unavailable (%s)", run_id, exc
-        )
-        distill_repo.set_dynamics_status(run_id, "unavailable")
-        await _publish(run_id, DistillRunStatus.FETCHING_DYNAMICS, dynamics_status="unavailable")
-        return
-
-    cleaned_batches: list[str] = []
-    dynamics_count = 0
-    for start in range(0, len(dynamics), _DYNAMICS_BATCH_SIZE):
-        _raise_if_cancelled(run_id)
-        batch = dynamics[start : start + _DYNAMICS_BATCH_SIZE]
-        lines = [_format_dynamic_line(item) for item in batch]
-        cleaned = (await clean_dynamics_batch(lines, _DISTILL_LANGUAGE, run_id=run_id)).strip()
-        if cleaned and cleaned != "（本批无有效观点内容）":
-            cleaned_batches.append(cleaned)
-            dynamics_count += sum(
-                1 for line in cleaned.splitlines() if line.strip().startswith("-")
-            )
-
-        content = "\n\n".join(cleaned_batches) if cleaned_batches else "（本次蒸馏无有效动态内容）"
-        distill_storage.save_dynamics(run.mid, content)
-        distill_repo.update_counters(run_id, dynamics_count=dynamics_count)
-        await _publish(run_id, DistillRunStatus.FETCHING_DYNAMICS, dynamics_count=dynamics_count)
-
-    distill_repo.set_dynamics_status(run_id, "ok")
-    await _publish(
-        run_id,
-        DistillRunStatus.FETCHING_DYNAMICS,
-        dynamics_status="ok",
-        dynamics_count=dynamics_count,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Step 2：补齐转写
+# Step 1：补齐转写
 # ---------------------------------------------------------------------------
 
 
@@ -416,7 +344,7 @@ async def _do_prepare_transcripts(run_id: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Step 3：逐视频观点提取
+# Step 2：逐视频观点提取
 # ---------------------------------------------------------------------------
 
 

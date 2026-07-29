@@ -17,7 +17,7 @@ Paste a Bilibili video link and get a readable Markdown summary, a mind map, and
 - **Multi-view summary**: Markdown notes (with a table of contents) / mind map (export SVG·PNG) / topic tags / transcript (click a timestamp to jump back into the video).
 - **Any LLM**: any OpenAI-compatible endpoint (DeepSeek by default; OpenAI / Gemini / local ollama all work).
 - **Browse by uploader**: list an uploader's whole catalog, see which are summarized, one-click the rest.
-- **Uploader corpus distillation**: scrape an uploader's video transcripts and dynamic posts, LLM-clean and compile them into a persona corpus (e.g. for roleplay).
+- **Uploader corpus distillation**: scrape an uploader's video transcripts, extract viewpoints with LLM, and compile them into a persona corpus (e.g. for roleplay).
 - **Stats page**: token usage and per-stage timing dashboard.
 - **Dedup to save tokens**: re-pasting an already-summarized video reuses the old result.
 - **Per-job fixes**: resummarize (reuse existing transcript), force re-transcription (ignore existing transcript/subtitles and redo ASR), resend email for a failed job.
@@ -116,7 +116,7 @@ flowchart LR
     ytdlp -->|has subtitles| llm
     ytdlp -->|no subtitles| asr[local ASR<br/>SenseVoice / Parakeet]
     asr --> llm[LLM<br/>OpenAI-compatible]
-    api --> distill[distill<br/>transcripts+dynamics → corpus]
+    api --> distill[distill<br/>video transcripts → corpus]
     distill --> llm
     llm -->|streamed chunks| api
     api --> db[(SQLite)]

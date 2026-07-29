@@ -1,4 +1,4 @@
-"""作者蒸馏语料的 LLM 调用层：观点提取 + 动态批量清洗。
+"""作者蒸馏语料的 LLM 调用层：视频观点提取。
 
 复用 `client.py` 的底层非流式补全（`_complete`）与分段阈值判断
 （`segmenter.should_chunk` / `split_transcript`），但走蒸馏专用 prompt
@@ -18,7 +18,6 @@ from biri_youyaku.modules.llm.usage import make_context
 from biri_youyaku.modules.llm.distill_prompts import (
     DISTILL_EXTRACT_MERGE_PROMPT,
     DISTILL_EXTRACT_PROMPT,
-    DYNAMICS_CLEAN_PROMPT,
 )
 from biri_youyaku.modules.llm.segmenter import should_chunk, split_transcript
 from biri_youyaku.modules.transcript import TranscriptItem
@@ -113,11 +112,3 @@ async def extract_video_viewpoints(
         language=language,
     )
     return await _complete_prompt(merge_prompt, operation="distill_extract_merge", run_id=run_id)
-
-
-async def clean_dynamics_batch(
-    batch_lines: list[str], language: str, *, run_id: str | None = None
-) -> str:
-    """一批动态（每条已格式化成「[日期][类型] 原文」）走 DYNAMICS_CLEAN_PROMPT 清洗。"""
-    prompt = _render(DYNAMICS_CLEAN_PROMPT, dynamics="\n".join(batch_lines), language=language)
-    return await _complete_prompt(prompt, operation="distill_dynamics", run_id=run_id)

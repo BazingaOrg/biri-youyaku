@@ -31,7 +31,6 @@ def _serialize_run(run: DistillRun) -> dict:
         "up_name": run.up_name,
         "status": run.status.value,
         "video_limit": run.video_limit,
-        "dynamics_status": run.dynamics_status,
         "counters": run.counters,
         "error": run.error,
         "dir_path": run.dir_path,

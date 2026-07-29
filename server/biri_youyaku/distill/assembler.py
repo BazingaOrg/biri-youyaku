@@ -1,10 +1,11 @@
 """生成 distill run 的最终产物：
 
-- `manifest.json`：作者信息、参数、数量、时间范围、per-video 状态、failed 列表、
-  dynamics_status——断点续跑的「人可读」快照（运行时续跑实际依据见
-  `orchestrator.py` 模块docstring：`distill_runs` 表行 + 文件是否存在）。
-- `corpus.md`：作者概览 + 目录，然后按发布时间升序拼所有 `videos/<bvid>.md` 全文，
-  末尾附 `dynamics.md` 全文。只组装，不做有损压缩——压缩是项目外蒸馏阶段的职责。
+- `manifest.json`：作者信息、参数、数量、时间范围、per-video 状态、failed 列表——
+  断点续跑的「人可读」快照（运行时续跑实际依据见 `orchestrator.py` 模块 docstring：
+  `distill_runs` 表行 + 文件是否存在）。
+- `corpus.md`：作者概览 + 目录，然后按发布时间升序拼所有 `videos/<bvid>.md` 全文。
+  只组装投稿观点，不做有损压缩——压缩是项目外蒸馏阶段的职责。
+  不读取、不追加、不删除已有 `dynamics.md`（遗留文件可保留在磁盘上）。
 """
 
 from __future__ import annotations
@@ -27,8 +28,6 @@ def build_manifest(run: DistillRun, videos: list[dict[str, Any]]) -> dict[str, A
         "up_name": run.up_name,
         "video_limit": run.video_limit,
         "generated_at": now_ms(),
-        "dynamics_status": run.dynamics_status,
-        "dynamics_count": run.counters.get("dynamics_count", 0),
         "videos": {
             "total": len(videos),
             "extracted": len(extracted),
@@ -63,7 +62,6 @@ def build_corpus(run: DistillRun, videos: list[dict[str, Any]]) -> str:
         "",
         f"- mid: {run.mid}",
         f"- 视频数：{len(extracted)}/{len(videos)}（成功提取/总数）",
-        f"- 动态状态：{run.dynamics_status or '未抓取'}",
         "",
         "## 目录",
     ]
@@ -76,14 +74,6 @@ def build_corpus(run: DistillRun, videos: list[dict[str, Any]]) -> str:
         body = distill_storage.read_video(run.mid, video["bvid"]) or ""
         lines.append("---")
         lines.append(body.rstrip())
-        lines.append("")
-
-    dynamics_body = distill_storage.read_dynamics(run.mid)
-    if dynamics_body:
-        lines.append("---")
-        lines.append("# 动态时间线")
-        lines.append("")
-        lines.append(dynamics_body.rstrip())
         lines.append("")
 
     return "\n".join(lines)

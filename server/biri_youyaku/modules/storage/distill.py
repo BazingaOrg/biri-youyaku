@@ -5,8 +5,8 @@
   data/distill/<mid>/
     manifest.json      # assembler.py 写，断点续跑的运行时依据是 distill_runs 表 + 下面这些文件是否存在
     videos/<bvid>.md    # 单视频观点提取（frontmatter + 正文）
-    dynamics.md         # 清洗后的动态时间线
-    corpus.md           # 组装后的单文件语料包
+    corpus.md           # 组装后的单文件语料包（video-only）
+  （遗留 dynamics.md 若存在则保留，本模块不再读写。）
 """
 
 from __future__ import annotations
@@ -29,10 +29,6 @@ def videos_dir(mid: int) -> Path:
 
 def video_path(mid: int, bvid: str) -> Path:
     return videos_dir(mid) / f"{bvid}.md"
-
-
-def dynamics_path(mid: int) -> Path:
-    return run_dir(mid) / "dynamics.md"
 
 
 def corpus_path(mid: int) -> Path:
@@ -78,20 +74,6 @@ def save_video(mid: int, bvid: str, content: str) -> Path:
 
 def read_video(mid: int, bvid: str) -> str | None:
     path = video_path(mid, bvid)
-    if not path.exists():
-        return None
-    return path.read_text(encoding="utf-8")
-
-
-def save_dynamics(mid: int, content: str) -> Path:
-    ensure_dirs(mid)
-    path = dynamics_path(mid)
-    _atomic_write_text(path, content)
-    return path
-
-
-def read_dynamics(mid: int) -> str | None:
-    path = dynamics_path(mid)
     if not path.exists():
         return None
     return path.read_text(encoding="utf-8")

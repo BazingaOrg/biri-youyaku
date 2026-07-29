@@ -18,7 +18,8 @@ import {PROSE} from '../pages/workspace/SummaryTabs'
 
 const STAGE_LABELS: Record<DistillRunStatus, string> = {
   PENDING: '排队中',
-  FETCHING_DYNAMICS: '抓取动态',
+  // Legacy status from older unfinished runs; map to 准备中.
+  FETCHING_DYNAMICS: '准备中',
   PREPARING_TRANSCRIPTS: '准备转写',
   EXTRACTING: '提取观点',
   ASSEMBLING: '组装中',
@@ -62,11 +63,9 @@ export function DistillPanel({mid, run: initialRun, onRunChange}: DistillPanelPr
       return {
         ...prev,
         status: payload.status,
-        dynamics_status: payload.dynamics_status ?? prev.dynamics_status,
         error: payload.error ?? prev.error,
         counters: {
           ...prev.counters,
-          dynamics_count: payload.dynamics_count ?? snapshotCounters?.dynamics_count ?? prev.counters.dynamics_count,
           videos_total: payload.videos_total ?? snapshotCounters?.videos_total ?? prev.counters.videos_total,
           videos_transcribed:
             payload.videos_transcribed ?? snapshotCounters?.videos_transcribed ?? prev.counters.videos_transcribed,
@@ -199,12 +198,6 @@ export function DistillPanel({mid, run: initialRun, onRunChange}: DistillPanelPr
                 style={{width: `${Math.min(100, (progress.done / progress.total) * 100)}%`}}
               />
             </div>
-          )}
-          {run.dynamics_status === 'unavailable' && (
-            <p className="flex items-center gap-1 text-xs text-warning">
-              <AlertTriangle size={12} />
-              动态不可用，仅使用投稿语料
-            </p>
           )}
           {run.status === 'COMPLETED' && (
             <div className="grid gap-2 pt-1">

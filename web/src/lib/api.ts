@@ -484,6 +484,7 @@ export function resolveUp(input: string) {
 
 export type DistillRunStatus =
   | 'PENDING'
+  /** Legacy status from older runs; treated as in-progress / 准备中 in UI. */
   | 'FETCHING_DYNAMICS'
   | 'PREPARING_TRANSCRIPTS'
   | 'EXTRACTING'
@@ -497,7 +498,6 @@ export interface DistillCounters {
   videos_transcribed: number
   videos_extracted: number
   videos_failed: number
-  dynamics_count: number
   failed_bvids: string[]
 }
 
@@ -507,8 +507,6 @@ export interface DistillRun {
   up_name?: string | null
   status: DistillRunStatus
   video_limit: number
-  /** null=未抓取，'ok'=正常，'unavailable'=动态接口降级（只用投稿语料）。 */
-  dynamics_status?: string | null
   counters: DistillCounters
   error?: string | null
   dir_path: string
@@ -523,8 +521,6 @@ export interface DistillRun {
  */
 export interface DistillStatusPayload {
   status: DistillRunStatus
-  dynamics_status?: string
-  dynamics_count?: number
   videos_total?: number
   videos_transcribed?: number
   videos_extracted?: number

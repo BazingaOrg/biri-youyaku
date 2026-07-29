@@ -5,6 +5,7 @@ from typing import Any
 
 class DistillRunStatus(StrEnum):
     PENDING = "PENDING"
+    # Legacy: old runs may still have this status in SQLite; never transition to it.
     FETCHING_DYNAMICS = "FETCHING_DYNAMICS"
     PREPARING_TRANSCRIPTS = "PREPARING_TRANSCRIPTS"
     EXTRACTING = "EXTRACTING"
@@ -32,7 +33,6 @@ def default_counters() -> dict[str, Any]:
         "videos_transcribed": 0,
         "videos_extracted": 0,
         "videos_failed": 0,
-        "dynamics_count": 0,
         # 失败视频的 bvid 列表；没有单独的 DB 列（spec 只列了 counters 一个 JSON
         # 字段涵盖计数），塞在这个 dict 里一起持久化最省事，assembler.py 组装
         # manifest 时直接读这个 key 填 failed 列表。
@@ -50,6 +50,7 @@ class DistillRun:
     created_at: int
     updated_at: int
     up_name: str | None = None
+    # Legacy DB column; new runs always leave this NULL. Kept for read compat.
     dynamics_status: str | None = None
     counters: dict[str, Any] = field(default_factory=default_counters)
     error: str | None = None

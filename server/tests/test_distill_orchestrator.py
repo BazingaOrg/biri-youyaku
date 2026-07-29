@@ -24,14 +24,11 @@ def _up_video_page(mid: int, videos: list[space.UpVideo]) -> space.UpVideoPage:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_happy_path_reuses_transcript_skips_existing_and_degrades_dynamics(
-    monkeypatch, tmp_path
-):
-    """一次跑通三条 spec 要求的路径：
+async def test_pipeline_happy_path_reuses_transcript_skips_existing(monkeypatch, tmp_path):
+    """一次跑通 video-only 路径：
     - BV_OLD 已有 videos/BV_OLD.md（断点续跑）→ 完全跳过，不查 job、不调 LLM。
     - BV_NEW 没有 transcript，但有已完成 job 可复用 → 不新建 job（否则 start_job
       断言会失败），走观点提取写出新文件。
-    - 动态接口失败 → dynamics_status 降级为 unavailable，整个 run 仍然 COMPLETED。
     """
     _setup(monkeypatch, tmp_path)
     run = await orchestrator.start_run(mid=42, video_limit=10)
@@ -51,9 +48,6 @@ async def test_pipeline_happy_path_reuses_transcript_skips_existing_and_degrades
     async def fake_fetch_up_videos(mid, *, page=1, keyword="", order="pubdate"):
         assert mid == 42
         return _up_video_page(mid, videos)
-
-    async def fake_fetch_all_dynamics(mid, **kwargs):
-        raise RuntimeError("模拟频控/网络失败")
 
     reused_job = Job(
         id="reused-job",
@@ -80,7 +74,6 @@ async def test_pipeline_happy_path_reuses_transcript_skips_existing_and_degrades
         return "## 观点与立场\n- 测试观点。原话：「示例」"
 
     monkeypatch.setattr(orchestrator.space_module, "fetch_up_videos", fake_fetch_up_videos)
-    monkeypatch.setattr(orchestrator.dynamic_module, "fetch_all_dynamics", fake_fetch_all_dynamics)
     monkeypatch.setattr(
         orchestrator.job_repo, "find_completed_by_bvid", fake_find_completed_by_bvid
     )
@@ -92,12 +85,13 @@ async def test_pipeline_happy_path_reuses_transcript_skips_existing_and_degrades
     final = distill_repo.get_run(run.id)
     assert final is not None
     assert final.status == DistillRunStatus.COMPLETED
-    assert final.dynamics_status == "unavailable"
+    assert final.dynamics_status is None
     assert final.up_name == "蒸馏UP"
     assert final.counters["videos_total"] == 2
     assert final.counters["videos_transcribed"] == 2
     assert final.counters["videos_extracted"] == 2
     assert final.counters["videos_failed"] == 0
+    assert "dynamics_count" not in final.counters
 
     # BV_OLD 原样保留，没被重新覆盖。
     assert distill_storage.read_video(42, "BV_OLD") == "---\ntitle: 老视频\n---\n\n已有内容"
@@ -116,6 +110,7 @@ async def test_pipeline_happy_path_reuses_transcript_skips_existing_and_degrades
     manifest = distill_storage.read_manifest(42)
     assert manifest is not None
     assert manifest["videos"]["extracted"] == 2
+    assert "dynamics_status" not in manifest
     corpus = distill_storage.read_corpus(42)
     assert corpus is not None
     assert corpus.index("已有内容") < corpus.index("测试观点")
@@ -125,22 +120,21 @@ async def test_pipeline_happy_path_reuses_transcript_skips_existing_and_degrades
 async def test_start_run_rejects_duplicate_active_run(monkeypatch, tmp_path):
     _setup(monkeypatch, tmp_path)
 
-    async def fake_fetch_all_dynamics(mid, **kwargs):
-        # 让第一个 run 卡在 fetching_dynamics 的等待上，方便断言第二次启动被拒绝。
-        raise RuntimeError("boom")
+    gate = asyncio.Event()
 
-    monkeypatch.setattr(orchestrator.dynamic_module, "fetch_all_dynamics", fake_fetch_all_dynamics)
-
-    async def fake_fetch_up_videos(mid, *, page=1, keyword="", order="pubdate"):
+    async def blocked_fetch_up_videos(mid, *, page=1, keyword="", order="pubdate"):
+        # Hold the first run in PREPARING_TRANSCRIPTS so a second start is rejected.
+        await gate.wait()
         return _up_video_page(mid, [])
 
-    monkeypatch.setattr(orchestrator.space_module, "fetch_up_videos", fake_fetch_up_videos)
+    monkeypatch.setattr(orchestrator.space_module, "fetch_up_videos", blocked_fetch_up_videos)
 
     run = await orchestrator.start_run(mid=7, video_limit=5)
 
     with pytest.raises(RuntimeError):
         await orchestrator.start_run(mid=7, video_limit=5)
 
+    gate.set()
     task = orchestrator._active_tasks.get(run.id)
     if task is not None:
         await task
@@ -154,10 +148,6 @@ async def test_cancel_run_marks_cancelled_and_pipeline_stops_between_steps(monke
     if bg_task is not None:
         bg_task.cancel()
 
-    async def fake_fetch_all_dynamics(mid, **kwargs):
-        return []
-
-    monkeypatch.setattr(orchestrator.dynamic_module, "fetch_all_dynamics", fake_fetch_all_dynamics)
     orchestrator.cancel_run(run.id)
 
     await orchestrator._run_pipeline(run.id)

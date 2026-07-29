@@ -8,8 +8,6 @@ def _patch_storage_dir(monkeypatch, tmp_path):
 
 
 def _make_run(mid: int) -> DistillRun:
-    counters = default_counters()
-    counters["dynamics_count"] = 4
     return DistillRun(
         id="run-1",
         mid=mid,
@@ -19,8 +17,7 @@ def _make_run(mid: int) -> DistillRun:
         created_at=0,
         updated_at=0,
         up_name="某UP",
-        dynamics_status="ok",
-        counters=counters,
+        counters=default_counters(),
     )
 
 
@@ -51,8 +48,8 @@ def test_build_manifest_fields(monkeypatch, tmp_path):
     assert manifest["mid"] == 1
     assert manifest["up_name"] == "某UP"
     assert manifest["video_limit"] == 50
-    assert manifest["dynamics_status"] == "ok"
-    assert manifest["dynamics_count"] == 4
+    assert "dynamics_status" not in manifest
+    assert "dynamics_count" not in manifest
     assert manifest["videos"]["total"] == 2
     assert manifest["videos"]["extracted"] == 1
     assert manifest["videos"]["failed"] == ["BV_B"]
@@ -60,12 +57,14 @@ def test_build_manifest_fields(monkeypatch, tmp_path):
     assert manifest["date_range"] == {"from": 100, "to": 200}
 
 
-def test_build_corpus_orders_by_pubdate_and_appends_dynamics(monkeypatch, tmp_path):
+def test_build_corpus_orders_by_pubdate_video_only(monkeypatch, tmp_path):
     _patch_storage_dir(monkeypatch, tmp_path)
     run = _make_run(2)
     distill_storage.save_video(2, "BV_NEW", "---\ntitle: 新\n---\n\n新视频正文")
     distill_storage.save_video(2, "BV_OLD", "---\ntitle: 旧\n---\n\n旧视频正文")
-    distill_storage.save_dynamics(2, "- [2024-01-01][文字] 一条动态")
+    # Legacy dynamics.md on disk must not be appended or deleted.
+    (tmp_path / "2").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "2" / "dynamics.md").write_text("- [2024-01-01][文字] 一条动态", encoding="utf-8")
 
     videos = [
         {
@@ -90,9 +89,11 @@ def test_build_corpus_orders_by_pubdate_and_appends_dynamics(monkeypatch, tmp_pa
 
     old_pos = corpus.index("旧视频正文")
     new_pos = corpus.index("新视频正文")
-    dynamics_pos = corpus.index("一条动态")
-    assert old_pos < new_pos < dynamics_pos
-    assert "# 动态时间线" in corpus
+    assert old_pos < new_pos
+    assert "一条动态" not in corpus
+    assert "# 动态时间线" not in corpus
+    assert "动态状态" not in corpus
+    assert (tmp_path / "2" / "dynamics.md").exists()
 
 
 def test_assemble_writes_manifest_and_corpus_files(monkeypatch, tmp_path):
