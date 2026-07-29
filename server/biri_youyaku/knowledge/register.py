@@ -228,6 +228,17 @@ def _register_job(job: Job) -> str:
         reason=None,
         last_error=None,
     )
+    # Phase B: index active summary for FTS (best-effort; never fail register).
+    try:
+        from biri_youyaku.knowledge import index as knowledge_index
+
+        knowledge_index.index_document_active_summary(document_id)
+    except Exception:
+        logger.exception(
+            "knowledge FTS index failed after register job=%s document=%s",
+            job_id,
+            document_id,
+        )
     logger.info(
         "knowledge registered job=%s document=%s summary=%s transcript=%s",
         job_id,

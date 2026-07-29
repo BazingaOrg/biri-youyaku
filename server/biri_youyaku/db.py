@@ -204,6 +204,29 @@ CREATE TABLE IF NOT EXISTS knowledge_reconcile (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
+
+-- B: FTS-first summary chunks (active summary revisions only; rebuildable).
+CREATE TABLE IF NOT EXISTS knowledge_rag_chunks (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL,
+  summary_revision_id TEXT NOT NULL,
+  source_level TEXT NOT NULL DEFAULT 'summary',
+  heading_path TEXT NOT NULL,
+  chunk_text TEXT NOT NULL,
+  chunk_ord INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_rag_chunks_doc ON knowledge_rag_chunks(document_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_rag_chunks_rev ON knowledge_rag_chunks(summary_revision_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_rag_chunks_fts USING fts5(
+  chunk_id UNINDEXED,
+  document_id UNINDEXED,
+  summary_revision_id UNINDEXED,
+  heading_path,
+  body,
+  tokenize = 'unicode61'
+);
 """
 
 # 已废弃的旧列：去重改走 bvid 查询（不再用 content_hash），旧 SELECT * 兼容列也不再需要。

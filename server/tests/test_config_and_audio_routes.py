@@ -31,13 +31,13 @@ async def test_runtime_config_returns_only_booleans(monkeypatch):
 
     response = await config_route.get_runtime_config()
 
-    assert response == {
-        "ok": True,
-        "auth_mode": "none",
-        "llm_configured": True,
-        "email_configured": True,
-        "bilibili_cookie_configured": True,
-    }
+    assert response["ok"] is True
+    assert response["auth_mode"] == "none"
+    assert response["llm_configured"] is True
+    assert response["email_configured"] is True
+    assert response["bilibili_cookie_configured"] is True
+    assert isinstance(response.get("knowledge_chat_enabled"), bool)
+    assert isinstance(response.get("knowledge_search_enabled"), bool)
 
 
 @pytest.mark.asyncio

@@ -154,7 +154,7 @@ B 默认 FTS-only：1,000-document benchmark search p95 ≤200ms、FTS backfill 
 2. [x] **A1：兼容 fixtures**。固定旧 summary path/hash、API/SSE、周总结指纹、邮件/下载输入。验证迁移前后逐项 hash，pytest/typecheck/build；回滚只删 fixtures。
 3. [x] **A2：动态流改为 video-only distill，独立发布**。锁定决策 A：保留 UP 投稿视频-only distill，从 video/transcript 处理开始；移除动态 stage、endpoint/module、enum/status/count/db 新 schema fields、assembler/corpus 动态包含、storage helpers、SSE/API/frontend/tests/docs。旧 DB 未用列若更安全则保留；绝不自动删除现有 `dynamics.md`/corpus 用户数据。受影响：`routes/up.py`、`modules/bilibili/dynamic.py`、`distill/`、schema、UI、测试、文档。验证动态端点 404/无引用，普通 URL、UP 投稿、ASR/SSE/邮件/周总结通过；回滚独立提交。
 4. [x] **A3：registry、双 artifact copy、最小 unlink/reconcile**。回填前先备份 DB + summaries 清单/SHA-256。增量 schema 仅为 documents/content+summary revisions/artifacts/job links/reconcile。普通 COMPLETED Bili summary job 在 `summary_path` 存在后，copy byte-identical summary 与 immutable raw transcript（`platform|asr`, start/end/raw_text, hash），按 `(bilibili,bvid,cid)` 建/复用 document，`job_id` link；缺 bvid/cid 则 reconcile failed、不建 document；重总结只增 summary revision、transcript hash 未变则复用。不注册 distill/audio job。history 删除事务改为 unlink job、保留 artifacts（本批起「手工删除语义」生效）。启动/维护 scan 补 reconcile。验证幂等、hash 相同、手动删 history 不丢 knowledge、缺 meta 不误并；回滚关闭 register/reconcile，不删 artifact。P1.5/C 只做 transcript **索引**，不延后 durability。
-5. [ ] **B：FTS-first summary 评测与 MVP**。先 build chunker/FTS baseline，再按数值 gate 评测；`API_TOKEN` 非空时 knowledge 路由鉴权与 jobs 同级。chat 默认关闭；gate 全过后再允许 opt-in「基于总结」chat；gate 未过则 search-only 或保持 chat 关（见评测降级策略）。`rag_chunks`/FTS 在本批创建；dense 仅单独实验，不能阻塞 FTS。验证 gates 或书面降级、1,000-doc 资源、FTS-only 降级、默认不外发 chat；回滚下线 chat/索引，保留 artifacts。
+5. [x] **B：FTS-first summary 评测与 MVP**。先 build chunker/FTS baseline，再按数值 gate 评测；`API_TOKEN` 非空时 knowledge 路由鉴权与 jobs 同级。chat 默认关闭；gate 全过后再允许 opt-in「基于总结」chat；gate 未过则 search-only 或保持 chat 关（见评测降级策略）。`rag_chunks`/FTS 在本批创建；dense 仅单独实验，不能阻塞 FTS。验证 gates 或书面降级、1,000-doc 资源、FTS-only 降级、默认不外发 chat；回滚下线 chat/索引，保留 artifacts。
 6. [ ] **C：transcript evidence 与数值门槛**。先 raw transcript index，再执行可选 normalization A/B；实现分层 retrieval、邻窗、cap/dedup、query-type fallback、citation 规则。验证 transcript gates、ASR 高风险降级、normalizer 无不可追溯重写；未达标则不得宣称证据问答就绪，回滚 summary-only、由 raw 重建。
 7. [ ] **D：删除、备份、云端**。先 document soft/restore/permanent delete（二次确认、审计）与 reconcile；再恢复演练。Cutover runbook（必须按序）：(1) drain in-flight jobs 至终态；(2) 停止旧 writer 写入；(3) `sqlite3 .backup` 或等价一致性备份 + artifacts/summaries 清单与 hash manifest（禁止拷贝活动 WAL 当真相）；(4) 在 ECS 恢复并校验 legacy/artifact hash、active revision；(5) 真实 Bili+ASR+SSE 冒烟；(6) same-origin reverse proxy、Tunnel+Access；(7) 一次切换 writer 到 ECS，再 ECS→OSS/Mac 只出站；(8) 失败则停 ECS 写、恢复上一 writer 已验证快照，绝不双写。验证 hash/revision/index/reconcile/outbox、故障恢复。中国大陆公开访问的 ICP 取决于地域/域名/提供商，上线前向 Aliyun/主管规则确认。
 8. [ ] **E：P3 输入/增强（不实施）**。未来按真实需求另案评估其他 sources、portable export、OCR/网页/上传及其隐私/SSRF/验收。
@@ -279,3 +279,27 @@ B 默认 FTS-only：1,000-document benchmark search p95 ≤200ms、FTS backfill 
 - 无 `cid` 的旧 job 会 reconcile `failed` 直至补 meta（不按 bvid-only 合并）。
 - 未做 FTS/search/chat（B）；未做 document 永久删除 UI（D）。
 - 生产首次部署前仍建议 `sqlite3 .backup` + summaries 清单；本环境空库未执行实盘备份。
+
+### B（2026-07-29）
+
+**实际变更**
+
+- Schema：`knowledge_rag_chunks` + FTS5 `knowledge_rag_chunks_fts`（summary-only；CJK 经 `fts_prepare_text` 插空格）。
+- `knowledge/chunker.py`：`##`/`###` → `AI 总结：…` heading_path；无标题 → `AI 总结：全文`。
+- `knowledge/index.py`：按 active summary revision 建/重建索引；register 后与启动 best-effort。
+- `knowledge/search.py`：FTS MATCH；`knowledge/chat.py`：opt-in SSE（`status`/`delta`/`citations`/`done`/`error`），无 hit 拒答不调 LLM。
+- 路由：`GET /v1/knowledge/search|status`、`POST /v1/knowledge/chat|reindex`（`require_token`）。
+- 配置：`KNOWLEDGE_CHAT_ENABLED=false`、`KNOWLEDGE_SEARCH_ENABLED=true`；runtime 仅暴露 booleans。
+- 前端：`/knowledge` 页 + 历史「知识库」入口；API/SSE 客户端。
+- 测试：`tests/test_knowledge_search.py`。
+
+**验证**
+
+- `pytest tests/test_knowledge_search.py tests/test_knowledge_registry.py tests/test_compatibility_baseline.py`：**28 passed**
+- knowledge 路由路径四条可见；`web` `tsc --noEmit` ok
+
+**偏差 / 书面降级**
+
+- 未跑 1,000-doc p95 / holdout 数值 gate → **chat 保持默认关闭**；search-only 可用。
+- 无 dense/sqlite-vec；无 transcript 证据层；无 conversation 持久化。
+- 引用仅校验检索快照内的 chunk_id；禁止伪造 mm:ss。

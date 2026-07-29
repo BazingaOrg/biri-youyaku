@@ -12,6 +12,8 @@ const FALLBACK: RuntimeConfig = {
   llm_configured: false,
   email_configured: false,
   bilibili_cookie_configured: false,
+  knowledge_chat_enabled: false,
+  knowledge_search_enabled: false,
 }
 
 let cached: Promise<RuntimeConfig> | null = null

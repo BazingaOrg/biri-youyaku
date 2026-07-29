@@ -39,6 +39,8 @@
 | 邮件 | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | 支持 `{{title}}` / `{{author}}` |
 | 存储 | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DISTILL_STORAGE_DIR / KNOWLEDGE_STORAGE_DIR / DB_PATH` | `data/...` | `KNOWLEDGE_STORAGE_DIR` 存 knowledge artifacts；`KNOWLEDGE_REGISTER_ENABLED` 默认 true，关则跳过登记/回填 |
 | 知识库 | `KNOWLEDGE_REGISTER_ENABLED` | `true` | 关闭后 register/reconcile 空操作（回滚开关）；已落盘 artifact 不删 |
+| 知识库 | `KNOWLEDGE_SEARCH_ENABLED` | `true` | 基于总结的 FTS 检索；需 register 开启才对外暴露 |
+| 知识库 | `KNOWLEDGE_CHAT_ENABLED` | `false` | 基于总结的知识问答（默认关；开启后 query+片段会发往已配置 LLM） |
 | 清理 | `AUDIO_RETENTION_DAYS` | `7` | 自动清 audio 文件并清空 path；job 行保留 |
 | 清理 | `JOB_RETENTION_DAYS` | `180` | 仅自动删除 FAILED/CANCELED 且无 summary 的 job；COMPLETED 永久保留至用户手动删除 |
 | 清理 | `ORPHAN_FILE_RETENTION_DAYS` | `3` | DB 不引用的孤儿文件多久后清 |
@@ -89,6 +91,8 @@ All tunable settings live in `server/.env`; defaults are in
 | Email | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | `{{title}}` / `{{author}}` allowed |
 | Storage | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DISTILL_STORAGE_DIR / KNOWLEDGE_STORAGE_DIR / DB_PATH` | `data/...` | `KNOWLEDGE_STORAGE_DIR` holds knowledge artifacts; `KNOWLEDGE_REGISTER_ENABLED` defaults true (disable to skip register/reconcile) |
 | Knowledge | `KNOWLEDGE_REGISTER_ENABLED` | `true` | when false, register/reconcile no-op (rollback switch); existing artifacts kept |
+| Knowledge | `KNOWLEDGE_SEARCH_ENABLED` | `true` | FTS search over active summaries; exposed only when register is on |
+| Knowledge | `KNOWLEDGE_CHAT_ENABLED` | `false` | opt-in knowledge Q&A over summaries (default off; when on, query+chunks go to configured LLM) |
 | Cleanup | `AUDIO_RETENTION_DAYS` | `7` | auto: delete audio file(s) and clear path; job row kept |
 | Cleanup | `JOB_RETENTION_DAYS` | `180` | auto-delete only FAILED/CANCELED jobs with no summary; COMPLETED kept until explicit user delete |
 | Cleanup | `ORPHAN_FILE_RETENTION_DAYS` | `3` | how long DB-unreferenced files linger |

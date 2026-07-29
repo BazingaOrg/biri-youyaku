@@ -33,6 +33,7 @@ from biri_youyaku.routes import (
     distill_router,
     healthz_router,
     jobs_router,
+    knowledge_router,
     up_router,
     weekly_summaries_router,
 )
@@ -119,6 +120,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         reconcile_once(limit=50)
     except Exception:
         log.warning("knowledge reconcile at startup failed", exc_info=True)
+    # B: FTS index active summaries missing chunks (best-effort).
+    try:
+        from biri_youyaku.knowledge import index as knowledge_index
+
+        knowledge_index.index_active_summaries(limit=100, only_missing=True)
+    except Exception:
+        log.warning("knowledge FTS index at startup failed", exc_info=True)
     runner.prepare_startup()
     distill_orchestrator.prepare_startup()
     weekly_orchestrator.prepare_startup()
@@ -219,6 +227,7 @@ def create_app() -> FastAPI:
     app.include_router(distill_router)
     app.include_router(healthz_router)
     app.include_router(jobs_router)
+    app.include_router(knowledge_router)
     app.include_router(up_router)
     app.include_router(weekly_summaries_router)
     return app

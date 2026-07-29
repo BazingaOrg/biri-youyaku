@@ -195,6 +195,54 @@ export interface RuntimeConfig {
   llm_configured: boolean
   email_configured: boolean
   bilibili_cookie_configured: boolean
+  knowledge_chat_enabled?: boolean
+  knowledge_search_enabled?: boolean
+}
+
+export interface KnowledgeSearchHit {
+  chunk_id: string
+  document_id: string
+  summary_revision_id: string
+  title?: string | null
+  author?: string | null
+  bvid?: string | null
+  source_url?: string | null
+  heading_path: string
+  snippet: string
+  chunk_text?: string
+  score: number
+  source_level: 'summary'
+}
+
+export interface KnowledgeCitation {
+  id: string
+  source_level: 'summary'
+  heading_path: string
+  document_id: string
+  title?: string | null
+  locator: string
+}
+
+export interface KnowledgeStatus {
+  ok: true
+  documents: number
+  chunks: number
+  chat_enabled: boolean
+  search_enabled: boolean
+  register_enabled: boolean
+}
+
+export function searchKnowledge(q: string, limit = 10) {
+  const params = new URLSearchParams()
+  params.set('q', q)
+  params.set('limit', String(limit))
+  return request<{ok: true; query: string; hits: KnowledgeSearchHit[]}>(
+    `/v1/knowledge/search?${params.toString()}`,
+  )
+}
+
+export function getKnowledgeStatus() {
+  return request<KnowledgeStatus>('/v1/knowledge/status')
 }
 
 export function getRuntimeConfig() {

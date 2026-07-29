@@ -81,6 +81,10 @@ class Settings(BaseSettings):
     knowledge_storage_dir: Path = Path("data/knowledge")
     # Rollback switch: when False, register/reconcile no-op (artifacts already written stay).
     knowledge_register_enabled: bool = True
+    # B: opt-in knowledge chat (default OFF — query never leaves without explicit enable).
+    knowledge_chat_enabled: bool = False
+    # B: FTS summary search (available whenever register is on; independent kill switch).
+    knowledge_search_enabled: bool = True
     db_path: Path = Path("data/biri_youyaku.db")
 
     # Auto: clear audio files/paths after N days; job row stays.

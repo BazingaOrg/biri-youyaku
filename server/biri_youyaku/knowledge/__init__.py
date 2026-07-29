@@ -1,9 +1,10 @@
-"""Knowledge registry: durable summary/transcript artifacts linked from jobs.
+"""Knowledge registry + Phase B FTS summary search / opt-in chat.
 
-Public surface for A3 (no FTS/chat yet):
+Public surface:
 - try_register_job / register_from_job
 - reconcile_once
 - unlink_job / unlink_jobs (via repo)
+- index / search / chat modules (imported by routes)
 """
 
 from biri_youyaku.knowledge.reconcile import reconcile_once

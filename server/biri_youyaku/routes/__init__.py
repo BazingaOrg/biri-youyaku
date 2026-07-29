@@ -4,6 +4,7 @@ from biri_youyaku.routes.costs import router as costs_router
 from biri_youyaku.routes.distill import router as distill_router
 from biri_youyaku.routes.healthz import router as healthz_router
 from biri_youyaku.routes.jobs import router as jobs_router
+from biri_youyaku.routes.knowledge import router as knowledge_router
 from biri_youyaku.routes.up import router as up_router
 from biri_youyaku.routes.weekly_summaries import router as weekly_summaries_router
 
@@ -14,6 +15,7 @@ __all__ = [
     "distill_router",
     "healthz_router",
     "jobs_router",
+    "knowledge_router",
     "up_router",
     "weekly_summaries_router",
 ]
