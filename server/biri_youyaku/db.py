@@ -227,6 +227,32 @@ CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_rag_chunks_fts USING fts5(
   body,
   tokenize = 'unicode61'
 );
+
+-- C: FTS transcript evidence chunks (raw windows; rebuildable from artifacts).
+CREATE TABLE IF NOT EXISTS knowledge_transcript_chunks (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL,
+  content_revision_id TEXT NOT NULL,
+  source_level TEXT NOT NULL DEFAULT 'transcript',
+  start_sec REAL NOT NULL,
+  end_sec REAL NOT NULL,
+  subtitle_source TEXT,
+  chunk_text TEXT NOT NULL,
+  chunk_ord INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_transcript_chunks_doc
+  ON knowledge_transcript_chunks(document_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_transcript_chunks_rev
+  ON knowledge_transcript_chunks(content_revision_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_transcript_chunks_fts USING fts5(
+  chunk_id UNINDEXED,
+  document_id UNINDEXED,
+  content_revision_id UNINDEXED,
+  body,
+  tokenize = 'unicode61'
+);
 """
 
 # 已废弃的旧列：去重改走 bvid 查询（不再用 content_hash），旧 SELECT * 兼容列也不再需要。

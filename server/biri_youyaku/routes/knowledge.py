@@ -1,4 +1,4 @@
-"""Knowledge search + opt-in chat routes (Phase B)."""
+"""Knowledge search + opt-in chat routes (Phase B/C)."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from biri_youyaku.config import settings
 from biri_youyaku.knowledge import index as knowledge_index
 from biri_youyaku.knowledge import repo as knowledge_repo
 from biri_youyaku.knowledge.chat import stream_chat
-from biri_youyaku.knowledge.search import hit_to_dict, search_summaries
+from biri_youyaku.knowledge.retrieve import evidence_hit_to_dict, retrieve
 
 logger = logging.getLogger("biri_youyaku.routes.knowledge")
 
@@ -41,11 +41,11 @@ async def knowledge_search(
             status_code=403,
             detail="知识检索未启用（KNOWLEDGE_SEARCH_ENABLED 或 KNOWLEDGE_REGISTER_ENABLED）",
         )
-    hits = search_summaries(q, limit=limit)
+    hits = retrieve(q, mode="search", limit=limit)
     return {
         "ok": True,
         "query": q,
-        "hits": [hit_to_dict(h) for h in hits],
+        "hits": [evidence_hit_to_dict(h) for h in hits],
     }
 
 
@@ -85,15 +85,18 @@ async def knowledge_status() -> dict[str, Any]:
         "ok": True,
         "documents": knowledge_repo.count_documents(),
         "chunks": knowledge_index.count_chunks(),
+        "summary_chunks": knowledge_index.count_summary_chunks(),
+        "transcript_chunks": knowledge_index.count_transcript_chunks(),
         "chat_enabled": bool(settings.knowledge_chat_enabled),
         "search_enabled": _search_enabled(),
         "register_enabled": bool(settings.knowledge_register_enabled),
+        "transcript_index_enabled": bool(settings.knowledge_transcript_index_enabled),
     }
 
 
 @router.post("/knowledge/reindex")
 async def knowledge_reindex() -> dict[str, Any]:
-    """Ops: full rebuild of summary FTS index from active revisions."""
+    """Ops: full rebuild of summary + transcript FTS from artifacts."""
     if not settings.knowledge_register_enabled:
         raise HTTPException(status_code=403, detail="知识登记未启用")
     try:
@@ -105,4 +108,6 @@ async def knowledge_reindex() -> dict[str, Any]:
         "ok": True,
         "revisions_indexed": revisions,
         "chunks": knowledge_index.count_chunks(),
+        "summary_chunks": knowledge_index.count_summary_chunks(),
+        "transcript_chunks": knowledge_index.count_transcript_chunks(),
     }

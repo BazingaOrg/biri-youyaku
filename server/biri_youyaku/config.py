@@ -85,6 +85,8 @@ class Settings(BaseSettings):
     knowledge_chat_enabled: bool = False
     # B: FTS summary search (available whenever register is on; independent kill switch).
     knowledge_search_enabled: bool = True
+    # C: raw transcript FTS index (default on; layered retrieve uses it when present).
+    knowledge_transcript_index_enabled: bool = True
     db_path: Path = Path("data/biri_youyaku.db")
 
     # Auto: clear audio files/paths after N days; job row stays.

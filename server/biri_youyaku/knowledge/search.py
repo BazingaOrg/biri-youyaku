@@ -138,4 +138,5 @@ def hit_to_dict(hit: Hit) -> dict:
         "chunk_text": hit.chunk_text,
         "score": hit.score,
         "source_level": "summary",
+        "locator": hit.heading_path,
     }

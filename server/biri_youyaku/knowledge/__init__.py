@@ -1,10 +1,10 @@
-"""Knowledge registry + Phase B FTS summary search / opt-in chat.
+"""Knowledge registry + FTS summary/transcript search / opt-in chat.
 
 Public surface:
 - try_register_job / register_from_job
 - reconcile_once
 - unlink_job / unlink_jobs (via repo)
-- index / search / chat modules (imported by routes)
+- index / search / retrieve / chat modules (imported by routes)
 """
 
 from biri_youyaku.knowledge.reconcile import reconcile_once

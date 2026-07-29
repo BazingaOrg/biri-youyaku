@@ -15,12 +15,29 @@ import {Spinner} from '../components/Spinner'
 
 type QueryMode = 'search' | 'ask'
 
+function locatorLabel(hit: KnowledgeSearchHit): string {
+  if (hit.locator) return hit.locator
+  if (hit.source_level === 'transcript' && hit.start_sec != null && hit.end_sec != null) {
+    const fmt = (sec: number) => {
+      const total = Math.max(0, Math.floor(sec))
+      const m = Math.floor(total / 60)
+      const s = total % 60
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    }
+    return `转写：${fmt(hit.start_sec)}–${fmt(hit.end_sec)}`
+  }
+  return hit.heading_path || 'AI 总结'
+}
+
 function HitCard({hit}: {hit: KnowledgeSearchHit}) {
   const full = (hit.chunk_text || hit.snippet || '').trim()
   const preview = (hit.snippet || full).trim()
   const needsExpand = full.length > preview.length || full.length > 160
   const [open, setOpen] = useState(false)
   const body = open ? full : preview
+  const label = locatorLabel(hit)
+  const isTranscript = hit.source_level === 'transcript'
+  const asrRisk = isTranscript && hit.subtitle_source === 'asr'
 
   return (
     <li className="rounded-2xl border border-line/70 bg-panel p-4 shadow-card">
@@ -32,7 +49,20 @@ function HitCard({hit}: {hit: KnowledgeSearchHit}) {
           {hit.bvid && <span className="font-mono">{hit.bvid}</span>}
         </p>
       </div>
-      <p className="mt-2 text-xs font-medium text-brand">{hit.heading_path}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span
+          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+            isTranscript
+              ? 'bg-lift text-ink ring-1 ring-line/80'
+              : 'bg-brandSoft text-brand'
+          }`}
+        >
+          {label}
+        </span>
+        {asrRisk && (
+          <span className="text-xs text-warning">ASR，可能有识别误差</span>
+        )}
+      </div>
       <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-ink/90">{body}</p>
       {needsExpand && (
         <button
@@ -205,12 +235,12 @@ export function KnowledgePage() {
   const isAsk = activeMode === 'ask'
   const submitLabel = isAsk ? '提问' : '搜索'
   const placeholder = isAsk
-    ? '根据已总结的视频提问…'
-    : '搜总结里的关键词、人名、术语…'
+    ? '根据已总结与转写的视频提问…'
+    : '搜总结或转写里的关键词、数字、术语…'
 
   const subtitle = chatEnabled
-    ? '点输入框左侧图标可在「检索」与「提问」间切换。'
-    : '在已总结的视频笔记里检索；列表默认显示摘录，可展开全文。'
+    ? '点输入框左侧图标可在「检索」与「提问」间切换；事实与数字优先引用转写时间段。'
+    : '在 AI 总结与转写片段中检索；列表默认显示摘录，可展开全文。'
 
   return (
     <div className="grid min-h-[calc(100dvh-3rem)] animate-fade-in-up content-start gap-5 sm:min-h-[calc(100dvh-5rem)]">
@@ -226,7 +256,7 @@ export function KnowledgePage() {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold tracking-[-0.012em] text-ink sm:text-3xl">知识库</h1>
-            <span className="rounded-full bg-brandSoft px-2.5 py-0.5 text-xs text-brand">基于总结</span>
+            <span className="rounded-full bg-brandSoft px-2.5 py-0.5 text-xs text-brand">总结 + 转写</span>
           </div>
           <p className="mt-1 text-sm text-muted">{subtitle}</p>
           {status && (
@@ -304,7 +334,7 @@ export function KnowledgePage() {
                   {searching && <p className="py-8 text-center text-sm text-muted">检索中…</p>}
                   {!searching && hasSearched && hits.length === 0 && !searchError && (
                     <p className="border-b border-line/60 py-12 text-center text-sm text-muted">
-                      没有匹配的总结片段，试试更具体的词
+                      没有匹配的总结或转写片段，试试更具体的词
                     </p>
                   )}
                   {!searching && hits.length > 0 && (
@@ -316,7 +346,7 @@ export function KnowledgePage() {
                   )}
                   {!searching && !hasSearched && !searchError && (
                     <p className="py-10 text-center text-sm text-muted">
-                      输入关键词，在已总结的笔记中查找
+                      输入关键词，在 AI 总结与转写片段中查找
                     </p>
                   )}
                 </>
@@ -326,7 +356,7 @@ export function KnowledgePage() {
                 <>
                   {chatPhase && (
                     <p className="mb-3 text-sm text-muted">
-                      {chatPhase === 'searching' && '正在检索总结…'}
+                      {chatPhase === 'searching' && '正在检索总结与转写…'}
                       {chatPhase === 'generating' && '正在生成回答…'}
                       {chatPhase === 'refuse' && '证据不足'}
                     </p>
@@ -351,14 +381,17 @@ export function KnowledgePage() {
                       {citations.map((cite) => (
                         <div key={cite.id} className="rounded-2xl bg-lift px-4 py-3">
                           <p className="text-sm font-medium text-ink">{cite.title || '无标题'}</p>
-                          <p className="mt-1 text-sm text-brand">{cite.heading_path || cite.locator}</p>
+                          <p className="mt-1 text-sm text-brand">{cite.locator || cite.heading_path}</p>
+                          {cite.source_level === 'transcript' && cite.subtitle_source === 'asr' && (
+                            <p className="mt-1 text-xs text-warning">ASR 转写，可能存在识别误差</p>
+                          )}
                         </div>
                       ))}
                     </div>
                   )}
                   {!chatBusy && !hasAsked && !chatError && (
                     <p className="py-10 text-center text-sm text-muted">
-                      用自然语言提问；回答仅依据本地 AI 视频总结
+                      用自然语言提问；回答依据本地 AI 总结与转写证据
                     </p>
                   )}
                 </>

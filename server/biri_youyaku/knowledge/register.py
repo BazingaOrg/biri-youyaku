@@ -228,7 +228,7 @@ def _register_job(job: Job) -> str:
         reason=None,
         last_error=None,
     )
-    # Phase B: index active summary for FTS (best-effort; never fail register).
+    # Phase B/C: index active summary + transcript for FTS (best-effort).
     try:
         from biri_youyaku.knowledge import index as knowledge_index
 
@@ -236,6 +236,21 @@ def _register_job(job: Job) -> str:
     except Exception:
         logger.exception(
             "knowledge FTS index failed after register job=%s document=%s",
+            job_id,
+            document_id,
+        )
+    try:
+        from biri_youyaku.knowledge import index as knowledge_index
+
+        knowledge_index.index_content_revision(
+            document_id,
+            content_revision_id,
+            artifact_path=str(transcript_path),
+            subtitle_source=job.subtitle_source,
+        )
+    except Exception:
+        logger.exception(
+            "knowledge transcript FTS index failed after register job=%s document=%s",
             job_id,
             document_id,
         )

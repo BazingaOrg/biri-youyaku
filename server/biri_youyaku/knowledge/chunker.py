@@ -23,6 +23,23 @@ class SummaryChunk:
     chunk_ord: int
 
 
+@dataclass(frozen=True)
+class TranscriptWindow:
+    """Merged raw-transcript window for FTS (Phase C)."""
+
+    start_sec: float
+    end_sec: float
+    chunk_text: str
+    chunk_ord: int
+    subtitle_source: str | None
+
+
+# Window merge targets: ~800–1500 chars, ~45–90s, max ~8 segments.
+_WINDOW_MAX_CHARS = 1200
+_WINDOW_MAX_SPAN_SEC = 75.0
+_WINDOW_MAX_SEGMENTS = 8
+
+
 def fts_prepare_text(text: str) -> str:
     """Insert spaces around each CJK character so FTS5 unicode61 tokenizes them."""
     if not text:
@@ -159,3 +176,99 @@ def chunk_summary_markdown(text: str) -> list[SummaryChunk]:
             for i, c in enumerate(chunks)
         ]
     return chunks
+
+
+def window_transcript_segments(
+    segments: list[dict],
+    *,
+    max_chars: int = _WINDOW_MAX_CHARS,
+    max_span_sec: float = _WINDOW_MAX_SPAN_SEC,
+    max_segments: int = _WINDOW_MAX_SEGMENTS,
+) -> list[TranscriptWindow]:
+    """Merge consecutive raw segments into FTS windows along boundaries.
+
+    Keeps start=first.start, end=last.end; joins non-empty raw_text with spaces.
+    Empty / whitespace-only segments are skipped for text but do not invent times.
+    """
+    items: list[tuple[float, float, str, str | None]] = []
+    for raw in segments or []:
+        if not isinstance(raw, dict):
+            continue
+        text = str(raw.get("raw_text") or raw.get("text") or "").strip()
+        if not text:
+            continue
+        start = float(raw.get("start") or 0.0)
+        end = float(raw.get("end") or start)
+        if end < start:
+            end = start
+        source = raw.get("source")
+        source_s = str(source) if source is not None else None
+        items.append((start, end, text, source_s))
+
+    if not items:
+        return []
+
+    windows: list[TranscriptWindow] = []
+    buf_texts: list[str] = []
+    buf_sources: list[str | None] = []
+    win_start = items[0][0]
+    win_end = items[0][1]
+    char_count = 0
+    seg_count = 0
+
+    def flush() -> None:
+        nonlocal buf_texts, buf_sources, char_count, seg_count
+        if not buf_texts:
+            return
+        # Prefer non-null source if all same; else first non-null.
+        sources = [s for s in buf_sources if s]
+        subtitle_source: str | None = None
+        if sources:
+            if all(s == sources[0] for s in sources):
+                subtitle_source = sources[0]
+            else:
+                subtitle_source = sources[0]
+        windows.append(
+            TranscriptWindow(
+                start_sec=win_start,
+                end_sec=win_end,
+                chunk_text=" ".join(buf_texts),
+                chunk_ord=len(windows),
+                subtitle_source=subtitle_source,
+            )
+        )
+        buf_texts = []
+        buf_sources = []
+        char_count = 0
+        seg_count = 0
+
+    for start, end, text, source in items:
+        add_len = len(text) + (1 if buf_texts else 0)
+        would_chars = char_count + add_len
+        would_span = end - win_start if buf_texts else (end - start)
+        would_segs = seg_count + 1
+
+        if buf_texts and (
+            would_chars > max_chars
+            or would_span > max_span_sec
+            or would_segs > max_segments
+        ):
+            flush()
+            win_start = start
+            win_end = end
+            buf_texts = [text]
+            buf_sources = [source]
+            char_count = len(text)
+            seg_count = 1
+            continue
+
+        if not buf_texts:
+            win_start = start
+        win_end = end
+        buf_texts.append(text)
+        buf_sources.append(source)
+        char_count += add_len
+        seg_count += 1
+
+    flush()
+    return windows

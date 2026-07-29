@@ -202,7 +202,8 @@ export interface RuntimeConfig {
 export interface KnowledgeSearchHit {
   chunk_id: string
   document_id: string
-  summary_revision_id: string
+  summary_revision_id?: string
+  content_revision_id?: string
   title?: string | null
   author?: string | null
   bvid?: string | null
@@ -211,25 +212,35 @@ export interface KnowledgeSearchHit {
   snippet: string
   chunk_text?: string
   score: number
-  source_level: 'summary'
+  source_level: 'summary' | 'transcript'
+  locator?: string
+  start_sec?: number
+  end_sec?: number
+  subtitle_source?: string | null
 }
 
 export interface KnowledgeCitation {
   id: string
-  source_level: 'summary'
+  source_level: 'summary' | 'transcript'
   heading_path: string
   document_id: string
   title?: string | null
   locator: string
+  start_sec?: number
+  end_sec?: number
+  subtitle_source?: string | null
 }
 
 export interface KnowledgeStatus {
   ok: true
   documents: number
   chunks: number
+  summary_chunks?: number
+  transcript_chunks?: number
   chat_enabled: boolean
   search_enabled: boolean
   register_enabled: boolean
+  transcript_index_enabled?: boolean
 }
 
 export function searchKnowledge(q: string, limit = 10) {
