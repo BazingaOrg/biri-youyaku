@@ -536,12 +536,6 @@ export function HistoryPage() {
           <p className="mt-1 text-sm text-muted">按周查看任务，搜索、筛选或清理记录。</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Link
-            href="/knowledge"
-            className="inline-flex min-h-10 items-center rounded-2xl bg-lift px-3 text-sm text-muted transition-[transform,background-color,color] hover:bg-line/70 hover:text-ink active:scale-95"
-          >
-            知识库
-          </Link>
           <IconTooltip label="新建">
             <Link href="/" aria-label="新建" className="grid h-11 w-11 place-items-center rounded-2xl bg-brand text-white shadow-card"><Plus size={18} /></Link>
           </IconTooltip>

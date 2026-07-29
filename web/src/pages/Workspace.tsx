@@ -332,6 +332,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     navigate('/')
   }
   const openHistory = () => navigate('/history')
+  const openKnowledge = () => navigate('/knowledge')
 
   // ---- render ----
 
@@ -341,7 +342,11 @@ export function Workspace({jobId}: WorkspaceProps) {
     }
     return (
       <>
-        <IdleView onSubmit={submitNew} onOpenHistory={openHistory} />
+        <IdleView
+          onSubmit={submitNew}
+          onOpenHistory={openHistory}
+          onOpenKnowledge={openKnowledge}
+        />
         <ConfirmDialog
           open={duplicateJob != null}
           title="这条视频之前总结过"

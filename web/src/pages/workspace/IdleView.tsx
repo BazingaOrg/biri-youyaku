@@ -1,5 +1,5 @@
 import {useState} from 'react'
-import {History, RotateCw, Sparkles} from 'lucide-react'
+import {BookOpen, History, RotateCw, Sparkles} from 'lucide-react'
 import {IconButton} from '../../components/IconButton'
 import {UrlInput} from '../../components/UrlInput'
 import {isValidBiliUrl, sanitizeBiliInput} from '../../lib/biliUrl'
@@ -7,10 +7,11 @@ import {isValidBiliUrl, sanitizeBiliInput} from '../../lib/biliUrl'
 interface IdleViewProps {
   onSubmit: (url: string) => Promise<void>
   onOpenHistory: () => void
+  onOpenKnowledge: () => void
 }
 
 /** 空闲态：粘 URL → 校验 → 提交。任何已识别为「在飞 / 历史」的视图都不走这里。 */
-export function IdleView({onSubmit, onOpenHistory}: IdleViewProps) {
+export function IdleView({onSubmit, onOpenHistory, onOpenKnowledge}: IdleViewProps) {
   const [url, setUrl] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -62,6 +63,12 @@ export function IdleView({onSubmit, onOpenHistory}: IdleViewProps) {
             size="lg"
           />
           <IconButton icon={<History size={20} />} label="历史" onClick={onOpenHistory} size="lg" />
+          <IconButton
+            icon={<BookOpen size={20} />}
+            label="知识库"
+            onClick={onOpenKnowledge}
+            size="lg"
+          />
         </div>
       </div>
     </div>

@@ -218,7 +218,9 @@ export function KnowledgePage() {
         </div>
         {!chatEnabled ? (
           <p className="rounded-2xl bg-lift px-4 py-3 text-sm text-muted">
-            问答默认关闭。在服务端设置 <code className="text-xs">KNOWLEDGE_CHAT_ENABLED=true</code> 后可用；开启后提问与总结片段会发往已配置的 LLM。
+            问答默认关闭。需要时在服务端设{' '}
+            <code className="text-xs">KNOWLEDGE_CHAT_ENABLED=true</code>
+            并重启；复用项目已有 LLM 配置，无需另配模型。开启后提问与命中的总结片段会发往该 LLM。
           </p>
         ) : (
           <>
