@@ -44,9 +44,9 @@ function applyResolved(resolved: 'light' | 'dark') {
 }
 
 /**
- * 右上角三档主题切换：跟随系统 → 白天 → 黑夜循环。
- * 图标交叉旋转渐变；明暗切换用落幕/升幕动画（View Transitions，
- * 不支持或 reduced-motion 时直接切换）。
+ * 三档主题切换：跟随系统 → 白天 → 黑夜循环。
+ * 由 AppShell 右下工具区挂载；图标交叉旋转渐变；明暗用落幕/升幕
+ *（View Transitions，不支持或 reduced-motion 时直接切换）。
  */
 export function ThemeToggle() {
   const [mode, setMode] = useState<ThemeMode>(readMode)
@@ -98,12 +98,12 @@ export function ThemeToggle() {
     }`
 
   return (
-    <div className="group fixed right-4 top-4 z-40 sm:right-6 sm:top-6">
+    <div className="group relative">
       <button
         type="button"
         onClick={cycle}
         aria-label={LABEL[mode]}
-        className="relative flex h-10 w-10 items-center justify-center rounded-full border border-line bg-panel/80 text-muted shadow-card backdrop-blur transition-colors hover:text-ink active:scale-95"
+        className="relative flex h-11 w-11 items-center justify-center rounded-full border border-line bg-panel/80 text-muted shadow-card backdrop-blur transition-colors hover:text-ink active:scale-95"
       >
         {/* 跟随系统：半染圆 */}
         <svg viewBox="0 0 24 24" className={iconClass(mode === 'system')} fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -120,7 +120,8 @@ export function ThemeToggle() {
           <path d="M12 3.5a6.5 6.5 0 0 0 8.5 8.5A8.5 8.5 0 1 1 12 3.5Z" />
         </svg>
       </button>
-      <span className="pointer-events-none absolute right-0 top-full mt-2 whitespace-nowrap rounded-lg bg-ink px-2 py-1 text-xs text-canvas opacity-0 transition-opacity group-hover:opacity-100">
+      {/* 浮在底部时提示出现在按钮上方，避免贴屏外 */}
+      <span className="pointer-events-none absolute bottom-full right-0 mb-2 whitespace-nowrap rounded-lg bg-ink px-2 py-1 text-xs text-canvas opacity-0 transition-opacity group-hover:opacity-100">
         {LABEL[mode]}
       </span>
     </div>

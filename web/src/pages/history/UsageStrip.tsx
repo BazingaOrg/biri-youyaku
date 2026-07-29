@@ -47,49 +47,49 @@ export function UsageStrip() {
   if (!loaded) return null
   if (error && !summary) {
     return (
-      <div className="rounded-2xl bg-lift/45 px-3 py-2.5">
-        <p className="text-xs text-muted">用量暂不可用</p>
+      <div className="rounded-2xl bg-lift/45 px-4 py-3">
+        <p className="text-sm text-muted">用量暂不可用</p>
       </div>
     )
   }
   if (!summary) return null
 
   const balance = summary.current_balance
+  const tokenCells = [
+    {label: '总 tokens', value: formatTokens(summary.tokens.all_recorded_total_tokens)},
+    {label: '输入', value: formatTokens(summary.tokens.all_recorded_input_tokens)},
+    {label: '输出', value: formatTokens(summary.tokens.all_recorded_output_tokens)},
+  ]
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl bg-lift/45 px-3 py-2.5">
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <div className="min-w-0">
-            <p className="text-[11px] text-muted">{balanceScopeLabel(balance?.scope)}</p>
-            <p className="text-sm font-medium text-ink">
-              {balance
-                ? formatMoneyMicros(Math.round(balance.balance * 1_000_000), balance.currency)
-                : '暂不可用'}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
-            <span>
-              总 tokens <span className="font-medium text-ink">{formatTokens(summary.tokens.all_recorded_total_tokens)}</span>
-            </span>
-            <span>
-              输入 <span className="font-medium text-ink">{formatTokens(summary.tokens.all_recorded_input_tokens)}</span>
-            </span>
-            <span>
-              输出 <span className="font-medium text-ink">{formatTokens(summary.tokens.all_recorded_output_tokens)}</span>
-            </span>
-          </div>
+    <div className="rounded-2xl bg-lift/45 px-4 py-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm text-muted">{balanceScopeLabel(balance?.scope)}</p>
+          <p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-ink sm:text-3xl">
+            {balance
+              ? formatMoneyMicros(Math.round(balance.balance * 1_000_000), balance.currency)
+              : '暂不可用'}
+          </p>
         </div>
+        <button
+          type="button"
+          onClick={() => void load(true)}
+          disabled={refreshing}
+          aria-label="刷新余额"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-lift text-muted transition-[transform,background-color,color] hover:bg-line/70 hover:text-ink active:scale-95 disabled:opacity-50"
+        >
+          <RefreshCw size={16} className={refreshing ? 'animate-spin' : undefined} />
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={() => void load(true)}
-        disabled={refreshing}
-        aria-label="刷新余额"
-        className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-lift text-muted transition-[transform,background-color,color] hover:bg-line/70 hover:text-ink active:scale-95 disabled:opacity-50"
-      >
-        <RefreshCw size={14} className={refreshing ? 'animate-spin' : undefined} />
-      </button>
+      <div className="mt-3 grid grid-cols-3 gap-2 border-t border-line/60 pt-3">
+        {tokenCells.map((cell) => (
+          <div key={cell.label} className="min-w-0">
+            <p className="text-xs text-muted sm:text-sm">{cell.label}</p>
+            <p className="mt-0.5 truncate text-base font-medium text-ink sm:text-lg">{cell.value}</p>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

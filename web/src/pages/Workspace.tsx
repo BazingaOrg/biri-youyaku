@@ -380,7 +380,7 @@ export function Workspace({jobId}: WorkspaceProps) {
       type="button"
       onClick={jumpToBottom}
       aria-label="跳到底部"
-      className="fixed bottom-5 right-5 z-30 grid h-11 w-11 place-items-center rounded-full border border-line bg-panel text-muted shadow-card transition hover:text-brand"
+      className="fixed bottom-5 right-20 z-30 grid h-11 w-11 place-items-center rounded-full border border-line bg-panel text-muted shadow-card transition hover:text-brand sm:right-24"
     >
       <ChevronDown size={20} />
     </button>

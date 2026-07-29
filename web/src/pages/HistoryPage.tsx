@@ -470,7 +470,7 @@ export function HistoryPage() {
     const running = isRunning(job.status)
     return <li id={`history-job-${job.id}`} key={job.id} style={{animationDelay: `${Math.min(index, 6) * 40}ms`}} className="group/item grid animate-fade-in-up grid-cols-[minmax(0,1fr)_auto] items-start gap-2 border-b border-line/60 py-2 opacity-0 [animation-fill-mode:forwards] last:border-0">
       <div className="min-w-0">
-        <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id, jobWeekStart(job))} className="block transition-[transform] active:scale-[0.99]"><p className="line-clamp-2 break-words text-sm font-medium text-ink">{job.title || job.url}</p></Link>
+        <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id, jobWeekStart(job))} className="block transition-[transform] active:scale-[0.99]"><p className="truncate text-sm font-medium text-ink">{job.title || job.url}</p></Link>
         <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted"><AuthorLink job={job} /><span className="shrink-0">· {formatDuration(job.duration)}</span></p>
         <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id, jobWeekStart(job))} className="mt-2 flex flex-wrap items-center gap-2 text-xs"><span className={`rounded-full px-2 py-0.5 ${job.status === 'COMPLETED' ? 'bg-brandSoft text-brand' : job.status === 'FAILED' ? 'bg-danger/15 text-danger' : running ? 'bg-warning/15 text-warning' : 'bg-panel text-muted'}`}>{formatStatus(job.status)}</span><span className="text-muted">{formatDate(job.completed_at ?? job.created_at)}</span></Link>
       </div>

@@ -9,7 +9,7 @@ const HistoryPage = lazy(() => import('./pages/HistoryPage').then((m) => ({defau
 const UpPage = lazy(() => import('./pages/UpPage').then((m) => ({default: m.UpPage})))
 
 export default function App() {
-  // 主题三档（系统/白天/黑夜）由 AppShell 里的 ThemeToggle 管理。
+  // 主题三档（系统/白天/黑夜）由 AppShell 右下工具区的 ThemeToggle 管理。
   return (
     <ToastProvider>
       <AppShell>
