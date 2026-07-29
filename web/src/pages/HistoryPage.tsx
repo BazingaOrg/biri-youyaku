@@ -296,14 +296,17 @@ export function HistoryPage() {
     () => weekGroups.map((group) => weekStartDate(group.weekStart)),
     [weekGroups],
   )
+  // Stable string key so identical week sets do not re-fetch statuses.
+  const weekStartKeysKey = weekStartKeys.join(',')
 
   useEffect(() => {
-    if (weekStartKeys.length === 0) {
+    if (!weekStartKeysKey) {
       setWeekSummaryStatuses({})
       return
     }
+    const keys = weekStartKeysKey.split(',')
     let cancelled = false
-    void getWeeklySummaryStatuses(weekStartKeys)
+    void getWeeklySummaryStatuses(keys)
       .then((response) => {
         if (!cancelled) setWeekSummaryStatuses(response.statuses)
       })
@@ -314,20 +317,24 @@ export function HistoryPage() {
     return () => {
       cancelled = true
     }
-  }, [weekStartKeys])
+  }, [weekStartKeysKey])
 
   const handleWeekSummaryStatus = useCallback((weekKey: string, status: WeeklySummaryStatus | null) => {
     setWeekSummaryStatuses((current) => {
       if (status == null) {
-        if (!(weekKey in current)) return current
-        const next = {...current}
-        delete next[weekKey]
-        return next
+        // Keep last known status during card remount/week switch; batch map owns blanks.
+        return current
       }
       if (current[weekKey] === status) return current
       return {...current, [weekKey]: status}
     })
   }, [])
+
+  const selectedWeekKey = selectedGroup ? weekStartDate(selectedGroup.weekStart) : null
+  const onSelectedWeekSummaryStatus = useCallback((status: WeeklySummaryStatus | null) => {
+    if (!selectedWeekKey) return
+    handleWeekSummaryStatus(selectedWeekKey, status)
+  }, [handleWeekSummaryStatus, selectedWeekKey])
   const selectedWeekIndex = useMemo(
     () => weekGroups.findIndex((group) => group.weekStart === selectedWeek),
     [weekGroups, selectedWeek],
@@ -606,10 +613,10 @@ export function HistoryPage() {
                   </div>
                   <div className="border-t border-line/60 px-3 pb-1">
                     <WeeklySummaryCard
-                      weekStart={weekStartDate(selectedGroup.weekStart)}
+                      weekStart={selectedWeekKey!}
                       compact
                       onReferenceNavigate={(jobId) => saveHistoryState(jobId, selectedGroup.weekStart)}
-                      onStatusChange={(status) => handleWeekSummaryStatus(weekStartDate(selectedGroup.weekStart), status)}
+                      onStatusChange={onSelectedWeekSummaryStatus}
                     />
                     {selectedByDay.map(([key, dayJobs]) => (
                       <div key={key}>

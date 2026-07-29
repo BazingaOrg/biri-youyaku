@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useState} from 'react'
+import {useCallback, useEffect, useRef, useState} from 'react'
 import {FileText, RefreshCw, Trash2, WandSparkles} from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import {Link} from 'wouter'
@@ -27,6 +27,9 @@ export type WeeklySummaryStatus = WeeklySummary['status']
 /**
  * A summary is fetched only while this card is mounted. History mounts it solely
  * for the selected week, so opening one week never fetches every archive.
+ *
+ * onStatusChange is held in a ref so parent re-renders (inline callbacks) never
+ * retrigger the fetch loop that caused history page jitter.
  */
 export function WeeklySummaryCard({
   weekStart,
@@ -37,7 +40,7 @@ export function WeeklySummaryCard({
   weekStart: string
   compact?: boolean
   onReferenceNavigate?: (jobId: string) => void
-  /** Notify parent (e.g. week header pill) when status loads or changes. */
+  /** Notify parent (e.g. week bar dots) when status loads or changes. */
   onStatusChange?: (status: WeeklySummaryStatus | null) => void
 }) {
   const [summary, setSummary] = useState<WeeklySummary | null>(null)
@@ -47,33 +50,47 @@ export function WeeklySummaryCard({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [failed, setFailed] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const onStatusChangeRef = useRef(onStatusChange)
+  const lastReportedStatusRef = useRef<WeeklySummaryStatus | null | undefined>(undefined)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  useEffect(() => {
+    onStatusChangeRef.current = onStatusChange
+  }, [onStatusChange])
+
+  const reportStatus = useCallback((status: WeeklySummaryStatus | null) => {
+    if (lastReportedStatusRef.current === status) return
+    lastReportedStatusRef.current = status
+    onStatusChangeRef.current?.(status)
+  }, [])
+
+  const load = useCallback(async (opts?: {silent?: boolean}) => {
+    if (!opts?.silent) setLoading(true)
     setFailed(false)
     try {
-      setSummary(await getWeeklySummary(weekStart))
+      const next = await getWeeklySummary(weekStart)
+      setSummary(next)
+      reportStatus(next.status)
     } catch {
       setSummary(null)
       setFailed(true)
-      onStatusChange?.(null)
+      reportStatus(null)
     } finally {
-      setLoading(false)
+      if (!opts?.silent) setLoading(false)
     }
-  }, [onStatusChange, weekStart])
+  }, [reportStatus, weekStart])
 
-  useEffect(() => { void load() }, [load])
+  // Only weekStart should reload the card — never parent callback identity.
   useEffect(() => {
     setExpanded(false)
     setConfirmDelete(false)
-    onStatusChange?.(null)
-  }, [onStatusChange, weekStart])
-  useEffect(() => {
-    if (summary?.status) onStatusChange?.(summary.status)
-  }, [onStatusChange, summary?.status])
+    lastReportedStatusRef.current = undefined
+    void load()
+  }, [load, weekStart])
+
   useEffect(() => {
     if (summary?.status !== 'GENERATING') return
-    const timer = window.setTimeout(() => void load(), 1200)
+    // Silent poll while generating so the skeleton does not flash.
+    const timer = window.setTimeout(() => void load({silent: true}), 1200)
     return () => window.clearTimeout(timer)
   }, [load, summary?.status])
 
@@ -81,7 +98,9 @@ export function WeeklySummaryCard({
     setGenerating(true)
     setFailed(false)
     try {
-      setSummary(await generateWeeklySummary(weekStart, summary?.status === 'STALE' || summary?.status === 'COMPLETED'))
+      const next = await generateWeeklySummary(weekStart, summary?.status === 'STALE' || summary?.status === 'COMPLETED')
+      setSummary(next)
+      reportStatus(next.status)
     } catch {
       setFailed(true)
     } finally {
@@ -93,7 +112,9 @@ export function WeeklySummaryCard({
     setDeleting(true)
     setFailed(false)
     try {
-      setSummary(await deleteWeeklySummary(weekStart))
+      const next = await deleteWeeklySummary(weekStart)
+      setSummary(next)
+      reportStatus(next.status)
       setConfirmDelete(false)
       setExpanded(false)
     } catch {
