@@ -44,6 +44,7 @@ def _delete_chunks_for_revision(connection: Any, summary_revision_id: str) -> No
 
 
 def _delete_chunks_for_document(connection: Any, document_id: str) -> None:
+    """Remove summary FTS + rows for a document (used by reindex and permanent purge)."""
     rows = connection.execute(
         "SELECT id FROM knowledge_rag_chunks WHERE document_id = ?",
         (document_id,),

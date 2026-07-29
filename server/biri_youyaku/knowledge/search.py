@@ -88,7 +88,7 @@ def search_summaries(query: str, *, limit: int = 10) -> list[Hit]:
           bm25(knowledge_rag_chunks_fts) AS score
         FROM knowledge_rag_chunks_fts f
         JOIN knowledge_rag_chunks c ON c.id = f.chunk_id
-        JOIN knowledge_documents d ON d.id = c.document_id
+        JOIN knowledge_documents d ON d.id = c.document_id AND d.deleted_at IS NULL
         JOIN knowledge_summary_revisions sr
           ON sr.id = c.summary_revision_id AND sr.is_active = 1
         WHERE knowledge_rag_chunks_fts MATCH ?

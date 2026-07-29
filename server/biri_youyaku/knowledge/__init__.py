@@ -1,9 +1,11 @@
-"""Knowledge registry + FTS summary/transcript search / opt-in chat.
+"""Knowledge registry + FTS summary/transcript search / opt-in chat / lifecycle.
 
 Public surface:
 - try_register_job / register_from_job
 - reconcile_once
 - unlink_job / unlink_jobs (via repo)
+- lifecycle soft_delete / restore / purge_permanent
+- backup create_backup
 - index / search / retrieve / chat modules (imported by routes)
 """
 

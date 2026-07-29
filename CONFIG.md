@@ -41,6 +41,8 @@
 | 知识库 | `KNOWLEDGE_REGISTER_ENABLED` | `true` | 关闭后 register/reconcile 空操作（回滚开关）；已落盘 artifact 不删 |
 | 知识库 | `KNOWLEDGE_SEARCH_ENABLED` | `true` | 基于总结的 FTS 检索；需 register 开启才对外暴露 |
 | 知识库 | `KNOWLEDGE_CHAT_ENABLED` | `false` | 基于总结的知识问答（默认关；开启后 query+片段会发往已配置 LLM） |
+| 知识库 | `KNOWLEDGE_SOFT_DELETE_DAYS` | `30` | 软删除文档超过该天数后由 cleanup 自动永久清理 |
+| 知识库 | `KNOWLEDGE_BACKUP_DIR` | `data/backups` | 本地一致性备份目录（`sqlite` backup + knowledge + summaries + manifest） |
 | 清理 | `AUDIO_RETENTION_DAYS` | `7` | 自动清 audio 文件并清空 path；job 行保留 |
 | 清理 | `JOB_RETENTION_DAYS` | `180` | 仅自动删除 FAILED/CANCELED 且无 summary 的 job；COMPLETED 永久保留至用户手动删除 |
 | 清理 | `ORPHAN_FILE_RETENTION_DAYS` | `3` | DB 不引用的孤儿文件多久后清 |
@@ -93,6 +95,8 @@ All tunable settings live in `server/.env`; defaults are in
 | Knowledge | `KNOWLEDGE_REGISTER_ENABLED` | `true` | when false, register/reconcile no-op (rollback switch); existing artifacts kept |
 | Knowledge | `KNOWLEDGE_SEARCH_ENABLED` | `true` | FTS search over active summaries; exposed only when register is on |
 | Knowledge | `KNOWLEDGE_CHAT_ENABLED` | `false` | opt-in knowledge Q&A over summaries (default off; when on, query+chunks go to configured LLM) |
+| Knowledge | `KNOWLEDGE_SOFT_DELETE_DAYS` | `30` | soft-deleted docs older than this are permanently purged by cleanup |
+| Knowledge | `KNOWLEDGE_BACKUP_DIR` | `data/backups` | local consistent backups (sqlite backup API + knowledge + summaries + hash manifest) |
 | Cleanup | `AUDIO_RETENTION_DAYS` | `7` | auto: delete audio file(s) and clear path; job row kept |
 | Cleanup | `JOB_RETENTION_DAYS` | `180` | auto-delete only FAILED/CANCELED jobs with no summary; COMPLETED kept until explicit user delete |
 | Cleanup | `ORPHAN_FILE_RETENTION_DAYS` | `3` | how long DB-unreferenced files linger |
@@ -105,3 +109,33 @@ All tunable settings live in `server/.env`; defaults are in
 | Concurrency | `DISTILL_TRANSCRIPT_CONCURRENCY` | `3` | Fan-out cap for `_do_prepare_transcripts` obtaining/transcribing videos concurrently for a distill run |
 | Abuse | `MAX_VIDEO_DURATION_SECONDS` | `9000` | video length cap; too long → reject |
 | Abuse | `MAX_INFLIGHT_JOBS` | `20` | total in-flight jobs; overflow → 503 |
+
+### Knowledge backup & restore (local, pre-cloud)
+
+Create a consistent snapshot (prefer while writers are idle):
+
+```bash
+# API (Bearer if API_TOKEN set)
+curl -X POST http://127.0.0.1:8000/v1/knowledge/backup \
+  -H 'Content-Type: application/json' -d '{"dry_run": false}'
+
+# or CLI from server/
+uv run python scripts/knowledge_backup.py
+uv run python scripts/knowledge_backup.py --dry-run
+```
+
+Each backup under `KNOWLEDGE_BACKUP_DIR/<timestamp>/` contains:
+
+- `biri_youyaku.db` — via SQLite backup API (WAL-safe)
+- `knowledge/` — knowledge artifacts tree
+- `summaries/` — legacy summary files
+- `manifest.json` — relative paths + SHA-256 + restore hint
+
+**Restore (local only; not Aliyun cutover):**
+
+1. Stop the server.
+2. Replace `DB_PATH` with the backup DB (file replace while stopped, or `sqlite3 data/biri_youyaku.db ".restore '…/biri_youyaku.db'"`).
+3. Restore `knowledge/` → `KNOWLEDGE_STORAGE_DIR` and `summaries/` → `SUMMARY_STORAGE_DIR`.
+4. Restart. If FTS is empty, `POST /v1/knowledge/reindex`.
+
+Soft-deleted documents are excluded from search/status “visible” counts; after `KNOWLEDGE_SOFT_DELETE_DAYS` (default 30) cleanup permanently purges them.

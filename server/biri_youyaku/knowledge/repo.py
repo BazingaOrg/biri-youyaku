@@ -54,6 +54,7 @@ def upsert_document(
     )
     if existing is not None:
         with connect() as connection:
+            # Re-registering reactivates soft-deleted documents (Phase D).
             connection.execute(
                 """
                 UPDATE knowledge_documents
@@ -61,7 +62,9 @@ def upsert_document(
                     author = COALESCE(?, author),
                     mid = COALESCE(?, mid),
                     source_url = COALESCE(?, source_url),
-                    updated_at = ?
+                    updated_at = ?,
+                    deleted_at = NULL,
+                    delete_reason = NULL
                 WHERE id = ?
                 """,
                 (title, author, mid, source_url, timestamp, existing),
@@ -74,9 +77,9 @@ def upsert_document(
             """
             INSERT INTO knowledge_documents (
               id, provider, external_bvid, external_cid, title, author, mid,
-              source_url, created_at, updated_at
+              source_url, created_at, updated_at, deleted_at, delete_reason
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
             """,
             (
                 document_id,
@@ -450,9 +453,21 @@ def set_reconcile(
         )
 
 
-def count_documents() -> int:
+def count_documents(*, include_deleted: bool = False) -> int:
+    """Count documents; by default only active (deleted_at IS NULL)."""
+    sql = "SELECT COUNT(*) AS n FROM knowledge_documents"
+    if not include_deleted:
+        sql += " WHERE deleted_at IS NULL"
     with connect() as connection:
-        row = connection.execute("SELECT COUNT(*) AS n FROM knowledge_documents").fetchone()
+        row = connection.execute(sql).fetchone()
+    return int(row["n"])
+
+
+def count_deleted_documents() -> int:
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT COUNT(*) AS n FROM knowledge_documents WHERE deleted_at IS NOT NULL"
+        ).fetchone()
     return int(row["n"])
 
 
@@ -526,6 +541,7 @@ __all__ = [
     "ARTIFACT_KIND_TRANSCRIPT_RAW",
     "count_artifacts",
     "count_content_revisions",
+    "count_deleted_documents",
     "count_documents",
     "count_summary_revisions",
     "deactivate_active_summary_revisions",

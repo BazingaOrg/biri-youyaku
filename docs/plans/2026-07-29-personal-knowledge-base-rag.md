@@ -156,7 +156,7 @@ B 默认 FTS-only：1,000-document benchmark search p95 ≤200ms、FTS backfill 
 4. [x] **A3：registry、双 artifact copy、最小 unlink/reconcile**。回填前先备份 DB + summaries 清单/SHA-256。增量 schema 仅为 documents/content+summary revisions/artifacts/job links/reconcile。普通 COMPLETED Bili summary job 在 `summary_path` 存在后，copy byte-identical summary 与 immutable raw transcript（`platform|asr`, start/end/raw_text, hash），按 `(bilibili,bvid,cid)` 建/复用 document，`job_id` link；缺 bvid/cid 则 reconcile failed、不建 document；重总结只增 summary revision、transcript hash 未变则复用。不注册 distill/audio job。history 删除事务改为 unlink job、保留 artifacts（本批起「手工删除语义」生效）。启动/维护 scan 补 reconcile。验证幂等、hash 相同、手动删 history 不丢 knowledge、缺 meta 不误并；回滚关闭 register/reconcile，不删 artifact。P1.5/C 只做 transcript **索引**，不延后 durability。
 5. [x] **B：FTS-first summary 评测与 MVP**。先 build chunker/FTS baseline，再按数值 gate 评测；`API_TOKEN` 非空时 knowledge 路由鉴权与 jobs 同级。chat 默认关闭；gate 全过后再允许 opt-in「基于总结」chat；gate 未过则 search-only 或保持 chat 关（见评测降级策略）。`rag_chunks`/FTS 在本批创建；dense 仅单独实验，不能阻塞 FTS。验证 gates 或书面降级、1,000-doc 资源、FTS-only 降级、默认不外发 chat；回滚下线 chat/索引，保留 artifacts。
 6. [x] **C：transcript evidence 与数值门槛**。先 raw transcript index，再执行可选 normalization A/B；实现分层 retrieval、邻窗、cap/dedup、query-type fallback、citation 规则。验证 transcript gates、ASR 高风险降级、normalizer 无不可追溯重写；未达标则不得宣称证据问答就绪，回滚 summary-only、由 raw 重建。
-7. [ ] **D：删除、备份、云端**。先 document soft/restore/permanent delete（二次确认、审计）与 reconcile；再恢复演练。Cutover runbook（必须按序）：(1) drain in-flight jobs 至终态；(2) 停止旧 writer 写入；(3) `sqlite3 .backup` 或等价一致性备份 + artifacts/summaries 清单与 hash manifest（禁止拷贝活动 WAL 当真相）；(4) 在 ECS 恢复并校验 legacy/artifact hash、active revision；(5) 真实 Bili+ASR+SSE 冒烟；(6) same-origin reverse proxy、Tunnel+Access；(7) 一次切换 writer 到 ECS，再 ECS→OSS/Mac 只出站；(8) 失败则停 ECS 写、恢复上一 writer 已验证快照，绝不双写。验证 hash/revision/index/reconcile/outbox、故障恢复。中国大陆公开访问的 ICP 取决于地域/域名/提供商，上线前向 Aliyun/主管规则确认。
+7. [~] **D：删除、备份、云端** — **本机 pre-Aliyun 已完成**；**云端 cutover / OSS / Tunnel 未做**。先 document soft/restore/permanent delete（二次确认、审计）与 reconcile；再恢复演练。Cutover runbook（待云端）：(1)–(8) drain → sqlite backup → ECS 校验 → Tunnel/Access → 单 writer 切换 → 失败回滚。ICP 上线前确认。
 8. [ ] **E：P3 输入/增强（不实施）**。未来按真实需求另案评估其他 sources、portable export、OCR/网页/上传及其隐私/SSRF/验收。
 
 ## 故障矩阵、成功条件与风险
@@ -318,3 +318,20 @@ B 默认 FTS-only：1,000-document benchmark search p95 ≤200ms、FTS backfill 
 **验证**
 
 - knowledge transcript + search + registry + compatibility：**39 passed**；`tsc --noEmit` ok。
+
+### D pre-Aliyun（2026-07-29）
+
+**实际变更（未含上云）**
+
+- `deleted_at` / `delete_reason` on documents；`knowledge_audit_events`。
+- soft-delete / restore / purge（title 或 bvid 二次确认）；30 天 soft-delete auto-purge；检索排除已软删；再登记同 bvid/cid 会恢复。
+- 本机备份：`POST /v1/knowledge/backup` + `scripts/knowledge_backup.py`（sqlite `.backup` API + knowledge/summaries + hash manifest）；CONFIG 恢复说明。
+- UI：知识库页「已登记文档」列表与删除/恢复。
+
+**未做（云端 D 余下）**
+
+- Aliyun ECS Docker、Cloudflare Tunnel/Access、OSS outbox、Mac receive-only、writer cutover。
+
+**验证**
+
+- lifecycle + transcript + search + registry：**40 passed**；`tsc --noEmit` ok。

@@ -1,16 +1,31 @@
 import {useCallback, useEffect, useRef, useState, type FormEvent} from 'react'
-import {ArrowLeft, ChevronDown, ChevronUp, MessageCircle, Search, Send} from 'lucide-react'
+import {
+  ArrowLeft,
+  ChevronDown,
+  ChevronUp,
+  MessageCircle,
+  RotateCcw,
+  Search,
+  Send,
+  Trash2,
+} from 'lucide-react'
 import {useLocation} from 'wouter'
 import ReactMarkdown from 'react-markdown'
 import {
   getKnowledgeStatus,
+  listKnowledgeDocuments,
+  purgeKnowledgeDocument,
+  restoreKnowledgeDocument,
   searchKnowledge,
+  softDeleteKnowledgeDocument,
   type KnowledgeCitation,
+  type KnowledgeDocumentLite,
   type KnowledgeSearchHit,
   type KnowledgeStatus,
 } from '../lib/api'
 import {openKnowledgeChatStream} from '../lib/sse'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
+import {ConfirmDialog} from '../components/ConfirmDialog'
 import {Spinner} from '../components/Spinner'
 
 type QueryMode = 'search' | 'ask'
@@ -104,6 +119,36 @@ export function KnowledgePage() {
   const [hasAsked, setHasAsked] = useState(false)
   const streamRef = useRef<{close: () => void} | null>(null)
 
+  // Secondary: registered documents lifecycle
+  const [docs, setDocs] = useState<KnowledgeDocumentLite[]>([])
+  const [docsLoading, setDocsLoading] = useState(false)
+  const [docsError, setDocsError] = useState<string | null>(null)
+  const [showDeleted, setShowDeleted] = useState(false)
+  const [docBusyId, setDocBusyId] = useState<string | null>(null)
+  const [purgeTarget, setPurgeTarget] = useState<KnowledgeDocumentLite | null>(null)
+  const [purgeConfirmText, setPurgeConfirmText] = useState('')
+  const [softDeleteTarget, setSoftDeleteTarget] = useState<KnowledgeDocumentLite | null>(null)
+
+  const refreshStatus = useCallback(() => {
+    void getKnowledgeStatus()
+      .then((value) => setStatus(value))
+      .catch(() => setStatus(null))
+  }, [])
+
+  const loadDocuments = useCallback(async (includeDeleted: boolean) => {
+    setDocsLoading(true)
+    setDocsError(null)
+    try {
+      const result = await listKnowledgeDocuments(includeDeleted)
+      setDocs(result.documents)
+    } catch (err) {
+      setDocs([])
+      setDocsError(err instanceof Error ? err.message : '加载文档列表失败')
+    } finally {
+      setDocsLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     void getKnowledgeStatus()
@@ -117,6 +162,10 @@ export function KnowledgePage() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    void loadDocuments(showDeleted)
+  }, [loadDocuments, showDeleted])
 
   useEffect(() => {
     return () => {
@@ -242,6 +291,56 @@ export function KnowledgePage() {
     ? '点输入框左侧图标可在「检索」与「提问」间切换；事实与数字优先引用转写时间段。'
     : '在 AI 总结与转写片段中检索；列表默认显示摘录，可展开全文。'
 
+  const purgeExpected =
+    (purgeTarget?.title || '').trim() || (purgeTarget?.bvid || '').trim()
+  const purgeMatches =
+    purgeConfirmText.trim() === purgeExpected && purgeExpected.length > 0
+
+  const handleSoftDelete = async () => {
+    if (!softDeleteTarget) return
+    setDocBusyId(softDeleteTarget.id)
+    try {
+      await softDeleteKnowledgeDocument(softDeleteTarget.id)
+      setSoftDeleteTarget(null)
+      await loadDocuments(showDeleted)
+      refreshStatus()
+    } catch (err) {
+      setDocsError(err instanceof Error ? err.message : '软删除失败')
+    } finally {
+      setDocBusyId(null)
+    }
+  }
+
+  const handleRestore = async (doc: KnowledgeDocumentLite) => {
+    setDocBusyId(doc.id)
+    setDocsError(null)
+    try {
+      await restoreKnowledgeDocument(doc.id)
+      await loadDocuments(showDeleted)
+      refreshStatus()
+    } catch (err) {
+      setDocsError(err instanceof Error ? err.message : '恢复失败')
+    } finally {
+      setDocBusyId(null)
+    }
+  }
+
+  const handlePurge = async () => {
+    if (!purgeTarget || !purgeMatches) return
+    setDocBusyId(purgeTarget.id)
+    try {
+      await purgeKnowledgeDocument(purgeTarget.id, purgeConfirmText.trim())
+      setPurgeTarget(null)
+      setPurgeConfirmText('')
+      await loadDocuments(showDeleted)
+      refreshStatus()
+    } catch (err) {
+      setDocsError(err instanceof Error ? err.message : '永久删除失败')
+    } finally {
+      setDocBusyId(null)
+    }
+  }
+
   return (
     <div className="grid min-h-[calc(100dvh-3rem)] animate-fade-in-up content-start gap-5 sm:min-h-[calc(100dvh-5rem)]">
       <header className="grid gap-4 px-4 sm:px-5">
@@ -262,6 +361,12 @@ export function KnowledgePage() {
           {status && (
             <p className="mt-2 text-sm text-muted">
               已登记 {status.documents} 篇
+              {(status.documents_deleted ?? 0) > 0 && (
+                <>
+                  <span className="text-muted/50"> · </span>
+                  回收站 {status.documents_deleted}
+                </>
+              )}
               <span className="text-muted/50"> · </span>
               索引 {status.chunks} 块
               {!status.search_enabled && (
@@ -400,6 +505,165 @@ export function KnowledgePage() {
           </>
         )}
       </section>
+
+      <section className="min-w-0 border-t border-line/70 px-4 pb-12 pt-6 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-ink">已登记文档</h2>
+            <p className="mt-1 text-sm text-muted">
+              软删除会从检索中隐藏并保留产物；永久删除不可恢复。
+            </p>
+          </div>
+          <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-2xl bg-lift px-3 text-sm text-muted">
+            <input
+              type="checkbox"
+              checked={showDeleted}
+              onChange={(event) => setShowDeleted(event.target.checked)}
+              className="rounded border-line"
+            />
+            显示已删除
+          </label>
+        </div>
+
+        {docsError && <p className="mt-3 text-sm text-danger">{docsError}</p>}
+        {docsLoading && <p className="mt-6 text-center text-sm text-muted">加载文档…</p>}
+        {!docsLoading && docs.length === 0 && !docsError && (
+          <p className="mt-6 rounded-2xl bg-lift px-4 py-6 text-center text-sm text-muted">
+            {showDeleted ? '没有已删除的文档' : '尚无已登记文档'}
+          </p>
+        )}
+        {!docsLoading && docs.length > 0 && (
+          <ul className="mt-4 grid gap-2">
+            {docs.map((doc) => {
+              const deleted = doc.deleted_at != null
+              const rowBusy = docBusyId === doc.id
+              return (
+                <li
+                  key={doc.id}
+                  className="flex flex-wrap items-center gap-3 rounded-2xl border border-line/70 bg-panel px-4 py-3 shadow-card"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-ink">
+                      {doc.title || '无标题'}
+                      {deleted && (
+                        <span className="ml-2 rounded-full bg-lift px-2 py-0.5 text-xs text-muted">
+                          已删除
+                        </span>
+                      )}
+                    </p>
+                    <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-muted">
+                      {doc.author && <span className="truncate">{doc.author}</span>}
+                      {doc.author && doc.bvid && <span>·</span>}
+                      {doc.bvid && <span className="font-mono">{doc.bvid}</span>}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {deleted ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={rowBusy}
+                          onClick={() => void handleRestore(doc)}
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-lift px-3 text-sm text-ink transition hover:bg-line/70 disabled:opacity-40"
+                        >
+                          <RotateCcw size={14} />
+                          恢复
+                        </button>
+                        <button
+                          type="button"
+                          disabled={rowBusy}
+                          onClick={() => {
+                            setPurgeTarget(doc)
+                            setPurgeConfirmText('')
+                          }}
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-danger/10 px-3 text-sm text-danger transition hover:bg-danger/15 disabled:opacity-40"
+                        >
+                          <Trash2 size={14} />
+                          永久删除
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          disabled={rowBusy}
+                          onClick={() => setSoftDeleteTarget(doc)}
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-lift px-3 text-sm text-muted transition hover:bg-line/70 hover:text-ink disabled:opacity-40"
+                        >
+                          <Trash2 size={14} />
+                          删除
+                        </button>
+                        <button
+                          type="button"
+                          disabled={rowBusy}
+                          onClick={() => {
+                            setPurgeTarget(doc)
+                            setPurgeConfirmText('')
+                          }}
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-xl px-3 text-sm text-danger/80 transition hover:bg-danger/10 disabled:opacity-40"
+                        >
+                          永久删除
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+
+      <ConfirmDialog
+        open={softDeleteTarget != null}
+        title="从知识库中移除？"
+        description={
+          softDeleteTarget ? (
+            <>
+              「{softDeleteTarget.title || softDeleteTarget.bvid || '无标题'}」将从检索中隐藏，产物保留约 30
+              天，可随时恢复。
+            </>
+          ) : null
+        }
+        confirmLabel="软删除"
+        danger
+        loading={softDeleteTarget != null && docBusyId === softDeleteTarget.id}
+        onConfirm={() => void handleSoftDelete()}
+        onCancel={() => setSoftDeleteTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={purgeTarget != null}
+        title="永久删除文档？"
+        description={
+          purgeTarget ? (
+            <div className="grid gap-3">
+              <p>
+                将删除磁盘产物、全部修订与索引，且不可恢复。请输入文档标题或 bvid 以确认：
+              </p>
+              <p className="rounded-xl bg-lift px-3 py-2 font-mono text-xs text-ink">
+                {purgeExpected || '（无标题也无 bvid）'}
+              </p>
+              <input
+                value={purgeConfirmText}
+                onChange={(event) => setPurgeConfirmText(event.target.value)}
+                placeholder="输入标题或 bvid"
+                className="min-h-10 w-full rounded-xl bg-lift px-3 text-sm text-ink outline-none focus:ring-2 focus:ring-brand/30"
+                autoComplete="off"
+              />
+            </div>
+          ) : null
+        }
+        confirmLabel="永久删除"
+        danger
+        loading={purgeTarget != null && docBusyId === purgeTarget.id}
+        confirmDisabled={!purgeMatches}
+        onConfirm={() => void handlePurge()}
+        onCancel={() => {
+          setPurgeTarget(null)
+          setPurgeConfirmText('')
+        }}
+      />
     </div>
   )
 }

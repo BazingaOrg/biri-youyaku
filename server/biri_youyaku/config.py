@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     knowledge_search_enabled: bool = True
     # C: raw transcript FTS index (default on; layered retrieve uses it when present).
     knowledge_transcript_index_enabled: bool = True
+    # D: soft-deleted documents auto-purged after this many days (cleanup_loop).
+    knowledge_soft_delete_days: int = Field(default=30, ge=0)
+    # D: local consistent backups (sqlite .backup + knowledge artifacts + manifest).
+    knowledge_backup_dir: Path = Path("data/backups")
     db_path: Path = Path("data/biri_youyaku.db")
 
     # Auto: clear audio files/paths after N days; job row stays.
@@ -125,6 +129,7 @@ class Settings(BaseSettings):
         "summary_storage_dir",
         "distill_storage_dir",
         "knowledge_storage_dir",
+        "knowledge_backup_dir",
         "db_path",
         mode="before",
     )
@@ -137,6 +142,7 @@ class Settings(BaseSettings):
             "summary_storage_dir": Path("data/summaries"),
             "distill_storage_dir": Path("data/distill"),
             "knowledge_storage_dir": Path("data/knowledge"),
+            "knowledge_backup_dir": Path("data/backups"),
             "db_path": Path("data/biri_youyaku.db"),
         }
         return defaults[info.field_name]

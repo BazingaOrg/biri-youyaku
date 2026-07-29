@@ -150,6 +150,8 @@ CREATE TABLE IF NOT EXISTS knowledge_documents (
   source_url TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
+  deleted_at INTEGER,
+  delete_reason TEXT,
   UNIQUE(provider, external_bvid, external_cid)
 );
 
@@ -253,6 +255,18 @@ CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_transcript_chunks_fts USING fts5(
   body,
   tokenize = 'unicode61'
 );
+
+-- D: document lifecycle audit (soft_delete | restore | purge | backup).
+CREATE TABLE IF NOT EXISTS knowledge_audit_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  occurred_at INTEGER NOT NULL,
+  action TEXT NOT NULL,
+  document_id TEXT,
+  detail_json TEXT,
+  actor TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_audit_occurred
+  ON knowledge_audit_events(occurred_at DESC);
 """
 
 # 已废弃的旧列：去重改走 bvid 查询（不再用 content_hash），旧 SELECT * 兼容列也不再需要。
@@ -348,6 +362,39 @@ def init_db() -> None:
             connection.execute(
                 "ALTER TABLE weekly_summaries ADD COLUMN generation_expires_at INTEGER"
             )
+        knowledge_doc_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(knowledge_documents)"
+            ).fetchall()
+        }
+        if knowledge_doc_columns:
+            if "deleted_at" not in knowledge_doc_columns:
+                connection.execute(
+                    "ALTER TABLE knowledge_documents ADD COLUMN deleted_at INTEGER"
+                )
+            if "delete_reason" not in knowledge_doc_columns:
+                connection.execute(
+                    "ALTER TABLE knowledge_documents ADD COLUMN delete_reason TEXT"
+                )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS knowledge_audit_events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              occurred_at INTEGER NOT NULL,
+              action TEXT NOT NULL,
+              document_id TEXT,
+              detail_json TEXT,
+              actor TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_knowledge_audit_occurred
+              ON knowledge_audit_events(occurred_at DESC)
+            """
+        )
         connection.execute(
             """
             UPDATE jobs

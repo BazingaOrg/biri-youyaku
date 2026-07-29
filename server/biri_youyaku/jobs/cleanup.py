@@ -193,7 +193,24 @@ async def cleanup_once() -> dict[str, int]:
         weekly_summary_repo.mark_stale_for_job_ids([job.id])
         jobs_removed += repo.delete_job(job.id)
 
-    return {"audio_removed": audio_removed, "jobs_removed": jobs_removed}
+    # D: auto-purge soft-deleted knowledge documents past retention window.
+    knowledge_purged = 0
+    try:
+        from biri_youyaku.knowledge.lifecycle import purge_expired_soft_deleted
+
+        knowledge_purged = purge_expired_soft_deleted(
+            retention_days=settings.knowledge_soft_delete_days
+        )
+        if knowledge_purged:
+            logger.info("Purged %d expired soft-deleted knowledge documents", knowledge_purged)
+    except Exception:
+        logger.exception("knowledge soft-delete auto-purge failed")
+
+    return {
+        "audio_removed": audio_removed,
+        "jobs_removed": jobs_removed,
+        "knowledge_soft_purged": knowledge_purged,
+    }
 
 
 # --- P3 新增：僵尸任务、孤儿文件、DB 维护 -----------------------------------

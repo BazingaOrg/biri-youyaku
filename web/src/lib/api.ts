@@ -234,6 +234,7 @@ export interface KnowledgeCitation {
 export interface KnowledgeStatus {
   ok: true
   documents: number
+  documents_deleted?: number
   chunks: number
   summary_chunks?: number
   transcript_chunks?: number
@@ -241,6 +242,15 @@ export interface KnowledgeStatus {
   search_enabled: boolean
   register_enabled: boolean
   transcript_index_enabled?: boolean
+}
+
+export interface KnowledgeDocumentLite {
+  id: string
+  title?: string | null
+  author?: string | null
+  bvid?: string | null
+  cid?: number | null
+  deleted_at?: number | null
 }
 
 export function searchKnowledge(q: string, limit = 10) {
@@ -254,6 +264,44 @@ export function searchKnowledge(q: string, limit = 10) {
 
 export function getKnowledgeStatus() {
   return request<KnowledgeStatus>('/v1/knowledge/status')
+}
+
+export function listKnowledgeDocuments(includeDeleted = false) {
+  const params = new URLSearchParams()
+  if (includeDeleted) params.set('include_deleted', 'true')
+  const suffix = params.toString() ? `?${params.toString()}` : ''
+  return request<{ok: true; documents: KnowledgeDocumentLite[]}>(
+    `/v1/knowledge/documents${suffix}`,
+  )
+}
+
+export function softDeleteKnowledgeDocument(documentId: string, reason?: string) {
+  return request<{ok: true; document: KnowledgeDocumentLite}>(
+    `/v1/knowledge/documents/${encodeURIComponent(documentId)}/soft-delete`,
+    {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({confirm: true, reason: reason ?? null}),
+    },
+  )
+}
+
+export function restoreKnowledgeDocument(documentId: string) {
+  return request<{ok: true; document: KnowledgeDocumentLite}>(
+    `/v1/knowledge/documents/${encodeURIComponent(documentId)}/restore`,
+    {method: 'POST'},
+  )
+}
+
+export function purgeKnowledgeDocument(documentId: string, confirmTitle: string) {
+  return request<{ok: true; id: string; purged: boolean}>(
+    `/v1/knowledge/documents/${encodeURIComponent(documentId)}/purge`,
+    {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({confirm: true, confirm_title: confirmTitle}),
+    },
+  )
 }
 
 export function getRuntimeConfig() {

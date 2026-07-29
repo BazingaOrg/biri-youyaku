@@ -149,7 +149,7 @@ def _search_transcripts(
           bm25(knowledge_transcript_chunks_fts) AS score
         FROM knowledge_transcript_chunks_fts f
         JOIN knowledge_transcript_chunks c ON c.id = f.chunk_id
-        JOIN knowledge_documents d ON d.id = c.document_id
+        JOIN knowledge_documents d ON d.id = c.document_id AND d.deleted_at IS NULL
         WHERE knowledge_transcript_chunks_fts MATCH ?
         {doc_filter}
         ORDER BY score
@@ -243,7 +243,7 @@ def _load_adjacent_transcript_chunks(
               d.external_bvid AS bvid,
               d.source_url AS source_url
             FROM knowledge_transcript_chunks c
-            JOIN knowledge_documents d ON d.id = c.document_id
+            JOIN knowledge_documents d ON d.id = c.document_id AND d.deleted_at IS NULL
             WHERE c.document_id = ?
               AND c.content_revision_id = ?
               AND c.chunk_ord IN ({placeholders})
