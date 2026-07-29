@@ -1,0 +1,4 @@
+{
+  "legacy_summary_sha256": "57c371e5b1a4fe35ad3459bd7109e7b85914237e5ac63ec71c1674172f8e8126",
+  "notes": "A1 compatibility baseline; must match tests/fixtures/compatibility/legacy_summary.md"
+}

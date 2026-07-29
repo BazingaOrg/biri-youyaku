@@ -151,7 +151,7 @@ B 默认 FTS-only：1,000-document benchmark search p95 ≤200ms、FTS backfill 
 ## 执行批次（严格顺序）
 
 1. [x] **A0：自动保留策略，单独发布**。只实现/测试**自动**保留：audio 7 天清 path；COMPLETED 或任意 `summary_path` 非空无限保留（不进入 auto-delete）；TRANSCRIPT_READY 不自动删；FAILED/CANCELED 且无 summary 180 天删 job/transcript。不改 history 手动删除语义；不创建 knowledge 表；不验收 artifact 永久删除。受影响：`config.py`、`jobs/cleanup.py`、`jobs/model.py`（若调整 `RETENTION_DELETE_JOB_STATUSES`）、测试、运行文档。验证上列四类状态；回滚仅回退策略，绝不补偿删除。发布后运行说明：A3 回填完成前避免 COMPLETED bulk 删除。
-2. [ ] **A1：兼容 fixtures**。固定旧 summary path/hash、API/SSE、周总结指纹、邮件/下载输入。验证迁移前后逐项 hash，pytest/typecheck/build；回滚只删 fixtures。
+2. [x] **A1：兼容 fixtures**。固定旧 summary path/hash、API/SSE、周总结指纹、邮件/下载输入。验证迁移前后逐项 hash，pytest/typecheck/build；回滚只删 fixtures。
 3. [ ] **A2：动态流改为 video-only distill，独立发布**。锁定决策 A：保留 UP 投稿视频-only distill，从 video/transcript 处理开始；移除动态 stage、endpoint/module、enum/status/count/db 新 schema fields、assembler/corpus 动态包含、storage helpers、SSE/API/frontend/tests/docs。旧 DB 未用列若更安全则保留；绝不自动删除现有 `dynamics.md`/corpus 用户数据。受影响：`routes/up.py`、`modules/bilibili/dynamic.py`、`distill/`、schema、UI、测试、文档。验证动态端点 404/无引用，普通 URL、UP 投稿、ASR/SSE/邮件/周总结通过；回滚独立提交。
 4. [ ] **A3：registry、双 artifact copy、最小 unlink/reconcile**。回填前先备份 DB + summaries 清单/SHA-256。增量 schema 仅为 documents/content+summary revisions/artifacts/job links/reconcile。普通 COMPLETED Bili summary job 在 `summary_path` 存在后，copy byte-identical summary 与 immutable raw transcript（`platform|asr`, start/end/raw_text, hash），按 `(bilibili,bvid,cid)` 建/复用 document，`job_id` link；缺 bvid/cid 则 reconcile failed、不建 document；重总结只增 summary revision、transcript hash 未变则复用。不注册 distill/audio job。history 删除事务改为 unlink job、保留 artifacts（本批起「手工删除语义」生效）。启动/维护 scan 补 reconcile。验证幂等、hash 相同、手动删 history 不丢 knowledge、缺 meta 不误并；回滚关闭 register/reconcile，不删 artifact。P1.5/C 只做 transcript **索引**，不延后 durability。
 5. [ ] **B：FTS-first summary 评测与 MVP**。先 build chunker/FTS baseline，再按数值 gate 评测；`API_TOKEN` 非空时 knowledge 路由鉴权与 jobs 同级。chat 默认关闭；gate 全过后再允许 opt-in「基于总结」chat；gate 未过则 search-only 或保持 chat 关（见评测降级策略）。`rag_chunks`/FTS 在本批创建；dense 仅单独实验，不能阻塞 FTS。验证 gates 或书面降级、1,000-doc 资源、FTS-only 降级、默认不外发 chat；回滚下线 chat/索引，保留 artifacts。
@@ -219,3 +219,21 @@ B 默认 FTS-only：1,000-document benchmark search p95 ≤200ms、FTS backfill 
 **运行提示**
 
 - A3 回填完成前避免对 COMPLETED 做 bulk history 删除。
+
+### A1（2026-07-29）
+
+**实际变更**
+
+- `server/tests/fixtures/compatibility/legacy_summary.md`：冻结 UTF-8 LF 黄金总结（无 BOM/frontmatter），含 `## TL;DR` / `## 笔记` / `###` / `## 收束` / `## 字幕质量备注`。
+- `server/tests/fixtures/compatibility/manifest.json`：`legacy_summary_sha256=57c371e5b1a4fe35ad3459bd7109e7b85914237e5ac63ec71c1674172f8e8126`。
+- `server/tests/test_compatibility_baseline.py`：路径与字节一致、`read_summary` 往返、周总结 fingerprint 对正文敏感、`serialize_job` detail/lite、邮件 `markdown` 全文、SSE 事件名冻结。
+
+**验证**
+
+- `pytest tests/test_compatibility_baseline.py tests/test_email_webhook.py tests/test_weekly_summaries.py`：26 passed
+- fixture SHA-256 与 manifest 一致
+- `web` `tsc --noEmit`：通过
+
+**偏差**
+
+- 无生产代码变更；下载侧与邮件一致依赖「全文 summary 字符串」契约，未单独 mock 浏览器 download API。
