@@ -79,7 +79,10 @@ class Settings(BaseSettings):
     distill_storage_dir: Path = Path("data/distill")
     db_path: Path = Path("data/biri_youyaku.db")
 
+    # Auto: clear audio files/paths after N days; job row stays.
     audio_retention_days: int = Field(default=7, ge=0)
+    # Auto job-row purge only for FAILED/CANCELED with no summary_path.
+    # COMPLETED (and any job with summary) is retained until explicit user delete.
     job_retention_days: int = Field(default=180, ge=0)
     max_concurrent_jobs: int = Field(default=2, gt=0)
     max_concurrent_summaries: int = Field(default=2, gt=0)

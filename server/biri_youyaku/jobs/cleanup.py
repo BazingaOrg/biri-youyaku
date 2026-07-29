@@ -9,11 +9,29 @@ from biri_youyaku.config import settings
 from biri_youyaku.db import connect, maintenance_connection
 from biri_youyaku.distill import repo as distill_repo
 from biri_youyaku.jobs import repo
-from biri_youyaku.jobs.model import Job, RETENTION_DELETE_JOB_STATUSES
+from biri_youyaku.jobs.model import (
+    AUTO_JOB_DELETE_STATUSES,
+    Job,
+    JobStatus,
+    RETENTION_DELETE_JOB_STATUSES,
+)
 from biri_youyaku.jobs.runner import has_active_task
 from biri_youyaku.weekly import repo as weekly_summary_repo
 
 logger = logging.getLogger(__name__)
+
+
+def is_auto_job_purge_eligible(job: Job) -> bool:
+    """A0: auto-delete job rows only for FAILED/CANCELED with no durable summary.
+
+    COMPLETED and any job with summary_path are retained indefinitely until
+    explicit user delete. TRANSCRIPT_READY is never auto-purged.
+    """
+    if job.status == JobStatus.COMPLETED:
+        return False
+    if job.summary_path is not None:
+        return False
+    return job.status in AUTO_JOB_DELETE_STATUSES
 
 
 # --- 单 job 文件级清理 ---------------------------------------------------------
@@ -147,7 +165,14 @@ def retry_pending_file_cleanup_once() -> int:
 
 
 async def cleanup_once() -> dict[str, int]:
-    """每小时跑一次的「文件级 + 任务级」常规清理。"""
+    """每小时跑一次的「文件级 + 任务级」常规清理。
+
+    A0 retention matrix (automatic only; manual delete unchanged):
+    - audio_path: after audio_retention_days, delete file(s) and clear path; job stays
+    - COMPLETED or summary_path set: never auto-delete job/summary/transcript
+    - TRANSCRIPT_READY: never auto-delete
+    - FAILED/CANCELED with no summary: after job_retention_days, delete files + row
+    """
     now = repo.now_ms()
     audio_cutoff = now - settings.audio_retention_days * 24 * 60 * 60 * 1000
     job_cutoff = now - settings.job_retention_days * 24 * 60 * 60 * 1000
@@ -160,8 +185,10 @@ async def cleanup_once() -> dict[str, int]:
             repo.clear_audio_path(job.id)
             audio_removed += 1
 
-    expired_jobs = repo.list_jobs_by_status_before(RETENTION_DELETE_JOB_STATUSES, job_cutoff)
+    expired_jobs = repo.list_jobs_by_status_before(AUTO_JOB_DELETE_STATUSES, job_cutoff)
     for job in expired_jobs:
+        if not is_auto_job_purge_eligible(job):
+            continue
         delete_job_files(job)
         weekly_summary_repo.mark_stale_for_job_ids([job.id])
         jobs_removed += repo.delete_job(job.id)

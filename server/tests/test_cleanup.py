@@ -37,28 +37,112 @@ async def test_cleanup_removes_expired_audio_without_deleting_job(monkeypatch, t
     assert loaded.audio_path is None
 
 
-@pytest.mark.asyncio
-async def test_cleanup_deletes_expired_terminal_jobs(monkeypatch, tmp_path):
+def _age_job(job_id: str, days: int) -> None:
+    with db.connect() as connection:
+        connection.execute(
+            "UPDATE jobs SET updated_at = ? WHERE id = ?",
+            (repo.now_ms() - days * 24 * 60 * 60 * 1000, job_id),
+        )
+
+
+def _patch_retention(monkeypatch, tmp_path, *, audio_days: int = 7, job_days: int = 1) -> None:
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
-    monkeypatch.setattr(cleanup.settings, "audio_retention_days", 7)
-    monkeypatch.setattr(cleanup.settings, "job_retention_days", 1)
+    monkeypatch.setattr(cleanup.settings, "audio_retention_days", audio_days)
+    monkeypatch.setattr(cleanup.settings, "job_retention_days", job_days)
+
+
+@pytest.mark.asyncio
+async def test_cleanup_keeps_expired_completed_with_summary(monkeypatch, tmp_path):
+    """A0: COMPLETED + summary is never auto-purged."""
+    _patch_retention(monkeypatch, tmp_path)
     db.init_db()
     job = repo.create_job("https://www.bilibili.com/video/BV123", JobOptions())
     summary_path = tmp_path / f"{job.id}.md"
     summary_path.write_text("summary", encoding="utf-8")
     repo.set_summary_path(job.id, summary_path)
     repo.update_status(job.id, JobStatus.COMPLETED)
-    with db.connect() as connection:
-        connection.execute(
-            "UPDATE jobs SET updated_at = ? WHERE id = ?",
-            (repo.now_ms() - 2 * 24 * 60 * 60 * 1000, job.id),
-        )
+    _age_job(job.id, 2)
+
+    result = await cleanup.cleanup_once()
+
+    assert result["jobs_removed"] == 0
+    assert repo.get_job(job.id) is not None
+    assert summary_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_deletes_expired_failed_without_summary(monkeypatch, tmp_path):
+    _patch_retention(monkeypatch, tmp_path)
+    db.init_db()
+    job = repo.create_job("https://www.bilibili.com/video/BV-failed", JobOptions())
+    repo.update_status(job.id, JobStatus.FAILED)
+    _age_job(job.id, 2)
 
     result = await cleanup.cleanup_once()
 
     assert result["jobs_removed"] == 1
     assert repo.get_job(job.id) is None
-    assert not summary_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_deletes_expired_canceled_without_summary(monkeypatch, tmp_path):
+    _patch_retention(monkeypatch, tmp_path)
+    db.init_db()
+    job = repo.create_job("https://www.bilibili.com/video/BV-canceled", JobOptions())
+    repo.update_status(job.id, JobStatus.CANCELED)
+    _age_job(job.id, 2)
+
+    result = await cleanup.cleanup_once()
+
+    assert result["jobs_removed"] == 1
+    assert repo.get_job(job.id) is None
+
+
+@pytest.mark.asyncio
+async def test_cleanup_keeps_expired_failed_with_summary(monkeypatch, tmp_path):
+    """A0: summary_path non-null blocks auto purge even for FAILED."""
+    _patch_retention(monkeypatch, tmp_path)
+    db.init_db()
+    job = repo.create_job("https://www.bilibili.com/video/BV-failed-sum", JobOptions())
+    summary_path = tmp_path / f"{job.id}.md"
+    summary_path.write_text("partial summary", encoding="utf-8")
+    repo.set_summary_path(job.id, summary_path)
+    repo.update_status(job.id, JobStatus.FAILED)
+    _age_job(job.id, 2)
+
+    result = await cleanup.cleanup_once()
+
+    assert result["jobs_removed"] == 0
+    assert repo.get_job(job.id) is not None
+    assert summary_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_keeps_expired_transcript_ready(monkeypatch, tmp_path):
+    _patch_retention(monkeypatch, tmp_path)
+    db.init_db()
+    job = repo.create_job("https://www.bilibili.com/video/BV-tr", JobOptions())
+    repo.update_status(job.id, JobStatus.TRANSCRIPT_READY)
+    _age_job(job.id, 2)
+
+    result = await cleanup.cleanup_once()
+
+    assert result["jobs_removed"] == 0
+    assert repo.get_job(job.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_cleanup_keeps_fresh_failed_within_retention(monkeypatch, tmp_path):
+    _patch_retention(monkeypatch, tmp_path, job_days=180)
+    db.init_db()
+    job = repo.create_job("https://www.bilibili.com/video/BV-fresh-fail", JobOptions())
+    repo.update_status(job.id, JobStatus.FAILED)
+    # updated_at is "now" — well within 180 days
+
+    result = await cleanup.cleanup_once()
+
+    assert result["jobs_removed"] == 0
+    assert repo.get_job(job.id) is not None
 
 
 @pytest.mark.asyncio

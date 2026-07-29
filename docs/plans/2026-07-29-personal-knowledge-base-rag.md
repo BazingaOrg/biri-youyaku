@@ -1,0 +1,221 @@
+# 2026-07-29 Bilibili 总结器到双层个人知识库（RAG）
+
+> 本计划修订待确认前不得编码；确认后 **A0 是唯一立即执行的批次**。其余批次必须按门槛顺序放行。
+
+## 目标、锁定默认与 Phase 结果
+
+目标顺序固定：保护 Bilibili 数据并把 distill 收敛为 UP 投稿视频；登记既有 Bili 总结与原始转写；FTS-first 评测及“基于总结的知识问答”；转写证据 RAG；最后删除协调、备份和 Aliyun 迁移。P0–P2 只实现/测试 Bilibili。
+
+锁定默认：video-only distill；COMPLETED 无限保留至显式操作；旧 summary 字节/路径不变；`document_id` 为 opaque UUID/ULID，Bili `(bvid,cid)` 为 metadata 后的外部唯一键；job link 以 `job_id` 唯一；FTS-only 默认；dense 仅本地可测实验；remote embedding 关闭；知识聊天单独 opt-in。只有聊天入口的导航位置仍可在产品层面后定。
+
+Phase-1（B）：用户提交 Bili URL 后，现有总结、SSE、邮件、脑图、下载和视频周总结不变；完成 job 自动登记；用户可做**基于总结的知识问答**，引用为“AI 总结”标题/段落。Phase-2（C）：数字、事实、步骤、引述和时间问题可给 transcript 证据；无证据拒答/降级。Mac 在 P0–P1.5 是唯一运行时；P2 后才切到 ECS writer。
+
+非目标：本期不实现 YouTube、上传、粘贴、TXT/MD、PDF、DOCX、图片 OCR、网页、通用 ingestion pipeline、双向同步、多人协作或服务化向量库。`data/exports` 便携 Markdown 不属于 P0–P2 合同、存储或删除语义，仅为 P3 后续议题。
+
+## 当前证据、兼容契约与保留矩阵
+
+- 当前 Mac 运行 React/Vite → FastAPI `/v1/jobs` → Bili metadata/平台字幕，缺失时 yt-dlp 音频+本地 ASR → LLM → `server/data/summaries/<job-id>.md` + SQLite jobs/transcript/status → SSE/UI。
+- summary 正文被 ReactMarkdown、脑图、复制下载、邮件和周总结使用，周总结还以正文身份计算失效指纹。既有 summary 初期必须**字节完全一致**：不加 frontmatter、不移路径、不格式化/重编码。
+- 当前 `job_retention_days=180` 且 `RETENTION_DELETE_JOB_STATUSES` 含 COMPLETED，是必须先修的完成内容丢失风险。
+
+| 对象/状态 | 自动保留策略 | 手工删除语义 | 生效批次 |
+| --- | --- | --- | --- |
+| audio（任何状态） | 7 天后删音频并清 audio path | 可即时清理音频，不影响 transcript/summary | 自动：**A0**；手工音频清理：既有行为 |
+| COMPLETED 或 `summary_path` 非空 | job/summary/transcript **自动**无限保留 | history 删除：A3 起仅 unlink job link，不等于删知识文档；A3 前仍按既有逻辑删 job 行与 legacy summary | 自动：**A0**；history→unlink：**A3** |
+| TRANSCRIPT_READY | 不自动删除 | 明确操作前保留 transcript | 自动：**A0** |
+| FAILED/CANCELED 且无 summary | 180 天后删 job/transcript | 可手动删除 job/transcript | 自动：**A0** |
+| knowledge artifacts | 至明确永久 document 删除 | 软删可恢复；永久删独立二次确认与审计 | 登记/unlink：**A3**；soft/permanent UI：**D** |
+
+**生效说明（实现与验收边界）**
+
+- **自动保留策略**：A0 起生效并测试。A0 验收范围仅限上表「自动」列中已存在于 jobs/cleanup 的对象：audio、COMPLETED/`summary_path` 非空、TRANSCRIPT_READY、FAILED/CANCELED 且无 summary。**不含** knowledge artifacts 行（表与文件在 A3 才创建）。
+- **手动 history → unlink + 保留 knowledge**：A3 起生效；此前手动/ bulk 删除仍可能移除 job 行与 `data/summaries/<job-id>.md` 及 job 内 `transcript_json`。
+- **knowledge permanent delete（含二次确认/审计）**：D 起提供完整 lifecycle。
+- **A0 发布后至 A3 回填完成前**：避免对 COMPLETED 做 bulk history 删除；若必须清理，先离线备份 DB + `data/summaries` 再操作。A3 回填开始前建议做一次可校验快照（DB + summaries 清单与 SHA-256）。
+
+COMPLETED 自动无限保留不能替代手动删除保护：A3 起 history 删除事务必须解除 job link、保留已登记 artifacts；永久 document 删除在 D 另行确认。A0 **单独发布**，只验证自动保留矩阵行。
+
+## 已采用的证据、规范化与引用规则
+
+summary 层只做相关视频发现、概览与跨视频主题；transcript 层做事实、数字、步骤、引述、命令和时间证据，绝不嵌入视频二进制。raw transcript segment（`start/end/raw_text/source=platform|asr`）不可变且权威；原始 artifact hash 后独立存放。normalized transcript 是可选、版本化的检索派生物，保留 raw segment/time-range 映射、`raw_text`、`normalized_text`、method/reason、normalizer/version；可始终从 raw + version 重建。
+
+安全规范化限标点、空白/大小写、重复/碎片拼接、以及以标题/简介/tags/作者/项目词表作高置信术语修正；不静默重写不确定的人名、数字、日期、模型/产品标识、命令或逐字引述。C 先索引 immutable raw baseline；normalizer 仅在 locked holdout recall 有提升且高风险值零不可追溯改写时作为独立 A/B 版本开启。
+
+`source_level=summary` UI 写“AI 总结：标题/段落”，不得伪造时间；`source_level=transcript` 显示 `mm:ss–mm:ss`、平台字幕记录或“ASR 转写，可能存在识别误差”。高风险答案若只有 ASR，须降确定性、提示风险并给时间范围人工核验，不可发明置信度；无 transcript 证据则拒答或标“总结中提到”。服务端校验 citation ID、revision、可见性与 locator 后构造 URL/时间戳。
+
+summary chunker 预期 `## TL;DR`、`## 笔记`、`###` 子标题，及可选 `## 收束`/`字幕质量备注`；标题缺失或无效时只建一个 whole-document chunk，locator 为“AI 总结：全文”，绝不虚构标题。
+
+## 隐私与 egress 矩阵
+
+| 业务/数据 | 当前或计划 egress | 默认与边界 |
+| --- | --- | --- |
+| summary/tags/weekly/distill | 已配置 OpenAI-compatible provider（默认配置 DeepSeek） | 现有行为，服务端 secret；日志不记录内容/token |
+| Bili metadata/subtitle/cookie | Bilibili 边界 | cookie 仅服务端；不写日志/前端 |
+| ASR | 本地 | 音频/转写不默认外发 |
+| email webhook | recipient、subject、summary 等既有字段 | 仅已配置 webhook；token 服务端 |
+| knowledge chat | query + 已选 chunks 到 chat provider | 新功能独立 opt-in，默认关闭；开关形态（env / config）可在 B 前定，**B 验收必须证明默认关、打开后才外发** |
+| remote embedding | query/chunks | P1 默认关闭；本地 dense 实验独立启用 |
+| OCR | P3 | 默认关闭，须独立同意 |
+
+build-time token 不足以保护公开写接口；P2 使用 Cloudflare Access 或私网边界。所有 secrets 仅在服务端，日志无内容/token。当 `API_TOKEN` 非空时，计划中的 `/v1/knowledge/*` 与 jobs 同级走既有 `require_token`（或更严）；token 为空仍视为单用户本机信任模型。未来上传另案处理类型/大小限制与 SSRF。
+
+## 分阶段架构与处理流程
+
+### P0–P1.5：Mac 本地单体（无 OSS/outbox）
+
+```mermaid
+flowchart LR
+  B[Browser React/Vite] --> API[Mac FastAPI monolith]
+  API --> JR[Job runner]
+  JR --> BA[Bili acquisition / local ASR]
+  JR --> LLM[Configured summary provider]
+  JR --> LS[Legacy summaries]
+  JR --> KR[Knowledge registry / immutable artifacts]
+  KR --> DB[(SQLite runtime / registry)]
+  KR --> ART[Knowledge artifacts]
+  KR --> FTS[FTS5 derived index]
+  FTS --> CHAT[Opt-in knowledge chat]
+  FTS -. optional measured .-> DENSE[Local dense experiment]
+```
+
+摄入：submit URL → validate/dedupe → metadata → platform subtitle，否则音频+ASR → immutable raw transcript →（可选版本化 normalization）→ **既有** summary generation 不变 → legacy summary + 独立 summary/raw transcript artifact → document/revisions/artifacts/job link → 异步 index/reconcile。summary 成功不得因 registry/index 失败而失败；后者以 persisted `pending/failed` reconcile 状态重试。P0/P1.5 不写 backup/sync outbox。
+
+### P2：ECS 单 writer 与只出站备份
+
+```mermaid
+flowchart LR
+  B[Browser] -->|HTTPS| CF[Cloudflare Tunnel + Access]
+  CF --> ECS[Aliyun ECS same-origin Web / FastAPI]
+  ECS --> DB[(SQLite)]
+  ECS --> ART[Working disk + immutable artifacts]
+  ECS --> IDX[FTS5 / optional vector derived]
+  ECS --> SO[Sync outbox]
+  SO --> OSS[OSS versioned backup]
+  SO --> MAC[Mac receive-only mirror]
+```
+
+Cloudflare DNS 独立于托管；Tunnel 是私有 ECS HTTPS ingress，Access 提供身份。切换后 ECS 是唯一 writer；OSS 为版本化备份，Mac 仅接收 Markdown/artifact copy。禁止 network-mount Mac 目录，禁止双向同步活动 SQLite/WAL。
+
+### 双层检索与聊天序列
+
+```mermaid
+flowchart TD
+  Q[Query / filters] --> SD[Summary headings/chunks]
+  SD --> SF[FTS5, optional dense]
+  SF --> R1[RRF top documents]
+  R1 --> TW[Raw transcript windows start/end]
+  TW --> TF[FTS5, optional dense]
+  TF --> R2[RRF, dedup, per-document cap]
+  Q -->|numbers commands quotes time / weak summary recall| GL[Global transcript lexical fallback]
+  GL --> R2
+  R2 --> AW[Adjacent windows]
+  AW --> CS[Context / citation snapshot]
+```
+
+聊天：query → filters/query analysis → summary discovery；B 的 summary-only MVP 到最低证据阈值后调用现有 OpenAI-compatible model，SSE delta 并仅给 summary citation。C 则在候选 document 内找 transcript evidence，必要时 global lexical fallback；reranker 只在实测收益后启用。服务端固化 snapshot、校验结构化 citations，UI 呈现 source cards 与跳转时间。普通错字由 FTS 精确项+dense 语义缓解，有限 known-alias expansion 可用；v1 不做宽泛拼音/fuzzy。
+
+## 最小 schema、所有权与 API 时序
+
+| 阶段 | schema/存储 | 责任与真相 |
+| --- | --- | --- |
+| A3 | documents、content revisions、summary revisions、artifacts、job links、reconcile state | registry 事务真相；复制 legacy summary 与 immutable raw transcript |
+| B | `rag_chunks`、FTS5 | 从 active artifacts/revisions 可全量重建 |
+| B dense experiment | sqlite-vec/vector metadata | 派生物，失败 FTS-only；锁 stable exact-KNN 版本 |
+| C | transcript chunks/normalizer versions | raw artifact 权威；normalized 可重建 |
+| chat persistence 时 | conversations/messages | 仅聊天落地时创建，不提前迁移 |
+
+legacy summary 是当前产品真相且不变；knowledge artifacts 是耐久证据；SQLite 保存 runtime/registry/reconcile（P2 加 outbox）；FTS/vector 是派生物；audio 是 7 天临时物；OSS 是可恢复副本，Mac mirror 不参与写入。
+
+既有 `/v1/jobs` 和 job SSE 不变。计划 API：`GET /v1/knowledge/search`、`POST /v1/knowledge/chat` SSE、documents delete/restore/rebuild/status。registry 仅对普通 Bili summary job：状态 COMPLETED 且 `summary_path` 存在后执行；排除 distill/audio job；metadata 已知后以 `(bilibili, bvid, cid)` 找外部 document，`job_id` link 唯一。
+
+**登记身份与重总结（A3 写死）**
+
+- 外部唯一键：`(provider=bilibili, bvid, cid)`。同一键上多个 job → 多条 `job_links`、**一个** document。
+- `bvid` 或 `cid` 缺失（旧 job / 失败 meta / 异常回填）：**不创建 document**；写入 reconcile `failed` 并记录原因，可人工补 meta 后重扫；禁止退化为仅 bvid 合并（避免多分 P 误并）。
+- **重总结**：同一 document 新增 `summary_revision`（新 artifact/hash）；若 raw transcript hash 未变则**复用**既有 content revision，不复制第二份 transcript。
+- 最佳努力登记必须持久化 reconcile state（`pending`/`failed`/成功），并由启动/维护扫描补齐；registry/index 失败不得将 job 标 FAILED。
+
+## 评测、资源门槛与成熟度
+
+评测语料必须同时有 committed synthetic deterministic fixtures 和 private local real corpus；不得以空 corpus 通过。初始 release gate：至少 20 视频、80 条可回答 query、20 条 no-answer，适用 critical category 各至少 10 条，30% locked holdout。阈值版本化，只有记录理由才能调整：summary Recall@5 ≥0.90、MRR@10 ≥0.75、summary citation correctness ≥0.95、no-answer precision/recall 各 ≥0.90；transcript evidence Recall@5 ≥0.85、citation/time-range gold overlap ≥0.95、citation structure validity 100%；numbers/entities/commands/quotes 为零不可追溯 rewrite。
+
+**Gate 未达标时的默认策略（禁止为过线污染 holdout）**
+
+1. 允许 **search-only** 内部可用，**knowledge chat 保持默认关闭**（或仅开发开关）。
+2. 允许临时下调数值 gate，但必须在计划实施备注写清：旧值、新值、语料版本、失败样例类别、原因；不得为过 gate 改 prompt/标注去贴 holdout。
+3. 禁止宣称「生产级 RAG / 证据问答就绪」直至对应 B 或 C 的 holdout 达标。
+4. dense / reranker / normalizer 未过线时保持关闭，不影响 FTS-only 路径。
+
+B 默认 FTS-only：1,000-document benchmark search p95 ≤200ms、FTS backfill peak RSS 增量 ≤512MB、每批 100 且可 resumable（benchmark 可用合成负载，不要求真实语料已有 1000 文档）。dense 是可选实验，报告 Mac/Aliyun p50/p95、index time、peak RSS，并仅在 locked holdout 有可测收益才开启；不假定主机规格。SQLite FTS5/RRF 成熟；sqlite-vec 活跃但 pre-v1，v1 锁 stable exact-KNN、避免 alpha ANN/DiskANN，并以 `VectorIndex`/`EmbeddingProvider` 包装、记录 model/dimension/chunker/retrieval versions、支持 FTS-only 启动和全量 rebuild。比较 bge-small-zh-v1.5、BGE-M3 与 adapter 候选，不预设最佳；reranker 同样要求实测收益。Qdrant 成熟但仅在 p95、multi-process/instance 写入、成熟 ANN/payload/server hybrid 或 rebuild 不可接受等实测触发时迁移。
+
+## 执行批次（严格顺序）
+
+1. [x] **A0：自动保留策略，单独发布**。只实现/测试**自动**保留：audio 7 天清 path；COMPLETED 或任意 `summary_path` 非空无限保留（不进入 auto-delete）；TRANSCRIPT_READY 不自动删；FAILED/CANCELED 且无 summary 180 天删 job/transcript。不改 history 手动删除语义；不创建 knowledge 表；不验收 artifact 永久删除。受影响：`config.py`、`jobs/cleanup.py`、`jobs/model.py`（若调整 `RETENTION_DELETE_JOB_STATUSES`）、测试、运行文档。验证上列四类状态；回滚仅回退策略，绝不补偿删除。发布后运行说明：A3 回填完成前避免 COMPLETED bulk 删除。
+2. [ ] **A1：兼容 fixtures**。固定旧 summary path/hash、API/SSE、周总结指纹、邮件/下载输入。验证迁移前后逐项 hash，pytest/typecheck/build；回滚只删 fixtures。
+3. [ ] **A2：动态流改为 video-only distill，独立发布**。锁定决策 A：保留 UP 投稿视频-only distill，从 video/transcript 处理开始；移除动态 stage、endpoint/module、enum/status/count/db 新 schema fields、assembler/corpus 动态包含、storage helpers、SSE/API/frontend/tests/docs。旧 DB 未用列若更安全则保留；绝不自动删除现有 `dynamics.md`/corpus 用户数据。受影响：`routes/up.py`、`modules/bilibili/dynamic.py`、`distill/`、schema、UI、测试、文档。验证动态端点 404/无引用，普通 URL、UP 投稿、ASR/SSE/邮件/周总结通过；回滚独立提交。
+4. [ ] **A3：registry、双 artifact copy、最小 unlink/reconcile**。回填前先备份 DB + summaries 清单/SHA-256。增量 schema 仅为 documents/content+summary revisions/artifacts/job links/reconcile。普通 COMPLETED Bili summary job 在 `summary_path` 存在后，copy byte-identical summary 与 immutable raw transcript（`platform|asr`, start/end/raw_text, hash），按 `(bilibili,bvid,cid)` 建/复用 document，`job_id` link；缺 bvid/cid 则 reconcile failed、不建 document；重总结只增 summary revision、transcript hash 未变则复用。不注册 distill/audio job。history 删除事务改为 unlink job、保留 artifacts（本批起「手工删除语义」生效）。启动/维护 scan 补 reconcile。验证幂等、hash 相同、手动删 history 不丢 knowledge、缺 meta 不误并；回滚关闭 register/reconcile，不删 artifact。P1.5/C 只做 transcript **索引**，不延后 durability。
+5. [ ] **B：FTS-first summary 评测与 MVP**。先 build chunker/FTS baseline，再按数值 gate 评测；`API_TOKEN` 非空时 knowledge 路由鉴权与 jobs 同级。chat 默认关闭；gate 全过后再允许 opt-in「基于总结」chat；gate 未过则 search-only 或保持 chat 关（见评测降级策略）。`rag_chunks`/FTS 在本批创建；dense 仅单独实验，不能阻塞 FTS。验证 gates 或书面降级、1,000-doc 资源、FTS-only 降级、默认不外发 chat；回滚下线 chat/索引，保留 artifacts。
+6. [ ] **C：transcript evidence 与数值门槛**。先 raw transcript index，再执行可选 normalization A/B；实现分层 retrieval、邻窗、cap/dedup、query-type fallback、citation 规则。验证 transcript gates、ASR 高风险降级、normalizer 无不可追溯重写；未达标则不得宣称证据问答就绪，回滚 summary-only、由 raw 重建。
+7. [ ] **D：删除、备份、云端**。先 document soft/restore/permanent delete（二次确认、审计）与 reconcile；再恢复演练。Cutover runbook（必须按序）：(1) drain in-flight jobs 至终态；(2) 停止旧 writer 写入；(3) `sqlite3 .backup` 或等价一致性备份 + artifacts/summaries 清单与 hash manifest（禁止拷贝活动 WAL 当真相）；(4) 在 ECS 恢复并校验 legacy/artifact hash、active revision；(5) 真实 Bili+ASR+SSE 冒烟；(6) same-origin reverse proxy、Tunnel+Access；(7) 一次切换 writer 到 ECS，再 ECS→OSS/Mac 只出站；(8) 失败则停 ECS 写、恢复上一 writer 已验证快照，绝不双写。验证 hash/revision/index/reconcile/outbox、故障恢复。中国大陆公开访问的 ICP 取决于地域/域名/提供商，上线前向 Aliyun/主管规则确认。
+8. [ ] **E：P3 输入/增强（不实施）**。未来按真实需求另案评估其他 sources、portable export、OCR/网页/上传及其隐私/SSRF/验收。
+
+## 故障矩阵、成功条件与风险
+
+| 故障 | 是否失败 job | 可见状态与退路 |
+| --- | --- | --- |
+| metadata/subtitle | 是；可回退 audio+ASR，均失败则失败 | 明确错误、重试 |
+| ASR | 是（无 transcript） | 明确状态/重试 |
+| summary provider | 是 | 保持既有失败/重试 |
+| artifact/registry/reconcile | 否 | summary 成功；`pending/failed` 后台重试 |
+| FTS/dense/normalizer | 否 | FTS-only、raw baseline/rebuild；chat 降级 |
+| chat provider/citation validation | 否 | 不改文档，重试或拒答 |
+| OSS/Mac（仅 D） | 否 | outbox failed/retry，不阻塞 ECS |
+
+每个批次需 self-review、相应 tests/typecheck/build；A0 必须独立通过才准 A1。成功须可证明：legacy hash/路径未变、artifact raw/summary hash、active revision、reconcile/outbox、评测门槛或书面降级、降级和恢复演练均有记录。
+
+**主要风险与消解**
+
+| 风险 | 消解 |
+| --- | --- |
+| 写入/移动 legacy summary | 加法独立 artifact；legacy 字节/路径冻结 |
+| A0–A3 间手动 bulk 删 COMPLETED 丢内容 | 运行说明禁止；A3 前回填快照；A3 后 unlink 保留 artifacts |
+| ASR/normalizer 污染事实 | raw 权威；C 先 raw baseline；normalizer 可追溯 A/B + holdout |
+| 向量/资源失控 | FTS-first；dense 资源与 holdout 双 gate |
+| 双 writer / 坏 WAL 拷贝 | 单 writer；cutover 用 `.backup` + manifest；禁止同步活动 WAL |
+| 评测过严卡发布 | search-only / chat 关 / 书面降 gate；禁止污染 holdout |
+
+## 仍开放的产品点（不挡 A0）
+
+- 知识聊天入口导航位置（页/抽屉/历史侧栏）——B UI 前定。
+- chat opt-in 开关的具体配置面（env 名 / 设置页）——B 前定，默认必须关。
+- 个人 RPO/RTO 口头目标（例如「可接受丢最近 N 小时 outbox」）——D 前写入 runbook。
+
+## P3 locator 附录与实施备注
+
+未来非 Bili adapter 才输出 `ContentBlock[]` 与不可变原件引用；locator 可为 video time range、PDF page/bbox、DOCX heading+paragraph、text offset、image bbox、web snapshot block。summary 永不伪造原始精确定位。
+
+实施后追加实际变更、评测/验证、偏差、审查问题与根因；保留本计划原文。计划正文的补充修订（生效批次、gate 降级、cutover runbook 等）直接并入上文，不另起并行版本。
+
+## 实施备注
+
+### A0（2026-07-29）
+
+**实际变更**
+
+- `jobs/model.py`：新增 `AUTO_JOB_DELETE_STATUSES = {FAILED, CANCELED}`；`RETENTION_DELETE_JOB_STATUSES` 仍用于手动单删资格与 audio 扫描（含 COMPLETED / TRANSCRIPT_READY）。
+- `jobs/cleanup.py`：`is_auto_job_purge_eligible()`；`cleanup_once` 仅对过期且无 `summary_path` 的 FAILED/CANCELED 删文件+行；COMPLETED / 有 summary / TRANSCRIPT_READY 永不 auto-purge。
+- `config.py` 注释 + `CONFIG.md` 中英清理表：`JOB_RETENTION_DAYS` 语义收窄说明。
+- `tests/test_cleanup.py`：A0 矩阵（COMPLETED 保留、FAILED/CANCELED 无 summary 删除、FAILED 有 summary 保留、TRANSCRIPT_READY 保留、窗口内 FAILED 保留、audio-only 清理）。
+
+**验证**
+
+- `pytest tests/test_cleanup.py`：12 passed
+- `pytest tests/test_job_options.py tests/test_bulk_delete.py`：16 passed（手动/批量删除无回归）
+
+**偏差**
+
+- 无。手动 history 删除语义未改（按计划 A3 再做 unlink）。
+
+**运行提示**
+
+- A3 回填完成前避免对 COMPLETED 做 bulk history 删除。

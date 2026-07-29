@@ -31,7 +31,16 @@ TERMINAL_JOB_STATUS_VALUES = frozenset(status.value for status in TERMINAL_JOB_S
 # TRANSCRIPT_READY is persisted as a boundary state: it is handled by a dedicated
 # resume path on startup, but it is not a final user-visible outcome.
 PAUSED_OR_TERMINAL_JOB_STATUSES = TERMINAL_JOB_STATUSES | frozenset({JobStatus.TRANSCRIPT_READY})
+
+# Manual single-delete eligibility (routes/jobs.py) and auto audio-sweep candidates.
+# Includes COMPLETED / TRANSCRIPT_READY so users can still delete finished work.
+# Auto job-row purge does NOT use this set — see AUTO_JOB_DELETE_STATUSES.
 RETENTION_DELETE_JOB_STATUSES = PAUSED_OR_TERMINAL_JOB_STATUSES
+
+# A0 auto job-row purge: only terminal failures/cancels without durable content.
+# COMPLETED and TRANSCRIPT_READY are never auto-deleted; jobs with summary_path
+# are also kept (defensive check in cleanup.is_auto_job_purge_eligible).
+AUTO_JOB_DELETE_STATUSES = frozenset({JobStatus.FAILED, JobStatus.CANCELED})
 
 # 用户从历史页发起的批量删除只覆盖已经结束的主任务。它刻意不复用
 # RETENTION_DELETE_JOB_STATUSES：TRANSCRIPT_READY 仍可继续总结，不应被当作历史清理掉。

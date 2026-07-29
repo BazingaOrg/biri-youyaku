@@ -38,8 +38,8 @@
 | 邮件 | `EMAIL_DEFAULT_RECIPIENT` | 空 | **唯一**收件人；后端永远只发到这里（无 per-job 收件人，防滥发） |
 | 邮件 | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | 支持 `{{title}}` / `{{author}}` |
 | 存储 | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DISTILL_STORAGE_DIR / DB_PATH` | `data/...` | `DISTILL_STORAGE_DIR` 存蒸馏语料 |
-| 清理 | `AUDIO_RETENTION_DAYS` | `7` | |
-| 清理 | `JOB_RETENTION_DAYS` | `180` | |
+| 清理 | `AUDIO_RETENTION_DAYS` | `7` | 自动清 audio 文件并清空 path；job 行保留 |
+| 清理 | `JOB_RETENTION_DAYS` | `180` | 仅自动删除 FAILED/CANCELED 且无 summary 的 job；COMPLETED 永久保留至用户手动删除 |
 | 清理 | `ORPHAN_FILE_RETENTION_DAYS` | `3` | DB 不引用的孤儿文件多久后清 |
 | 清理 | `STALE_RUNNING_FAIL_HOURS` | `4` | 非终态任务多久无心跳就置 FAILED |
 | 清理 | `CLEANUP_INTERVAL_SECONDS` | `3600` | 清理循环周期 |
@@ -87,8 +87,8 @@ All tunable settings live in `server/.env`; defaults are in
 | Email | `EMAIL_DEFAULT_RECIPIENT` | empty | the **only** recipient; backend always sends here (no per-job recipient, anti-abuse) |
 | Email | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | `{{title}}` / `{{author}}` allowed |
 | Storage | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DISTILL_STORAGE_DIR / DB_PATH` | `data/...` | `DISTILL_STORAGE_DIR` holds distilled author corpora |
-| Cleanup | `AUDIO_RETENTION_DAYS` | `7` | |
-| Cleanup | `JOB_RETENTION_DAYS` | `180` | |
+| Cleanup | `AUDIO_RETENTION_DAYS` | `7` | auto: delete audio file(s) and clear path; job row kept |
+| Cleanup | `JOB_RETENTION_DAYS` | `180` | auto-delete only FAILED/CANCELED jobs with no summary; COMPLETED kept until explicit user delete |
 | Cleanup | `ORPHAN_FILE_RETENTION_DAYS` | `3` | how long DB-unreferenced files linger |
 | Cleanup | `STALE_RUNNING_FAIL_HOURS` | `4` | non-terminal job auto-FAILED after N hours of silence |
 | Cleanup | `CLEANUP_INTERVAL_SECONDS` | `3600` | cleanup loop period |
