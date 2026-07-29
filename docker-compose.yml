@@ -1,8 +1,13 @@
-# 极简一键起：跑后端 + 前端 nginx。生产前请按 README 部署章节配 API_TOKEN / CORS。
-# 用法：
-#   1. cp server/.env.example server/.env && 填 LLM_API_KEY
+# One-shot stack: backend + frontend nginx. Configure API_TOKEN / CORS before production (see README).
+# Usage:
+#   1. cp server/.env.example server/.env && set LLM_API_KEY
 #   2. docker compose up --build
-#   3. 浏览器开 http://localhost:5173
+#   3. Open http://localhost:5173 ; API http://localhost:17821
+#
+# Notes:
+# - VITE_API_BASE_URL is the browser-side API URL (not the container-internal network).
+# - VITE_API_TOKEN is baked from API_TOKEN into frontend JS at build time (weak secret; not for real protection alone).
+# - Default server image has no ASR extras (see server/Dockerfile).
 
 services:
   server:
@@ -18,12 +23,11 @@ services:
     build:
       context: ./web
       args:
-        # 浏览器到后端的地址。注意：这是「浏览器侧」请求的 URL，不是容器内网。
-        #   - 本机访问（用户浏览器 = compose 宿主机）：默认 http://localhost:17821 就够。
-        #   - 跨机访问（如把 compose 部署在云主机、从笔记本访问）：必须显式设
-        #     `VITE_API_BASE_URL=https://your-public-api.example.com` 重新 build。
+        # Browser-side URL for API calls (not container-internal).
+        #   - Local (browser on compose host): default http://localhost:17821 is enough.
+        #   - Remote host: set VITE_API_BASE_URL to the public API origin and rebuild.
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:17821}
-        # 与后端 API_TOKEN 一致（留空 = 不鉴权，仅本地）
+        # Baked into frontend JS from API_TOKEN (weak secret). Empty = no auth (local only).
         VITE_API_TOKEN: ${API_TOKEN:-}
     ports:
       - "5173:80"

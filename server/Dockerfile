@@ -1,7 +1,7 @@
-# 默认 image 体积优先，**不预装 ASR extras**（funasr + torch 加起来几个 GB）。
-# 如果你的视频没有官方字幕、需要本地 ASR 转写，把下面 `uv sync` 那行改成：
+# Default image is slim: omits ASR extras (funasr + torch are multi-GB).
+# No-subtitle videos that need local ASR: change the `uv sync` line below to:
 #   RUN uv sync --frozen --no-dev --extra asr
-# 注意 asr-mlx 是 Apple Silicon 专属，Linux Docker 装不上别用。
+# asr-mlx is Apple Silicon only — not for Linux Docker.
 FROM python:3.11-slim
 
 # ffmpeg / ffprobe：SenseVoice 分段切片需要
