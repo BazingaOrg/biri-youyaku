@@ -302,6 +302,13 @@ export function generateWeeklySummary(weekStart: string, refresh = false) {
   })
 }
 
+/** 只删除该周的周总结缓存，不影响该周视频任务。 */
+export function deleteWeeklySummary(weekStart: string) {
+  return request<{ok: true} & WeeklySummary>(`/v1/weekly-summaries/${encodeURIComponent(weekStart)}`, {
+    method: 'DELETE',
+  })
+}
+
 export function createJob(url: string, options: JobOptionOverrides, params: {dedupe?: boolean} = {}) {
   // deduped: 后端发现这条视频之前已总结完成，直接复用了旧任务（没有新建、没有再烧 token）。
   return request<{ok: true; job_id: string; deduped?: boolean}>('/v1/jobs', {

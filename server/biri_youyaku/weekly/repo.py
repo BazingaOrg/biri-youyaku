@@ -297,6 +297,29 @@ def mark_stale(week_start: str, *, generation_token: str | None = None) -> bool:
     return cursor.rowcount == 1
 
 
+def delete(week_start: str) -> bool:
+    """Remove the persisted weekly summary and its source links for one week.
+
+    Does not touch underlying video jobs. Returns False when no row existed.
+    """
+    with connect() as connection:
+        if not _source_tables_exist(connection):
+            return False
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            cursor = connection.execute(
+                "DELETE FROM weekly_summaries WHERE week_start = ?", (week_start,)
+            )
+            connection.execute(
+                "DELETE FROM weekly_summary_sources WHERE week_start = ?", (week_start,)
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+    return cursor.rowcount > 0
+
+
 def _source_tables_exist(connection) -> bool:
     """Older databases and narrow route tests can predate the weekly-summary migration."""
     rows = connection.execute(

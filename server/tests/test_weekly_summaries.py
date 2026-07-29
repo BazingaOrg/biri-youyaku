@@ -365,3 +365,52 @@ def test_deleting_source_marks_weekly_summary_stale(monkeypatch, tmp_path):
     assert repo.affected_count_for_job_ids([job.id]) == 1
     assert repo.mark_stale_for_job_ids([job.id]) == 1
     assert repo.get("2026-07-27").status == "STALE"
+
+
+def test_delete_weekly_summary_removes_row_not_source_jobs(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    monkeypatch.setattr(jobs_repo, "now_ms", lambda: MONDAY_MS + 1)
+    db.init_db()
+    job = _completed_with_summary(tmp_path)
+    sources = repo.sources_for_week("2026-07-27")
+    fingerprint_value = repo.fingerprint(sources)
+    assert repo.begin_generation("2026-07-27", fingerprint_value=fingerprint_value)
+    assert repo.save_completed(
+        "2026-07-27",
+        fingerprint_value=fingerprint_value,
+        sources=sources,
+        content="周总结",
+        references=[{"job_id": job.id, "title": "本周视频"}],
+    )
+
+    assert repo.delete("2026-07-27") is True
+    assert repo.get("2026-07-27") is None
+    assert repo.delete("2026-07-27") is False
+    # Underlying video job remains.
+    assert jobs_repo.get_job(job.id) is not None
+    assert jobs_repo.get_job(job.id).status == JobStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_delete_weekly_summary_route_returns_missing_shape(monkeypatch, tmp_path):
+    from biri_youyaku.routes import weekly_summaries as weekly_route
+
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    monkeypatch.setattr(jobs_repo, "now_ms", lambda: MONDAY_MS + 1)
+    db.init_db()
+    job = _completed_with_summary(tmp_path)
+    sources = repo.sources_for_week("2026-07-27")
+    fingerprint_value = repo.fingerprint(sources)
+    repo.begin_generation("2026-07-27", fingerprint_value=fingerprint_value)
+    repo.save_completed(
+        "2026-07-27",
+        fingerprint_value=fingerprint_value,
+        sources=sources,
+        content="周总结",
+        references=[{"job_id": job.id, "title": "本周视频"}],
+    )
+
+    body = await weekly_route.delete_weekly_summary("2026-07-27")
+    assert body["status"] == "MISSING"
+    assert body["content"] is None
+    assert jobs_repo.get_job(job.id) is not None

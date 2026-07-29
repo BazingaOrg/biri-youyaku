@@ -486,8 +486,8 @@ export function HistoryPage() {
       <button type="button" onClick={() => window.history.length > 1 ? window.history.back() : navigate('/')} className="inline-flex min-h-10 w-fit items-center gap-2 rounded-2xl bg-lift px-3 text-sm text-muted transition-[transform,background-color,color] hover:bg-line/70 hover:text-ink active:scale-95"><ArrowLeft size={16} />返回</button>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-[-0.012em] text-ink sm:text-3xl">历史记录</h1>
-          <p className="mt-1 text-sm text-muted">搜索、筛选并按周浏览总结任务。</p>
+          <h1 className="text-2xl font-semibold tracking-[-0.012em] text-ink sm:text-3xl">历史</h1>
+          <p className="mt-1 text-sm text-muted">按周查看任务，搜索、筛选或清理记录。</p>
         </div>
         <div className="flex shrink-0 gap-2">
           <IconTooltip label="新建">

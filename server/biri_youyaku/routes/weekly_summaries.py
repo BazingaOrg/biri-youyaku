@@ -61,3 +61,17 @@ async def generate_weekly_summary(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
     return _serialize(week_start)
+
+
+@router.delete("/weekly-summaries/{week_start}")
+async def delete_weekly_summary(week_start: str) -> dict:
+    """Delete only the cached weekly summary for this week, not source video jobs."""
+    try:
+        repo.week_bounds(week_start)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    deleted = repo.delete(week_start)
+    if not deleted:
+        # Idempotent for the UI: missing week still returns the fresh serialize shape.
+        pass
+    return _serialize(week_start)
