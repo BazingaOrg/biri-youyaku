@@ -27,6 +27,13 @@ export function SearchableSelect({
   const rootRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const selected = items.find((item) => item.key === value)
+  // Keep orphan values visible so an active filter never falls back to “全部…”.
+  const displayLabel = selected
+    ? `${tag ? '#' : ''}${selected.label}`
+    : value
+      ? `${tag ? '#' : ''}${value}`
+      : null
+  const hasValue = value != null
   const filtered = items.filter((item) => item.label.toLowerCase().includes(query.trim().toLowerCase()))
 
   useEffect(() => {
@@ -54,10 +61,10 @@ export function SearchableSelect({
         aria-haspopup="listbox"
         onClick={() => setOpen((current) => !current)}
         className={`flex min-h-11 w-full items-center gap-2 rounded-2xl bg-lift px-3 text-left text-sm transition-[background-color,color] hover:bg-line/70 ${
-          selected ? 'text-ink' : 'text-muted'
+          hasValue ? 'text-ink' : 'text-muted'
         }`}
       >
-        <span className="min-w-0 flex-1 truncate">{selected ? `${tag ? '#' : ''}${selected.label}` : placeholder}</span>
+        <span className="min-w-0 flex-1 truncate">{displayLabel ?? placeholder}</span>
         <ChevronDown size={15} className="shrink-0" />
       </button>
       {open && (
@@ -86,6 +93,18 @@ export function SearchableSelect({
               <span className="min-w-0 flex-1">全部</span>
               {value == null && <Check size={15} className="text-brand" />}
             </button>
+            {hasValue && !selected && (
+              <button
+                type="button"
+                role="option"
+                aria-selected
+                onClick={() => setOpen(false)}
+                className="flex min-h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-sm text-ink hover:bg-lift"
+              >
+                <span className="min-w-0 flex-1 truncate">{displayLabel}</span>
+                <Check size={15} className="text-brand" />
+              </button>
+            )}
             {filtered.map((item) => (
               <button
                 key={item.key}
@@ -103,7 +122,8 @@ export function SearchableSelect({
                 {value === item.key && <Check size={15} className="text-brand" />}
               </button>
             ))}
-            {filtered.length === 0 && <p className="px-3 py-5 text-center text-sm text-muted">没有匹配项</p>}
+            {filtered.length === 0 && !hasValue && <p className="px-3 py-5 text-center text-sm text-muted">没有匹配项</p>}
+            {filtered.length === 0 && hasValue && selected && <p className="px-3 py-5 text-center text-sm text-muted">没有匹配项</p>}
           </div>
         </div>
       )}

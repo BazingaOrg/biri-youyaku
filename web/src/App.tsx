@@ -6,7 +6,6 @@ import {ToastProvider} from './components/ToastProvider'
 import {PageLoading} from './components/Spinner'
 
 const HistoryPage = lazy(() => import('./pages/HistoryPage').then((m) => ({default: m.HistoryPage})))
-const StatsPage = lazy(() => import('./pages/StatsPage').then((m) => ({default: m.StatsPage})))
 const UpPage = lazy(() => import('./pages/UpPage').then((m) => ({default: m.UpPage})))
 
 export default function App() {
@@ -18,11 +17,6 @@ export default function App() {
           <Route path="/history">
             <Suspense fallback={<PageLoading />}>
               <HistoryPage />
-            </Suspense>
-          </Route>
-          <Route path="/stats">
-            <Suspense fallback={<PageLoading />}>
-              <StatsPage />
             </Suspense>
           </Route>
           <Route path="/up/:mid">
