@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "corpus": "synthetic",
+  "description": "CI synthetic knowledge eval. Thresholds are realistic for a tiny distinctive fixture corpus only — they are NOT the production holdout gates from the main RAG plan.",
+  "ci_thresholds": {
+    "summary_recall_at_5": 0.85,
+    "summary_mrr_at_10": 0.70,
+    "no_answer_empty_rate": 0.80,
+    "transcript_doc_recall_at_5": 0.75
+  },
+  "production_gates_ref": "docs/plans/2026-07-29-personal-knowledge-base-rag.md"
+}

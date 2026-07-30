@@ -343,3 +343,9 @@ B 默认 FTS-only：1,000-document benchmark search p95 ≤200ms、FTS backfill 
 ### macOS LaunchAgent 常驻（2026-07-30）
 
 - `scripts/mac-service.sh` + plist；runbook `docs/runbooks/macos-service.md`。高频 ASR 保持 host MLX；不用 Docker 当生产 writer。
+
+### Phase F eval harness（2026-07-30）
+
+- Synthetic fixtures + `knowledge/eval.py` + `scripts/knowledge_eval.py` + `tests/test_knowledge_eval.py`（见 `docs/plans/2026-07-30-knowledge-eval-gates.md`）。
+- CI 仅锁定 **synthetic** 阈值门槛；**未**宣称生产 holdout 数值 gate 通过。
+- `KNOWLEDGE_CHAT_ENABLED` 仍默认 **false**；本批无 dense / normalizer / conversation 持久化。

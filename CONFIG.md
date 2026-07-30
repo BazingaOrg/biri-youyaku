@@ -69,6 +69,13 @@
 cd server && uv run python scripts/knowledge_backup.py
 ```
 
+- **知识库检索评测（Phase F，synthetic）**：隔离 temp DB，不碰生产 `data/`。默认 fixtures 在 `server/tests/fixtures/knowledge_eval/`；私有语料可用 `--fixtures` 指向同布局本地目录（勿提交真实内容）。**不**默认打开 chat；CI 门槛 ≠ 生产 holdout gate。
+
+```bash
+cd server && uv run python scripts/knowledge_eval.py
+uv run python scripts/knowledge_eval.py --split holdout
+```
+
 ---
 
 ## Configuration
@@ -140,6 +147,14 @@ curl -X POST http://127.0.0.1:17821/v1/knowledge/backup \
 # or CLI from server/
 uv run python scripts/knowledge_backup.py
 uv run python scripts/knowledge_backup.py --dry-run
+```
+
+Knowledge FTS eval (Phase F, synthetic fixtures; isolated temp DB; chat stays default off; CI thresholds ≠ production holdout gates):
+
+```bash
+uv run python scripts/knowledge_eval.py
+uv run python scripts/knowledge_eval.py --split holdout
+uv run python scripts/knowledge_eval.py --fixtures /path/to/private_layout
 ```
 
 Each backup under `KNOWLEDGE_BACKUP_DIR/<timestamp>/` contains:
