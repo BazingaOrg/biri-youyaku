@@ -6,8 +6,11 @@
 
 ## 部署到公网
 
-**公网推荐**：前端 Vercel + 后端本机/VPS + Cloudflare Tunnel（下文）。
-**同机自托管**：仓库根目录 `docker compose up --build`（Web 映射 `5173`，API `17821`）；默认 `APP_CORS_ORIGINS` 已允许 `localhost:5173` / `127.0.0.1:5173`，本机 compose 一般不用改 CORS。
+> **个人 Mac Mini + 高频本机 ASR**：优先 [`docs/runbooks/macos-service.md`](docs/runbooks/macos-service.md)（launchd，无 Docker），不必迁云。  
+> 下文适用于需要公网访问、或 Linux/VPS、且可接受无 MLX 的场景。
+
+**公网推荐**：前端 Vercel + 后端本机/VPS + Cloudflare Tunnel（下文）。  
+**同机自托管（无高频 MLX 时）**：仓库根目录 `docker compose up --build`（Web 映射 `5173`，API `17821`）；默认 `APP_CORS_ORIGINS` 已允许 `localhost:5173` / `127.0.0.1:5173`，本机 compose 一般不用改 CORS。
 
 一种常见公网架构：
 

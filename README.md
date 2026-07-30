@@ -53,6 +53,21 @@ cd web && cp .env.example .env && npm install && npm run dev   # http://localhos
 
 </details>
 
+## 🖥️ macOS 常驻后端（LaunchAgent）
+
+Mac Mini / 本机常开、又要 **本机 MLX ASR** 时，不必一直开着终端窗口：
+
+```bash
+bash scripts/mac-service.sh install    # 写入 LaunchAgent 并启动（无 --reload）
+bash scripts/mac-service.sh restart    # 改代码 / 依赖 / .env 后
+bash scripts/mac-service.sh stop       # 开发前释放 17821
+bash scripts/mac-service.sh logs       # ~/Library/Logs/biri-youyaku/
+```
+
+- **生产**：LaunchAgent 常驻，无需终端。
+- **开发**：先 `stop`，再用 `scripts/dev.sh`（热重载）；结束后再 `start`。
+- **Docker**：默认 compose **不带 MLX ASR**，Mac 上高频无字幕转写不推荐只靠容器；详见 [`docs/runbooks/macos-service.md`](docs/runbooks/macos-service.md)。
+
 ## ⚙️ LLM 配置
 
 任何 OpenAI 兼容接口都行，`server/.env` 里至少填 `LLM_API_KEY`：

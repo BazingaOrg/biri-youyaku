@@ -8,6 +8,7 @@
 # - VITE_API_BASE_URL is the browser-side API URL (not the container-internal network).
 # - VITE_API_TOKEN is baked from API_TOKEN into frontend JS at build time (weak secret; not for real protection alone).
 # - Default server image has no ASR extras (see server/Dockerfile).
+# - Frequent Apple Silicon MLX ASR: prefer host launchd — docs/runbooks/macos-service.md
 
 services:
   server:

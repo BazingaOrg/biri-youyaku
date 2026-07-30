@@ -53,6 +53,21 @@ cd web && cp .env.example .env && npm install && npm run dev   # http://localhos
 
 </details>
 
+## 🖥️ macOS always-on API (LaunchAgent)
+
+On a Mac Mini (or any always-on Mac) with **host MLX ASR**, keep the API running without a terminal:
+
+```bash
+bash scripts/mac-service.sh install    # write LaunchAgent and start (no --reload)
+bash scripts/mac-service.sh restart    # after code / deps / .env changes
+bash scripts/mac-service.sh stop       # free port 17821 before dev
+bash scripts/mac-service.sh logs       # ~/Library/Logs/biri-youyaku/
+```
+
+- **Production**: LaunchAgent only; no need to leave Ghostty open.
+- **Development**: `stop` first, then `scripts/dev.sh` (hot reload); `start` again when done.
+- **Docker**: default compose **has no MLX ASR** — not ideal for frequent on-Mac ASR. See [`docs/runbooks/macos-service.md`](docs/runbooks/macos-service.md).
+
 ## ⚙️ LLM configuration
 
 Any OpenAI-compatible endpoint works. Set at least `LLM_API_KEY` in `server/.env`:

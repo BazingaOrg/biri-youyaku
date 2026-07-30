@@ -60,6 +60,15 @@
 | 防滥用 | `MAX_VIDEO_DURATION_SECONDS` | `9000` | 视频时长上限；超长直接拒 |
 | 防滥用 | `MAX_INFLIGHT_JOBS` | `20` | 同时在飞任务上限；超出返回 503 |
 
+### 运维提示（macOS 常驻 / 备份）
+
+- **macOS LaunchAgent 常驻 API**（本机 MLX ASR、无需常开终端）：见 [`docs/runbooks/macos-service.md`](docs/runbooks/macos-service.md)，脚本 `scripts/mac-service.sh`。
+- **知识库备份**仍建议定期做（换机、误删、盘故障）；相对 `data/*` 路径便于备份与迁移。CLI / API 见下文 English 节 *Knowledge backup & restore*，或中文环境直接：
+
+```bash
+cd server && uv run python scripts/knowledge_backup.py
+```
+
 ---
 
 ## Configuration
@@ -119,9 +128,9 @@ All tunable settings live in `server/.env`; defaults are in
 | Abuse | `MAX_VIDEO_DURATION_SECONDS` | `9000` | video length cap; too long → reject |
 | Abuse | `MAX_INFLIGHT_JOBS` | `20` | total in-flight jobs; overflow → 503 |
 
-### Knowledge backup & restore (local, pre-cloud)
+### Knowledge backup & restore (local, portable)
 
-Create a consistent snapshot (prefer while writers are idle):
+Recommended on any long-running host (Mac Mini LaunchAgent, Linux, etc.). Create a consistent snapshot (prefer while writers are idle):
 
 ```bash
 # API (Bearer if API_TOKEN set)
@@ -140,7 +149,7 @@ Each backup under `KNOWLEDGE_BACKUP_DIR/<timestamp>/` contains:
 - `summaries/` — legacy summary files
 - `manifest.json` — relative paths + SHA-256 + restore hint
 
-**Restore (local only; not full Aliyun cutover — see `docs/runbooks/cutover.md`):**
+**Restore** (stop the server/LaunchAgent first; path rewrite helpers remain for machine moves — see also `docs/runbooks/macos-service.md`):
 
 ```bash
 # Stop the server first, then from server/:

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>__LABEL__</string>
+
+	<!-- Host-native uv + uvicorn; no --reload (production). -->
+	<key>ProgramArguments</key>
+	<array>
+		<string>__UV__</string>
+		<string>run</string>
+		<string>--no-dev</string>
+		<string>uvicorn</string>
+		<string>biri_youyaku.app:app</string>
+		<string>--host</string>
+		<string>127.0.0.1</string>
+		<string>--port</string>
+		<string>17821</string>
+	</array>
+
+	<key>WorkingDirectory</key>
+	<string>__SERVER_DIR__</string>
+
+	<!-- LaunchAgent: runs as the installing user; do not set UserName. -->
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+
+	<key>ProcessType</key>
+	<string>Background</string>
+
+	<key>StandardOutPath</key>
+	<string>__LOG_DIR__/api.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>__LOG_DIR__/api.err.log</string>
+</dict>
+</plist>

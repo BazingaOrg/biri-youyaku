@@ -156,7 +156,7 @@ B 默认 FTS-only：1,000-document benchmark search p95 ≤200ms、FTS backfill 
 4. [x] **A3：registry、双 artifact copy、最小 unlink/reconcile**。回填前先备份 DB + summaries 清单/SHA-256。增量 schema 仅为 documents/content+summary revisions/artifacts/job links/reconcile。普通 COMPLETED Bili summary job 在 `summary_path` 存在后，copy byte-identical summary 与 immutable raw transcript（`platform|asr`, start/end/raw_text, hash），按 `(bilibili,bvid,cid)` 建/复用 document，`job_id` link；缺 bvid/cid 则 reconcile failed、不建 document；重总结只增 summary revision、transcript hash 未变则复用。不注册 distill/audio job。history 删除事务改为 unlink job、保留 artifacts（本批起「手工删除语义」生效）。启动/维护 scan 补 reconcile。验证幂等、hash 相同、手动删 history 不丢 knowledge、缺 meta 不误并；回滚关闭 register/reconcile，不删 artifact。P1.5/C 只做 transcript **索引**，不延后 durability。
 5. [x] **B：FTS-first summary 评测与 MVP**。先 build chunker/FTS baseline，再按数值 gate 评测；`API_TOKEN` 非空时 knowledge 路由鉴权与 jobs 同级。chat 默认关闭；gate 全过后再允许 opt-in「基于总结」chat；gate 未过则 search-only 或保持 chat 关（见评测降级策略）。`rag_chunks`/FTS 在本批创建；dense 仅单独实验，不能阻塞 FTS。验证 gates 或书面降级、1,000-doc 资源、FTS-only 降级、默认不外发 chat；回滚下线 chat/索引，保留 artifacts。
 6. [x] **C：transcript evidence 与数值门槛**。先 raw transcript index，再执行可选 normalization A/B；实现分层 retrieval、邻窗、cap/dedup、query-type fallback、citation 规则。验证 transcript gates、ASR 高风险降级、normalizer 无不可追溯重写；未达标则不得宣称证据问答就绪，回滚 summary-only、由 raw 重建。
-7. [~] **D：删除、备份、云端** — **本机 pre-Aliyun 已完成**；**云端 cutover / OSS / Tunnel 未做**。先 document soft/restore/permanent delete（二次确认、审计）与 reconcile；再恢复演练。Cutover runbook（待云端）：(1)–(8) drain → sqlite backup → ECS 校验 → Tunnel/Access → 单 writer 切换 → 失败回滚。ICP 上线前确认。
+7. [x] **D：删除、备份** — **本机完成**（soft/restore/purge、本地 backup/restore、路径相对化）。**云端 cutover / OSS / Tunnel：取消**（生产改 Mac Mini 本机 + launchd；高频 MLX ASR）。可选公网仍可用 `DEPLOY.md` Tunnel 指家里，非迁库。
 8. [ ] **E：P3 输入/增强（不实施）**。未来按真实需求另案评估其他 sources、portable export、OCR/网页/上传及其隐私/SSRF/验收。
 
 ## 故障矩阵、成功条件与风险
@@ -319,23 +319,27 @@ B 默认 FTS-only：1,000-document benchmark search p95 ≤200ms、FTS backfill 
 
 - knowledge transcript + search + registry + compatibility：**39 passed**；`tsc --noEmit` ok。
 
-### D pre-Aliyun（2026-07-29）
+### D 本机删除与备份（2026-07-29）
 
-**实际变更（未含上云）**
+**实际变更**
 
 - `deleted_at` / `delete_reason` on documents；`knowledge_audit_events`。
 - soft-delete / restore / purge（title 或 bvid 二次确认）；30 天 soft-delete auto-purge；检索排除已软删；再登记同 bvid/cid 会恢复。
 - 本机备份：`POST /v1/knowledge/backup` + `scripts/knowledge_backup.py`（sqlite `.backup` API + knowledge/summaries + hash manifest）；CONFIG 恢复说明。
 - UI：知识库页「已登记文档」列表与删除/恢复。
 
-**未做（云端 D 余下）**
+**云端 D（明确取消，2026-07-30）**
 
-- Aliyun ECS Docker、Cloudflare Tunnel/Access、OSS outbox、Mac receive-only、writer cutover。
+- 不实施：Aliyun ECS、cutover、OSS outbox、Mac receive-only 镜像。生产 = Mini 本机 + `scripts/mac-service.sh`（launchd）。
 
 **验证**
 
 - lifecycle + transcript + search + registry：**40 passed**；`tsc --noEmit` ok。
 
-### S1 path/restore prep（2026-07-30，上云前置）
+### 路径可迁移与 backup/restore（2026-07-30）
 
-- 启动 cloud cutover prep（详见 `docs/plans/2026-07-30-cloud-cutover-prep.md`）：knowledge artifact / job summary 相对路径入库与 resolve、path rewrite CLI、backup manifest verify + restore CLI、cutover runbook。未改 RAG 检索/chat 语义；chat 仍默认关。
+- knowledge artifact / job summary 相对路径入库与 resolve、path rewrite CLI、backup manifest verify + restore CLI（见 `docs/plans/2026-07-30-cloud-cutover-prep.md`，标题保留历史文件名）。价值：本机耐久/重装，**非**上云专用。chat 仍默认关。
+
+### macOS LaunchAgent 常驻（2026-07-30）
+
+- `scripts/mac-service.sh` + plist；runbook `docs/runbooks/macos-service.md`。高频 ASR 保持 host MLX；不用 Docker 当生产 writer。
