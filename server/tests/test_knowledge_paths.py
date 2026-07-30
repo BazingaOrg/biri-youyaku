@@ -255,18 +255,34 @@ def test_backup_verify_and_restore(monkeypatch, tmp_path):
     assert dry["restored"] is False
     assert not (dest / "biri_youyaku.db").exists()
 
+    # Stale WAL/SHM from a prior live DB must not survive next to the restored main file.
+    dest_db = dest / "biri_youyaku.db"
+    dest_db.parent.mkdir(parents=True, exist_ok=True)
+    dest_db.write_bytes(b"stale-main")
+    (dest / "biri_youyaku.db-wal").write_bytes(b"stale-wal")
+    (dest / "biri_youyaku.db-shm").write_bytes(b"stale-shm")
+    orphan = dest / "knowledge" / "orphan-should-go-with-replace"
+    orphan.parent.mkdir(parents=True, exist_ok=True)
+    orphan.write_text("orphan", encoding="utf-8")
+
     live = restore_backup(
         backup_dir,
-        dest_db=dest / "biri_youyaku.db",
+        dest_db=dest_db,
         dest_knowledge=dest / "knowledge",
         dest_summaries=dest / "summaries",
         dry_run=False,
+        replace_trees=True,
     )
     assert live["ok"] is True
     assert live["restored"] is True
-    assert (dest / "biri_youyaku.db").is_file()
+    assert dest_db.is_file()
+    assert dest_db.read_bytes() != b"stale-main"
+    assert not (dest / "biri_youyaku.db-wal").exists()
+    assert not (dest / "biri_youyaku.db-shm").exists()
+    assert "removed_sidecars" in live
     assert (dest / "knowledge").is_dir()
     assert (dest / "summaries").is_dir()
+    assert not orphan.exists()
     # At least one artifact file copied
     art_files = list((dest / "knowledge").rglob("*"))
     assert any(p.is_file() for p in art_files)

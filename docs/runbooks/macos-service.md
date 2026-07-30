@@ -97,6 +97,11 @@ bash scripts/mac-service.sh start
 
 两边都监听 **17821**，不可同时开。脚本在 install/start 时若发现端口被其它进程占用会告警。
 
+## 备份恢复注意（WAL）
+
+`knowledge_restore` 覆盖主库后会**删除**目标旁的 `*.db-wal` / `*.db-shm`，避免旧 WAL 挂到新主库。  
+恢复前请 `bash scripts/mac-service.sh stop`。默认 knowledge/summaries 为**合并**拷贝；要整树替换用 `--replace-trees`。
+
 ## 故障：`ffprobe and ffmpeg not found`
 
 任务卡在 `DOWNLOADING_AUDIO`，报错类似：

@@ -7,6 +7,7 @@ Usage (from server/):
   uv run python scripts/knowledge_restore.py --from data/backups/<ts>
   uv run python scripts/knowledge_restore.py --from data/backups/<ts> --dry-run
   uv run python scripts/knowledge_restore.py --from data/backups/<ts> --force
+  uv run python scripts/knowledge_restore.py --from data/backups/<ts> --replace-trees
 """
 
 from __future__ import annotations
@@ -45,6 +46,11 @@ def main() -> int:
         help="Restore even if manifest hash verify fails",
     )
     parser.add_argument(
+        "--replace-trees",
+        action="store_true",
+        help="Replace knowledge/ and summaries/ dirs entirely (rmtree then copy); default merges",
+    )
+    parser.add_argument(
         "--dest-db",
         type=Path,
         default=None,
@@ -71,6 +77,7 @@ def main() -> int:
             dest_summaries=args.dest_summaries,
             dry_run=args.dry_run,
             force=args.force,
+            replace_trees=args.replace_trees,
         )
     except FileNotFoundError as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2))

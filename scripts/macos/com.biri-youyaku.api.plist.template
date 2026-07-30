@@ -36,6 +36,9 @@
 	<true/>
 	<key>KeepAlive</key>
 	<true/>
+	<!-- Avoid tight respawn loops when port is taken or env is broken. -->
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
 
 	<key>ProcessType</key>
 	<string>Background</string>

@@ -153,12 +153,14 @@ Each backup under `KNOWLEDGE_BACKUP_DIR/<timestamp>/` contains:
 
 ```bash
 # Stop the server first, then from server/:
+#   bash scripts/mac-service.sh stop   # from repo root
 uv run python scripts/knowledge_restore.py --from data/backups/<timestamp>
 uv run python scripts/knowledge_restore.py --from data/backups/<timestamp> --dry-run
 uv run python scripts/knowledge_restore.py --from data/backups/<timestamp> --force  # ignore hash mismatch
+uv run python scripts/knowledge_restore.py --from data/backups/<timestamp> --replace-trees  # wipe dest knowledge/summaries first
 ```
 
-Restore verifies `manifest.json` hashes, then copies `biri_youyaku.db`, `knowledge/`, and `summaries/` to settings paths (or `--dest-*` overrides). It does **not** reindex FTS; after restart run `POST /v1/knowledge/reindex` if search is empty.
+Restore verifies `manifest.json` hashes, then copies `biri_youyaku.db`, `knowledge/`, and `summaries/` to settings paths (or `--dest-*` overrides). After replacing the main DB it **deletes** destination `*.db-wal` / `*.db-shm` so a leftover WAL cannot attach to the restored file. Default tree restore **merges** into existing dirs; `--replace-trees` rmtree then copy. It does **not** reindex FTS; after restart run `POST /v1/knowledge/reindex` if search is empty.
 
 **Path rewrite (absolute → relative under storage roots, for machine move):**
 

@@ -280,6 +280,33 @@ def verify_backup(backup_dir: Path) -> dict[str, Any]:
     }
 
 
+def _sqlite_sidecar_paths(db_path: Path) -> list[Path]:
+    """WAL/SHM companions SQLite may leave next to the main DB file."""
+    name = db_path.name
+    parent = db_path.parent
+    return [parent / f"{name}-wal", parent / f"{name}-shm"]
+
+
+def remove_sqlite_sidecars(db_path: Path) -> list[str]:
+    """Delete ``db-wal`` / ``db-shm`` if present. Returns removed path strings."""
+    removed: list[str] = []
+    for side in _sqlite_sidecar_paths(db_path):
+        try:
+            if side.is_file():
+                side.unlink()
+                removed.append(str(side))
+        except OSError:
+            logger.warning("failed to remove sqlite sidecar %s", side, exc_info=True)
+    return removed
+
+
+def _replace_tree(src: Path, dest: Path) -> None:
+    """Replace dest directory with a copy of src (snapshot semantics)."""
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(src, dest)
+
+
 def restore_backup(
     backup_dir: Path,
     *,
@@ -288,6 +315,7 @@ def restore_backup(
     dest_summaries: Path | None = None,
     dry_run: bool = False,
     force: bool = False,
+    replace_trees: bool = False,
 ) -> dict[str, Any]:
     """Restore DB + knowledge + summaries from a backup directory.
 
@@ -295,6 +323,10 @@ def restore_backup(
 
     dry_run: verify + report planned targets only.
     live: verify first (fail on hash mismatch/missing unless force); then copy.
+    After replacing the main DB file, always removes dest ``-wal``/``-shm`` so a
+    leftover WAL from a previous live process cannot attach to the restored file.
+    replace_trees: if True, rmtree dest knowledge/summaries then copytree (true
+    snapshot). Default False merges into existing trees (dirs_exist_ok).
     Does not start reindex automatically.
     """
     backup_dir = Path(backup_dir)
@@ -317,12 +349,15 @@ def restore_backup(
         "src_db": str(src_db),
         "src_knowledge": str(src_knowledge) if src_knowledge.exists() else None,
         "src_summaries": str(src_summaries) if src_summaries.exists() else None,
+        "replace_trees": replace_trees,
+        "will_remove_sidecars": [str(p) for p in _sqlite_sidecar_paths(dest_db)],
     }
 
     result: dict[str, Any] = {
         "ok": verification.get("ok", False),
         "dry_run": dry_run,
         "force": force,
+        "replace_trees": replace_trees,
         "backup_dir": str(backup_dir),
         "verify": verification,
         "planned": planned,
@@ -332,12 +367,15 @@ def restore_backup(
     if dry_run:
         # Keep verify outcome in ok so CLI/operators see hash failures.
         result["message"] = (
-            "dry_run: no files written; stop the server before a live restore"
+            "dry_run: no files written; stop the server before a live restore "
+            "(bash scripts/mac-service.sh stop). Restore removes dest DB -wal/-shm."
         )
         return result
 
     if not verification.get("ok") and not force:
-        result["error"] = "manifest verify failed; pass force=True to restore anyway"
+        result["error"] = (
+            "manifest verify failed; pass force=True or CLI --force to restore anyway"
+        )
         return result
 
     if not src_db.is_file():
@@ -347,25 +385,39 @@ def restore_backup(
 
     dest_db.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src_db, dest_db)
+    # Critical: stale WAL/SHM from a prior writer must not attach to the new main file.
+    removed_sidecars = remove_sqlite_sidecars(dest_db)
+    result["removed_sidecars"] = removed_sidecars
 
     if src_knowledge.is_dir():
-        dest_knowledge.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src_knowledge, dest_knowledge, dirs_exist_ok=True)
+        if replace_trees:
+            _replace_tree(src_knowledge, dest_knowledge)
+        else:
+            dest_knowledge.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(src_knowledge, dest_knowledge, dirs_exist_ok=True)
 
     if src_summaries.is_dir():
-        dest_summaries.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src_summaries, dest_summaries, dirs_exist_ok=True)
+        if replace_trees:
+            _replace_tree(src_summaries, dest_summaries)
+        else:
+            dest_summaries.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(src_summaries, dest_summaries, dirs_exist_ok=True)
 
     result["ok"] = True
     result["restored"] = True
     result["message"] = (
-        "restore complete; restart server; run POST /v1/knowledge/reindex if FTS empty"
+        "restore complete; restart server; run POST /v1/knowledge/reindex if FTS empty. "
+        "Default tree restore merges into existing dirs; use replace_trees=True / "
+        "CLI --replace-trees for snapshot replace."
     )
     logger.info(
-        "knowledge restore from %s → db=%s knowledge=%s summaries=%s",
+        "knowledge restore from %s → db=%s knowledge=%s summaries=%s "
+        "sidecars_removed=%s replace_trees=%s",
         backup_dir,
         dest_db,
         dest_knowledge,
         dest_summaries,
+        removed_sidecars,
+        replace_trees,
     )
     return result

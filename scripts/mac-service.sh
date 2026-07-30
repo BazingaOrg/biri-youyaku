@@ -32,15 +32,27 @@ info() {
 }
 
 resolve_uv() {
+  local candidate=""
   if [ -n "${UV:-}" ] && [ -x "${UV}" ]; then
-    echo "${UV}"
-    return
+    candidate="${UV}"
+  elif command -v uv >/dev/null 2>&1; then
+    candidate="$(command -v uv)"
+  else
+    die "uv not found. Install: https://docs.astral.sh/uv/  (or set UV=/absolute/path/to/uv)"
   fi
-  if command -v uv >/dev/null 2>&1; then
-    command -v uv
-    return
+  # Launchd needs an absolute ProgramArguments path.
+  if command -v realpath >/dev/null 2>&1; then
+    candidate="$(realpath "${candidate}")"
+  elif [[ "${candidate}" != /* ]]; then
+    candidate="$(cd "$(dirname "${candidate}")" && pwd)/$(basename "${candidate}")"
   fi
-  die "uv not found. Install: https://docs.astral.sh/uv/  (or set UV=/absolute/path/to/uv)"
+  if [[ "${candidate}" != /* ]]; then
+    die "uv path must be absolute for launchd (got: ${candidate}); set UV=/absolute/path/to/uv"
+  fi
+  if [ ! -x "${candidate}" ]; then
+    die "uv not executable: ${candidate}"
+  fi
+  echo "${candidate}"
 }
 
 require_template() {
@@ -63,10 +75,11 @@ port_listener_pids() {
   lsof -nP -iTCP:"${API_PORT}" -sTCP:LISTEN -t 2>/dev/null || true
 }
 
-warn_port_conflict() {
+# Returns 0 if free or only our service; 1 if a foreign listener holds the port.
+port_conflict_exists() {
   local pids pid our_pid
   pids="$(port_listener_pids | tr '\n' ' ' | xargs 2>/dev/null || true)"
-  [ -z "${pids}" ] && return 0
+  [ -z "${pids}" ] && return 1
 
   our_pid=""
   if service_loaded; then
@@ -77,14 +90,57 @@ warn_port_conflict() {
     if [ -n "${our_pid}" ] && [ "${pid}" = "${our_pid}" ]; then
       continue
     fi
-    # Also accept children of our launchd job (uv → uvicorn).
     if [ -n "${our_pid}" ] && ps -o ppid= -p "${pid}" 2>/dev/null | tr -d ' ' | grep -qx "${our_pid}"; then
       continue
     fi
-    echo "warning: port ${API_PORT} is in use by PID ${pid} (not this LaunchAgent)." >&2
-    echo "         stop that process or run: $0 stop  /  free the port before install/start." >&2
+    # Parent may be uv; grandparent launchd job — still foreign if not our tree.
+    echo "${pid}"
     return 0
   done
+  return 1
+}
+
+require_port_free_or_ours() {
+  local foreign
+  foreign="$(port_conflict_exists || true)"
+  if [ -n "${foreign}" ]; then
+    die "port ${API_PORT} is in use by PID ${foreign} (not this LaunchAgent). Stop it or: $0 stop"
+  fi
+}
+
+check_asr_extra() {
+  # Best-effort: warn if neither mlx-audio nor funasr is importable in the project env.
+  if ! (
+    cd "${SERVER_DIR}" && uv run --no-dev python -c "
+import importlib.util
+ok = importlib.util.find_spec('mlx_audio') or importlib.util.find_spec('funasr')
+raise SystemExit(0 if ok else 1)
+" >/dev/null 2>&1
+  ); then
+    echo "warning: neither mlx_audio nor funasr is importable in server env." >&2
+    echo "         No-subtitle ASR will fail. On Apple Silicon:" >&2
+    echo "           cd server && uv sync --extra asr-mlx" >&2
+    echo "         Linux/CPU: cd server && uv sync --extra asr" >&2
+  fi
+}
+
+wait_healthz() {
+  local i code
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "warning: curl missing; skip healthz probe" >&2
+    return 0
+  fi
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 "${HEALTH_URL}" 2>/dev/null || echo "000")"
+    if [ "${code}" = "200" ]; then
+      info "healthz OK (HTTP ${code})"
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "warning: healthz not ready at ${HEALTH_URL} (last HTTP ${code:-000})" >&2
+  echo "         check: $0 logs / $0 status" >&2
+  return 1
 }
 
 # PATH for launchd: interactive shells include Homebrew; LaunchAgents do not.
@@ -138,6 +194,7 @@ write_plist() {
   info "PATH=${svc_path}"
   info "logs=${LOG_DIR}"
   check_ffmpeg
+  check_asr_extra
 }
 
 bootout_if_loaded() {
@@ -175,13 +232,18 @@ kickstart_service() {
 }
 
 cmd_install() {
-  warn_port_conflict
+  require_port_free_or_ours
   write_plist
   bootout_if_loaded
   bootstrap_service
-  # Prefer enable + kickstart when available
   launchctl enable "${DOMAIN}/${LABEL}" 2>/dev/null || true
-  kickstart_service || true
+  kickstart_service
+  if ! service_loaded; then
+    die "install wrote plist but launchd job is not loaded; see ${LOG_DIR}"
+  fi
+  if ! wait_healthz; then
+    die "service started but /healthz failed; see $0 logs"
+  fi
 
   info "installed and started ${LABEL}"
   echo
@@ -207,7 +269,7 @@ cmd_uninstall() {
 }
 
 cmd_start() {
-  warn_port_conflict
+  require_port_free_or_ours
   if [ ! -f "${PLIST_DST}" ]; then
     die "not installed. Run: $0 install"
   fi
@@ -216,9 +278,13 @@ cmd_start() {
   else
     bootstrap_service
     launchctl enable "${DOMAIN}/${LABEL}" 2>/dev/null || true
-    kickstart_service || true
+    kickstart_service
   fi
-  info "start requested for ${LABEL}"
+  if ! service_loaded; then
+    die "start failed: launchd job not loaded; see ${LOG_DIR}"
+  fi
+  wait_healthz || die "started but /healthz failed; see $0 logs"
+  info "started ${LABEL}"
 }
 
 cmd_stop() {
@@ -231,24 +297,20 @@ cmd_stop() {
 }
 
 cmd_restart() {
-  warn_port_conflict
   if [ ! -f "${PLIST_DST}" ]; then
     die "not installed. Run: $0 install"
   fi
-  if ! service_loaded; then
-    bootstrap_service
-    launchctl enable "${DOMAIN}/${LABEL}" 2>/dev/null || true
-  fi
-  if launchctl kickstart -k "${DOMAIN}/${LABEL}" 2>/dev/null; then
-    info "restarted ${LABEL} (kickstart -k)"
-    return 0
-  fi
-  # Fallback: bootout + bootstrap
+  # Rewrite plist (uv/PATH), then full bootout + bootstrap so ProgramArguments reload.
+  write_plist
   bootout_if_loaded
+  require_port_free_or_ours
   bootstrap_service
-  launchctl kickstart -k "${DOMAIN}/${LABEL}" 2>/dev/null || \
-    launchctl start "${LABEL}" 2>/dev/null || \
-    die "restart failed"
+  launchctl enable "${DOMAIN}/${LABEL}" 2>/dev/null || true
+  kickstart_service
+  if ! service_loaded; then
+    die "restart failed: launchd job not loaded; see ${LOG_DIR}"
+  fi
+  wait_healthz || die "restarted but /healthz failed; see $0 logs"
   info "restarted ${LABEL}"
 }
 
@@ -271,7 +333,14 @@ cmd_status() {
     launchctl list 2>/dev/null | grep -F "${LABEL}" || true
   fi
 
-  warn_port_conflict
+  if port_conflict_exists >/dev/null 2>&1; then
+    foreign="$(port_conflict_exists || true)"
+    if [ -n "${foreign}" ]; then
+      echo "port:    FOREIGN listener PID ${foreign} on ${API_PORT}"
+    fi
+  else
+    echo "port:    free or owned by this service"
+  fi
 
   if command -v curl >/dev/null 2>&1; then
     local code
