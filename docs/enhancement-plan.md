@@ -1,6 +1,6 @@
 # biri-youyaku 增强方案（5 项评估 + step by step）
 
-> 实施/进度笔记；产品真相以 README 为准。 / Progress notes; product truth is README.
+> **Archived / superseded**：本文件保留为历史评估，不是当前执行计划；当前行为以 [README](../README.md) 和 [2026-07-29-history-week-nav-and-usage.md](plans/2026-07-29-history-week-nav-and-usage.md) 为准。旧文中独立 stats 页面、Token/费用展示等提议均不应据此执行。
 
 > 结论先行：1/2/3 都值得做且不大；4 可做但**因供应商而异**，只对少数厂商可行；
 > 5 可做且数据现成（前端纯算即可），建议先做「热力图 + 周对比」，手绘风作为可选皮肤。

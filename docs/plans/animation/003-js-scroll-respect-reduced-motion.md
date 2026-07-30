@@ -1,10 +1,12 @@
 # 003 — JS 平滑滚动尊重 prefers-reduced-motion
 
 - **Status**: DONE
-- **Commit**: 8855ece
+- **Commit**: 9381050
 - **Severity**: HIGH
 - **Category**: Accessibility
 - **Estimated scope**: 4 files（新建 1 + 修改 3），~20 行
+
+> **Current status**：本轮已补回归修复 `WeekNavigator` 的 reduced-motion 路径；原计划及其历史范围保留不改。
 
 ## Problem
 

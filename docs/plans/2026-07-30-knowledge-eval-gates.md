@@ -29,7 +29,7 @@
 
 ## 成功标准
 
-- `uv run pytest tests/test_knowledge_eval.py` 绿  
+- `uv run --extra dev pytest tests/test_knowledge_eval.py` 绿（pytest 在 optional `dev` extra，需 `--extra dev` 或先 `uv sync --extra dev`）
 - CLI 对 synthetic 输出 metrics + `gates_met` bool  
 - chat 默认配置不变  
 

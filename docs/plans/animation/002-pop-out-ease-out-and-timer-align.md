@@ -1,7 +1,7 @@
 # 002 — pop-out 改 ease-out，兜底定时器与动画时长对齐
 
 - **Status**: DONE
-- **Commit**: 8855ece
+- **Commit**: 9381050
 - **Severity**: HIGH
 - **Category**: Easing & duration / Cohesion
 - **Estimated scope**: 3 files，~4 行

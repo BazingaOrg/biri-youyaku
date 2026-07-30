@@ -1,5 +1,5 @@
 # Default image is slim: omits ASR extras (funasr + torch are multi-GB).
-# Production cutover default: no ASR extra (cloud image without --extra asr).
+# Current default image: no ASR extra, keeping the base image small.
 # No-subtitle videos that need local ASR: change the `uv sync` line below to:
 #   RUN uv sync --frozen --no-dev --extra asr
 # asr-mlx is Apple Silicon only — not for Linux Docker.

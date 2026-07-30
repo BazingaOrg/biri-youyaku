@@ -19,7 +19,7 @@ Paste a Bilibili video link and get a readable Markdown summary, a mind map, and
 - **Browse by uploader**: list an uploader's whole catalog, see which are summarized, one-click the rest.
 - **Uploader corpus distillation**: scrape an uploader's video transcripts, extract viewpoints with LLM, and compile them into a persona corpus (e.g. for roleplay).
 - **Personal knowledge base**: register completed summaries; local FTS search; optional chat (off by default); soft-delete / restore / purge.
-- **History usage & weekly digests**: token/cost stats and weekly summaries live on the history page (no standalone `/stats` route).
+- **History balance & weekly digests**: the history page currently shows API balance and weekly summaries (no standalone `/stats` route).
 - **Dedup to save tokens**: re-pasting an already-summarized video reuses the old result.
 - **Per-job fixes**: resummarize (reuse existing transcript), force re-transcription (ignore existing transcript/subtitles and redo ASR), resend email for a failed job.
 - **Audio download**: download the audio file used for transcription.
@@ -138,7 +138,7 @@ flowchart LR
     api --> db[(SQLite)]
     api --> knowledge[knowledge<br/>FTS / soft-delete]
     api --> weekly[weekly digests]
-    api --> stats[history stats<br/>tokens/cost]
+    api --> stats[history<br/>balance/weekly digests]
     api -. optional .-> mail[Cloudflare Worker → Resend]
 ```
 

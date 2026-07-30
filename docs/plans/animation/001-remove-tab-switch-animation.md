@@ -1,7 +1,7 @@
 # 001 — 移除 SummaryTabs 切换时的重挂载位移动画
 
 - **Status**: DONE
-- **Commit**: 8855ece
+- **Commit**: 9381050
 - **Severity**: HIGH
 - **Category**: Purpose & frequency / Interruptibility
 - **Estimated scope**: 1 file，~2 行

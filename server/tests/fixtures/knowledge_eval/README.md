@@ -19,7 +19,7 @@ From `server/`:
 ```bash
 uv run python scripts/knowledge_eval.py
 uv run python scripts/knowledge_eval.py --split holdout
-uv run pytest tests/test_knowledge_eval.py -q
+uv run --extra dev pytest tests/test_knowledge_eval.py -q
 ```
 
 ## Private / real corpus (later)
