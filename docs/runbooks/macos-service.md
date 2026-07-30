@@ -30,6 +30,14 @@ uv sync --extra asr-mlx   # Apple Silicon；跨平台 CPU ASR 用 --extra asr
 ```
 
 4. 端口 **17821** 空闲（若 `dev.sh` 或旧进程占用，先停掉）。
+5. **ffmpeg / ffprobe**（无字幕下音频、yt-dlp 后处理需要）。终端里：
+
+```bash
+brew install ffmpeg
+which ffmpeg ffprobe   # 常见路径：/opt/homebrew/bin/ffmpeg
+```
+
+LaunchAgent **默认 PATH 不含 Homebrew**。`mac-service.sh install` 会把 `/opt/homebrew/bin` 等写进 plist；装完 ffmpeg 后请再跑一次 `install` 或 `restart`（改过模板后需 `install` 重写 plist）。
 
 ## 安装 / 卸载
 
@@ -88,6 +96,26 @@ bash scripts/mac-service.sh start
 ```
 
 两边都监听 **17821**，不可同时开。脚本在 install/start 时若发现端口被其它进程占用会告警。
+
+## 故障：`ffprobe and ffmpeg not found`
+
+任务卡在 `DOWNLOADING_AUDIO`，报错类似：
+
+```text
+ERROR: Postprocessing: ffprobe and ffmpeg not found. Please install or provide the path using --ffmpeg-location
+```
+
+1. 终端确认已安装：`which ffmpeg && ffmpeg -version`
+2. 未安装：`brew install ffmpeg`
+3. 已装但仍失败（常见于 launchd）：重新写入服务 PATH 并重启：
+
+```bash
+bash scripts/mac-service.sh install
+# 或至少
+bash scripts/mac-service.sh restart
+```
+
+4. 页面上对失败任务 **重试**（或重新提交该视频）。
 
 ## 备份（仍然推荐）
 

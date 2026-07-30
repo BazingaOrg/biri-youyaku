@@ -87,26 +87,57 @@ warn_port_conflict() {
   done
 }
 
+# PATH for launchd: interactive shells include Homebrew; LaunchAgents do not.
+service_path() {
+  local path_extra=""
+  # Prefer dirs that actually exist so we don't mislead debugging.
+  for d in /opt/homebrew/bin /opt/homebrew/sbin /usr/local/bin /usr/local/sbin; do
+    if [ -d "${d}" ]; then
+      path_extra="${path_extra}${d}:"
+    fi
+  done
+  # Keep user login PATH tail if set, else standard system paths.
+  echo "${path_extra}${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+}
+
+check_ffmpeg() {
+  local path_for_which
+  path_for_which="$(service_path)"
+  if ! PATH="${path_for_which}" command -v ffmpeg >/dev/null 2>&1 \
+    || ! PATH="${path_for_which}" command -v ffprobe >/dev/null 2>&1; then
+    echo "warning: ffmpeg/ffprobe not found on service PATH." >&2
+    echo "         Audio download (yt-dlp) and some ASR paths need them." >&2
+    echo "         Install: brew install ffmpeg" >&2
+    echo "         Then:    bash scripts/mac-service.sh install   # rewrite PATH in plist" >&2
+  fi
+}
+
 write_plist() {
-  local uv_path
+  local uv_path svc_path
   uv_path="$(resolve_uv)"
+  svc_path="$(service_path)"
   require_template
   require_env
   mkdir -p "${LOG_DIR}"
   mkdir -p "$(dirname "${PLIST_DST}")"
 
   # Escape nothing special — absolute paths only; sed substitutes placeholders.
+  # Use | delimiter; PATH may contain : but not typically |.
   sed \
     -e "s|__LABEL__|${LABEL}|g" \
     -e "s|__UV__|${uv_path}|g" \
     -e "s|__SERVER_DIR__|${SERVER_DIR}|g" \
     -e "s|__LOG_DIR__|${LOG_DIR}|g" \
+    -e "s|__PATH__|${svc_path}|g" \
+    -e "s|__HOME__|${HOME}|g" \
     "${TEMPLATE}" > "${PLIST_DST}"
 
   info "wrote ${PLIST_DST}"
   info "uv=${uv_path}"
   info "WorkingDirectory=${SERVER_DIR}"
+  info "PATH=${svc_path}"
   info "logs=${LOG_DIR}"
+  check_ffmpeg
 }
 
 bootout_if_loaded() {

@@ -22,6 +22,15 @@
 	<key>WorkingDirectory</key>
 	<string>__SERVER_DIR__</string>
 
+	<!-- launchd default PATH is minimal (no Homebrew). yt-dlp / ASR need ffmpeg+ffprobe. -->
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>__PATH__</string>
+		<key>HOME</key>
+		<string>__HOME__</string>
+	</dict>
+
 	<!-- LaunchAgent: runs as the installing user; do not set UserName. -->
 	<key>RunAtLoad</key>
 	<true/>
