@@ -42,3 +42,18 @@
 - CLI 默认 **隔离 temp DB**，stdout JSON，`gates_met` → exit 0/1；`--fixtures` / `--split`。
 - CI `manifest.json` thresholds 仅针对 synthetic 小语料，**不等于**主计划生产 holdout 门槛；`KNOWLEDGE_CHAT_ENABLED` 仍默认 false。
 - 私有语料：同布局目录 + `--fixtures`（见 fixtures README）；不提交真实用户内容。
+
+## Review issues / root causes
+
+- 私有语料建议目录未实际加入 `.gitignore`，README 与仓库保护规则脱节。
+- no-answer 仅查询 summary FTS，未复用生产 search 的分层 `retrieve()`，会漏掉 transcript-only evidence。
+- transcript Recall 将分层返回的 summary 与 transcript 混合去重，summary 命中可错误满足 transcript 指标。
+- gate 对缺失/拼错 threshold 及 seed 注册失败均未 fail-closed，可能产生假绿。
+
+## 修复实施记录
+
+- `.gitignore` 精确忽略 `server/tests/fixtures/knowledge_eval_private/`。
+- no-answer 改用生产 search 相同的 `retrieve(..., mode="search")`；transcript 指标仅计 `source_level == "transcript"` evidence。
+- gate 要求全部既定指标阈值存在且为 0–1 的有限非 bool 数值；未知或非法阈值以结构化 failure 拒绝通过。
+- runner 将空 corpus 与 seed 注册不完整合入 gate failure，并新增相关回归测试。
+- 偏差：无。
