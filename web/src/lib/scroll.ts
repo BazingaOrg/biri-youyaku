@@ -1,5 +1,8 @@
-/** 尊重系统「减弱动态效果」的平滑滚动：reduce 时退化为瞬时跳转。 */
+/** 尊重系统「减弱动态效果」的滚动行为：reduce 时退化为瞬时跳转。 */
+export function preferredScrollBehavior(): ScrollBehavior {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+}
+
 export function smoothScrollTo(options: ScrollToOptions) {
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  window.scrollTo({...options, behavior: reduce ? 'auto' : 'smooth'})
+  window.scrollTo({...options, behavior: preferredScrollBehavior()})
 }

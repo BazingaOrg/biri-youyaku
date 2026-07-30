@@ -1,5 +1,6 @@
 import {useEffect, useRef} from 'react'
 import type {WeeklySummary} from '../lib/api'
+import {preferredScrollBehavior} from '../lib/scroll'
 
 type WeeklySummaryStatus = WeeklySummary['status']
 
@@ -104,7 +105,7 @@ export function WeekNavigator({
     const node = selectedRef.current
     if (!scroller || !node) return
     const target = node.offsetLeft - scroller.clientWidth / 2 + node.offsetWidth / 2
-    scroller.scrollTo({left: Math.max(0, target), behavior: 'smooth'})
+    scroller.scrollTo({left: Math.max(0, target), behavior: preferredScrollBehavior()})
   }, [selectedWeek, chronological.length])
 
   let lastLabelKey = ''

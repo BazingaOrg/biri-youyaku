@@ -4,6 +4,9 @@ import {ApiError, getLatestDistillRun, startDistill, type DistillRun} from '../.
 import {ConfirmDialog} from '../../components/ConfirmDialog'
 import {useToast} from '../../components/ToastProvider'
 
+export const DISTILL_DESCRIPTION =
+  '会处理该 UP 的投稿视频和可用字幕，生成语料包，并为尚未转写的投稿补齐转写。ASR 在本地跑，视频数量多时可能耗时很久（几小时到几天），可以随时取消，重进页面也能看到进度。'
+
 function getVideoLimit(value: string): number | null {
   const limit = Number(value)
   return Number.isInteger(limit) && limit >= 1 && limit <= 200 ? limit : null
@@ -63,10 +66,7 @@ export function DistillButton({mid, onStarted}: {mid: number; onStarted: (run: D
         title="蒸馏该 UP 的语料"
         description={
           <div className="grid gap-3">
-            <p>
-              会抓取该 UP 的历史动态，并为尚未转写的投稿补齐转写。ASR 在本地跑，视频数量多时可能
-              耗时很久（几小时到几天），可以随时取消，重进页面也能看到进度。
-            </p>
+            <p>{DISTILL_DESCRIPTION}</p>
             <label className="grid gap-1 text-left">
               <span className="text-xs text-muted">视频范围（默认 50；数量越大越耗时，建议不超过 200）</span>
               <input
