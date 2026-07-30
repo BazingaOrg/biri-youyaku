@@ -3,7 +3,7 @@
 [中文](#配置参考) | [English](#configuration)
 
 `server/.env` 的所有可调项，默认值见 `server/biri_youyaku/config.py`。
-对应模板：`server/.env.example`。
+对应模板：`server/.env.example`（**开关与常用项一律显式写出**，与代码默认一致；拷贝后按需改）。
 
 ---
 
@@ -65,7 +65,8 @@
 ## Configuration
 
 All tunable settings live in `server/.env`; defaults are in
-`server/biri_youyaku/config.py`. Template: `server/.env.example`.
+`server/biri_youyaku/config.py`. Template: `server/.env.example`
+(booleans and common keys are written out explicitly; edit after copy).
 
 | Group | Variable | Default | Notes |
 | --- | --- | --- | --- |
