@@ -5,6 +5,28 @@
 `server/.env` 的所有可调项，默认值见 `server/biri_youyaku/config.py`。
 对应模板：`server/.env.example`（**开关与常用项一律显式写出**，与代码默认一致；拷贝后按需改）。
 
+### 配置何时生效（必读）
+
+| 机制 | 含义 |
+| --- | --- |
+| **进程启动时读入** | 后端用 pydantic-settings 读 `server/.env`（相对 **进程 CWD**，LaunchAgent 为 `server/`）。`get_settings()` 有进程内缓存，**改 .env 后必须重启**（`bash scripts/mac-service.sh restart`），不会热更新。 |
+| **启动时定死、重启才变** | `APP_CORS_ORIGINS`（CORS 中间件）、`MAX_CONCURRENT_JOBS` / `MAX_CONCURRENT_SUMMARIES`（信号量）、日志级别、几乎所有 `settings.*`。 |
+| **有额外缓存** | ASR 模型（首次加载后常驻）、LLM HTTP client 按 (key, base_url, timeout) 缓存——换 key 会新开 client，但旧进程仍用旧 `settings` 里的默认 key，直到重启。 |
+| **前端构建期写死** | `VITE_API_BASE_URL`、`VITE_API_TOKEN` 打进 JS bundle，**改 web/.env 后必须重新 `npm run build` / 重新部署**。 |
+| **前端运行时拉取** | `/v1/config/runtime` 的能力开关（邮件是否配好、知识库 chat/search 等）；知识库页会强制重拉。其它页可能短时缓存，改后端后建议硬刷新。 |
+| **依赖项 ≠ .env** | `uv sync --extra asr-mlx`、本机 `ffmpeg` 在 PATH 里——不在 .env 里，装完/改 PATH 后也要重启服务。 |
+
+**改完 .env 的标准动作：** 保存 → `mac-service.sh restart`（或停掉前台 uvicorn 再起）→ 浏览器硬刷新；若改了 CORS/域名，前端可能还要重建。
+
+**布尔值：** 用 `true` / `false`（小写推荐）。`1`/`0` 一般也可；不要留空当 true。
+
+**自检后端是否读到当前配置：**
+
+```bash
+curl -sS http://127.0.0.1:17821/v1/config/runtime | python3 -m json.tool
+# knowledge_chat_enabled / knowledge_search_enabled / email_configured / auth_mode 等
+```
+
 ---
 
 ## 配置参考
