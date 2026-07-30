@@ -25,3 +25,14 @@ export function loadRuntimeConfig(): Promise<RuntimeConfig> {
   return cached
 }
 
+/** Drop cache so knowledge chat / search flags re-fetch after .env + backend restart. */
+export function clearRuntimeConfigCache(): void {
+  cached = null
+}
+
+/** Always hit the network (used by KnowledgePage so ask-toggle is not stuck false). */
+export function reloadRuntimeConfig(): Promise<RuntimeConfig> {
+  clearRuntimeConfigCache()
+  return loadRuntimeConfig()
+}
+

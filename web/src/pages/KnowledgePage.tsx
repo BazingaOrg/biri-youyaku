@@ -95,7 +95,8 @@ function HitCard({hit}: {hit: KnowledgeSearchHit}) {
 
 export function KnowledgePage() {
   const [, navigate] = useLocation()
-  const runtime = useRuntimeConfig()
+  // fresh: avoid sticky module cache after enabling KNOWLEDGE_CHAT_ENABLED + restart.
+  const runtime = useRuntimeConfig({fresh: true})
   const [status, setStatus] = useState<KnowledgeStatus | null>(null)
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<QueryMode>('search')
@@ -105,13 +106,15 @@ export function KnowledgePage() {
   const [searchError, setSearchError] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState(false)
 
-  // Prefer knowledge status (auth'd, same process flags) over runtime probe.
-  // Runtime FALLBACK used to set knowledge_chat_enabled=false, and `??` does not
-  // fall through on false — so a failed /config/runtime hid the ask toggle even
-  // when /knowledge/status returned chat_enabled=true.
-  const chatEnabled = Boolean(status?.chat_enabled ?? runtime?.knowledge_chat_enabled)
+  // Prefer /v1/knowledge/status when loaded; fall back to /v1/config/runtime.
+  // Either true enables the ask toggle (status can lag if only runtime refreshed).
+  const chatEnabled = Boolean(
+    status?.chat_enabled === true || runtime?.knowledge_chat_enabled === true,
+  )
   const searchEnabled = Boolean(
-    status?.search_enabled ?? runtime?.knowledge_search_enabled ?? true,
+    status != null
+      ? status.search_enabled
+      : (runtime?.knowledge_search_enabled ?? true),
   )
   const activeMode: QueryMode = chatEnabled ? mode : 'search'
 
