@@ -282,11 +282,6 @@ export function KnowledgePage() {
     }
   }
 
-  const toggleMode = () => {
-    if (!chatEnabled || busy) return
-    setMode((current) => (current === 'search' ? 'ask' : 'search'))
-  }
-
   const busy = activeMode === 'ask' ? chatBusy : searching
   const isAsk = activeMode === 'ask'
   const submitLabel = isAsk ? '提问' : '搜索'
@@ -295,7 +290,7 @@ export function KnowledgePage() {
     : '搜总结或转写里的关键词、数字、术语…'
 
   const subtitle = chatEnabled
-    ? '点输入框左侧图标可在「检索」与「提问」间切换；事实与数字优先引用转写时间段。'
+    ? '可切换「检索」关键词或「提问」问答；事实与数字优先引用转写时间段。'
     : '在 AI 总结与转写片段中检索；列表默认显示摘录，可展开全文。'
 
   const purgeExpected =
@@ -393,33 +388,56 @@ export function KnowledgePage() {
         ) : (
           <>
             <div className="border-y border-line/70 py-3">
+              {chatEnabled && (
+                <div
+                  className="mb-3 inline-flex rounded-2xl bg-lift p-1 ring-1 ring-line/70"
+                  role="tablist"
+                  aria-label="知识库模式"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={!isAsk}
+                    disabled={busy}
+                    onClick={() => setMode('search')}
+                    className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl px-3 text-sm transition ${
+                      !isAsk
+                        ? 'bg-panel font-medium text-ink shadow-card'
+                        : 'text-muted hover:text-ink'
+                    } disabled:opacity-40`}
+                  >
+                    <Search size={15} />
+                    检索
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={isAsk}
+                    disabled={busy}
+                    onClick={() => setMode('ask')}
+                    className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl px-3 text-sm transition ${
+                      isAsk
+                        ? 'bg-panel font-medium text-ink shadow-card'
+                        : 'text-muted hover:text-ink'
+                    } disabled:opacity-40`}
+                  >
+                    <MessageCircle size={15} />
+                    提问
+                  </button>
+                </div>
+              )}
               <form onSubmit={onSubmit} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                 <label className="relative block min-w-0">
-                  {chatEnabled ? (
-                    <button
-                      type="button"
-                      onClick={toggleMode}
-                      disabled={busy}
-                      title={isAsk ? '当前：提问，点击改为检索' : '当前：检索，点击改为提问'}
-                      aria-label={isAsk ? '切换为检索' : '切换为提问'}
-                      className="absolute left-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-xl text-muted transition hover:bg-line/60 hover:text-ink disabled:opacity-40"
-                    >
-                      {isAsk ? <MessageCircle size={16} /> : <Search size={16} />}
-                    </button>
-                  ) : (
-                    <Search
-                      size={15}
-                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
-                    />
-                  )}
+                  <Search
+                    size={15}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+                  />
                   <input
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder={placeholder}
                     disabled={busy}
-                    className={`min-h-11 w-full rounded-2xl bg-lift py-2 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30 disabled:opacity-60 ${
-                      chatEnabled ? 'pl-11' : 'pl-10'
-                    }`}
+                    className="min-h-11 w-full rounded-2xl bg-lift py-2 pl-10 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30 disabled:opacity-60"
                   />
                 </label>
                 <button
