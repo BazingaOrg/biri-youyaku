@@ -106,6 +106,14 @@ All tunable settings live in `server/.env`; defaults are in
 `server/biri_youyaku/config.py`. Template: `server/.env.example`
 (booleans and common keys are written out explicitly; edit after copy).
 
+### When settings take effect
+
+- **Server**: almost all vars load once at process start (cached `Settings`). After editing `server/.env`, **restart** the API (`bash scripts/mac-service.sh restart`). CWD must be `server/` so `.env` is found (LaunchAgent does this).
+- **CORS / concurrency caps / log level**: also require process restart (wired at app import / lifespan).
+- **Frontend `VITE_*`**: baked at **build** time — rebuild/redeploy after change.
+- **Runtime flags** (`/v1/config/runtime`): reflect the running process; Knowledge page re-fetches. Hard-refresh the browser after backend restart.
+- **Not in .env**: `uv sync --extra asr-mlx`, `ffmpeg` on `PATH` — install then restart.
+
 | Group | Variable | Default | Notes |
 | --- | --- | --- | --- |
 | App | `APP_LOG_LEVEL` | `INFO` | uvicorn / app log level |
