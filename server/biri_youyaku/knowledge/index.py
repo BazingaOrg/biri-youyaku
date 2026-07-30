@@ -160,7 +160,9 @@ def index_summary_revision(
     return len(chunks)
 
 
-def _active_summary_rows(*, limit: int | None = None) -> list[dict[str, Any]]:
+def _active_summary_rows(
+    *, limit: int | None = None, only_missing: bool = False
+) -> list[dict[str, Any]]:
     sql = """
         SELECT
           sr.id AS revision_id,
@@ -169,6 +171,15 @@ def _active_summary_rows(*, limit: int | None = None) -> list[dict[str, Any]]:
         FROM knowledge_summary_revisions sr
         JOIN knowledge_artifacts a ON a.id = sr.artifact_id
         WHERE sr.is_active = 1
+    """
+    if only_missing:
+        sql += """
+          AND NOT EXISTS (
+            SELECT 1 FROM knowledge_rag_chunks c
+            WHERE c.summary_revision_id = sr.id
+          )
+        """
+    sql += """
         ORDER BY sr.created_at DESC
     """
     params: list[Any] = []
@@ -241,7 +252,7 @@ def index_document_active_summary(document_id: str) -> int:
 
 def index_active_summaries(*, limit: int | None = None, only_missing: bool = True) -> int:
     """Index active summary revisions. Returns number of revisions indexed."""
-    rows = _active_summary_rows(limit=limit)
+    rows = _active_summary_rows(limit=limit, only_missing=only_missing)
     indexed = 0
     for row in rows:
         if only_missing and _revision_has_chunks(row["revision_id"]):
@@ -351,9 +362,10 @@ def index_content_revision(
     return len(windows)
 
 
-def _latest_content_revision_rows(*, limit: int | None = None) -> list[dict[str, Any]]:
+def _latest_content_revision_rows(
+    *, limit: int | None = None, only_missing: bool = False
+) -> list[dict[str, Any]]:
     """One row per document: latest content revision (by created_at)."""
-    # Python-side dedupe: ORDER BY created_at DESC then first row per document.
     sql = """
         SELECT
           cr.id AS content_revision_id,
@@ -363,21 +375,31 @@ def _latest_content_revision_rows(*, limit: int | None = None) -> list[dict[str,
           cr.created_at AS created_at
         FROM knowledge_content_revisions cr
         JOIN knowledge_artifacts a ON a.id = cr.artifact_id
+        WHERE cr.id = (
+          SELECT cr2.id FROM knowledge_content_revisions cr2
+          WHERE cr2.document_id = cr.document_id
+          ORDER BY cr2.created_at DESC
+          LIMIT 1
+        )
+    """
+    if only_missing:
+        sql += """
+          AND NOT EXISTS (
+            SELECT 1 FROM knowledge_transcript_chunks c
+            WHERE c.content_revision_id = cr.id
+          )
+        """
+    sql += """
         ORDER BY cr.created_at DESC
     """
+    if limit is not None:
+        sql += " LIMIT ?"
+        params: list[Any] = [int(limit)]
+    else:
+        params = []
     with connect() as connection:
-        rows = connection.execute(sql).fetchall()
-    seen: set[str] = set()
-    out: list[dict[str, Any]] = []
-    for row in rows:
-        doc_id = row["document_id"]
-        if doc_id in seen:
-            continue
-        seen.add(doc_id)
-        out.append(dict(row))
-        if limit is not None and len(out) >= int(limit):
-            break
-    return out
+        rows = connection.execute(sql, params).fetchall()
+    return [dict(row) for row in rows]
 
 
 def _content_revision_has_chunks(content_revision_id: str) -> bool:
@@ -456,7 +478,7 @@ def index_active_transcripts(*, limit: int | None = None, only_missing: bool = T
     """Index latest content revision per document. Returns revisions indexed."""
     if not settings.knowledge_transcript_index_enabled:
         return 0
-    rows = _latest_content_revision_rows(limit=limit)
+    rows = _latest_content_revision_rows(limit=limit, only_missing=only_missing)
     indexed = 0
     for row in rows:
         if only_missing and _content_revision_has_chunks(row["content_revision_id"]):

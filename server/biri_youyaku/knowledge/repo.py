@@ -11,6 +11,7 @@ from biri_youyaku.knowledge.model import (
     ARTIFACT_KIND_SUMMARY,
     ARTIFACT_KIND_TRANSCRIPT_RAW,
     JobLink,
+    MAX_RECONCILE_ATTEMPTS,
     PROVIDER_BILIBILI,
     ReconcileRow,
 )
@@ -516,21 +517,47 @@ def list_artifact_paths(document_id: str) -> list[str]:
     return [row["storage_path"] for row in rows]
 
 
-def list_completed_jobs_with_summary(*, limit: int = 200) -> list[str]:
-    """Return job ids eligible for knowledge registration scan (lite)."""
+def list_reconcilable_completed_jobs(*, limit: int = 50) -> list[str]:
+    """Return completed jobs that reconcile may actually attempt, newest first."""
     from biri_youyaku.jobs.model import JobStatus
 
     with connect() as connection:
         rows = connection.execute(
             """
-            SELECT id FROM jobs
-            WHERE status = ?
-              AND summary_path IS NOT NULL
-              AND summary_path != ''
-            ORDER BY completed_at DESC, created_at DESC
+            SELECT j.id FROM jobs j
+            LEFT JOIN knowledge_reconcile r ON r.job_id = j.id
+            LEFT JOIN knowledge_job_links l ON l.job_id = j.id
+            WHERE j.status = ?
+              AND j.summary_path IS NOT NULL
+              AND j.summary_path != ''
+              AND (
+                r.job_id IS NULL
+                OR (r.status = 'registered' AND l.job_id IS NULL)
+                OR (
+                  r.status = 'skipped'
+                  AND COALESCE(r.reason, '') NOT IN (
+                    'task_type_distill', 'task_type_audio',
+                    'knowledge_register_disabled', 'not_completed', 'missing_summary_path'
+                  )
+                  AND COALESCE(r.reason, '') NOT LIKE 'task_type_%'
+                )
+                OR (
+                  r.status = 'failed'
+                  AND (
+                    r.attempts < ?
+                    OR (
+                      r.reason = 'missing_bvid_or_cid'
+                      AND TRIM(COALESCE(j.bvid, '')) != ''
+                      AND j.cid IS NOT NULL
+                    )
+                  )
+                )
+                OR r.status NOT IN ('registered', 'skipped', 'failed')
+              )
+            ORDER BY j.completed_at DESC, j.created_at DESC
             LIMIT ?
             """,
-            (JobStatus.COMPLETED.value, limit),
+            (JobStatus.COMPLETED.value, MAX_RECONCILE_ATTEMPTS, limit),
         ).fetchall()
     return [row["id"] for row in rows]
 
@@ -554,7 +581,7 @@ __all__ = [
     "insert_artifact",
     "insert_summary_revision",
     "list_artifact_paths",
-    "list_completed_jobs_with_summary",
+    "list_reconcilable_completed_jobs",
     "set_reconcile",
     "set_summary_revision_active",
     "unlink_job",

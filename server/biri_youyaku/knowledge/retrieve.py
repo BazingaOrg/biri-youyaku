@@ -384,11 +384,17 @@ def retrieve(
     )
 
     # Merge with caps: summary first (discovery), then transcript evidence.
+    # When evidence exists, reserve one slot for it so summary discovery cannot
+    # crowd it out at the public API's small default limits.
+    summary_budget = _MAX_SUMMARY_HITS
+    if expanded:
+        summary_budget = min(summary_budget, total_limit - 1)
+
     result: list[EvidenceHit] = []
     seen_final: set[str] = set()
     summary_count = 0
     for hit in summary_hits:
-        if summary_count >= _MAX_SUMMARY_HITS:
+        if summary_count >= summary_budget:
             break
         if hit.chunk_id in seen_final:
             continue

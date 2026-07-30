@@ -16,15 +16,18 @@ from biri_youyaku.jobs.repo import now_ms
 from biri_youyaku.knowledge import try_register_job
 from biri_youyaku.knowledge.chunker import window_transcript_segments
 from biri_youyaku.knowledge import index as knowledge_index
+from biri_youyaku.knowledge import repo as knowledge_repo
 from biri_youyaku.knowledge.chat import stream_chat
 from biri_youyaku.knowledge.model import RECONCILE_REGISTERED
 from biri_youyaku.knowledge.retrieve import (
+    EvidenceHit,
     format_mmss,
     query_needs_transcript_evidence,
     retrieve,
     transcript_locator,
 )
-from biri_youyaku.knowledge.search import search_summaries
+from biri_youyaku.knowledge.search import Hit, search_summaries
+import biri_youyaku.knowledge.retrieve as retrieve_module
 from biri_youyaku.modules.transcript import TranscriptItem
 
 
@@ -175,7 +178,144 @@ def test_register_indexes_transcript_chunks(monkeypatch, tmp_path):
     assert row["subtitle_source"] == "platform"
 
 
+def test_startup_index_reaches_old_missing_summary_and_transcript(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    old = _make_completed_job(
+        bvid="BV1oldindex",
+        cid=1,
+        title="Old missing",
+        summary_body="## TL;DR\nOldSummaryNeedle\n",
+        transcript=[{"start": 0, "end": 1, "text": "OldTranscriptNeedle"}],
+    )
+    assert try_register_job(old.id) == RECONCILE_REGISTERED
+    old_link = knowledge_repo.get_job_link(old.id)
+    assert old_link is not None
+    with db.connect() as connection:
+        connection.execute(
+            "UPDATE knowledge_summary_revisions SET created_at = 1 WHERE id = ?",
+            (old_link.summary_revision_id,),
+        )
+        connection.execute(
+            "UPDATE knowledge_content_revisions SET created_at = 1 WHERE id = ?",
+            (old_link.content_revision_id,),
+        )
+        connection.execute(
+            "DELETE FROM knowledge_rag_chunks_fts WHERE summary_revision_id = ?",
+            (old_link.summary_revision_id,),
+        )
+        connection.execute(
+            "DELETE FROM knowledge_rag_chunks WHERE summary_revision_id = ?",
+            (old_link.summary_revision_id,),
+        )
+        connection.execute(
+            "DELETE FROM knowledge_transcript_chunks_fts WHERE content_revision_id = ?",
+            (old_link.content_revision_id,),
+        )
+        connection.execute(
+            "DELETE FROM knowledge_transcript_chunks WHERE content_revision_id = ?",
+            (old_link.content_revision_id,),
+        )
+
+    for index in range(100):
+        job = _make_completed_job(
+            bvid=f"BV1newindex{index:03d}",
+            cid=index + 2,
+            title=f"New {index}",
+            summary_body=f"## TL;DR\nNewSummary{index}\n",
+            transcript=[{"start": 0, "end": 1, "text": f"NewTranscript{index}"}],
+        )
+        assert try_register_job(job.id) == RECONCILE_REGISTERED
+        link = knowledge_repo.get_job_link(job.id)
+        assert link is not None
+        with db.connect() as connection:
+            connection.execute(
+                "UPDATE knowledge_summary_revisions SET created_at = ? WHERE id = ?",
+                (index + 2, link.summary_revision_id),
+            )
+            connection.execute(
+                "UPDATE knowledge_content_revisions SET created_at = ? WHERE id = ?",
+                (index + 2, link.content_revision_id),
+            )
+
+    assert knowledge_index.index_active_summaries(limit=100, only_missing=True) == 1
+    assert knowledge_index.index_active_transcripts(limit=100, only_missing=True) == 1
+    assert knowledge_index.count_summary_chunks() >= 101
+    assert knowledge_index.count_transcript_chunks() >= 101
+
+
 # --- layered retrieval ---
+
+
+def _summary_hit(index: int) -> Hit:
+    return Hit(
+        chunk_id=f"summary-{index}",
+        document_id=f"doc-{index}",
+        summary_revision_id="summary-revision",
+        title="Summary",
+        author=None,
+        bvid=None,
+        source_url=None,
+        heading_path="TL;DR",
+        chunk_text=f"summary {index}",
+        snippet=f"summary {index}",
+        score=float(index),
+    )
+
+
+def _transcript_hit() -> EvidenceHit:
+    return EvidenceHit(
+        chunk_id="transcript-1",
+        document_id="transcript-doc",
+        source_level="transcript",
+        title="Transcript",
+        author=None,
+        bvid=None,
+        source_url=None,
+        heading_path=None,
+        start_sec=10.0,
+        end_sec=20.0,
+        subtitle_source="platform",
+        chunk_text="transcript evidence",
+        snippet="transcript evidence",
+        score=0.0,
+        locator="转写：00:10–00:20",
+        content_revision_id="content-revision",
+        chunk_ord=0,
+    )
+
+
+def test_retrieve_reserves_slot_for_transcript_evidence(monkeypatch):
+    transcript = _transcript_hit()
+    monkeypatch.setattr(retrieve_module, "search_summaries", lambda *_args, **_kwargs: [_summary_hit(i) for i in range(6)])
+    monkeypatch.setattr(retrieve_module, "_search_transcripts", lambda *_args, **_kwargs: [transcript])
+    monkeypatch.setattr(retrieve_module, "_load_adjacent_transcript_chunks", lambda *_args, **_kwargs: [transcript])
+
+    hits = retrieve("quota", limit=6)
+
+    assert len(hits) <= 6
+    assert any(hit.source_level == "transcript" for hit in hits)
+
+
+def test_retrieve_allows_summaries_to_fill_limit_without_transcript(monkeypatch):
+    monkeypatch.setattr(retrieve_module, "search_summaries", lambda *_args, **_kwargs: [_summary_hit(i) for i in range(6)])
+    monkeypatch.setattr(retrieve_module, "_search_transcripts", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(retrieve_module, "_load_adjacent_transcript_chunks", lambda *_args, **_kwargs: [])
+
+    hits = retrieve("quota", limit=6)
+
+    assert len(hits) == 6
+    assert all(hit.source_level == "summary" for hit in hits)
+
+
+def test_retrieve_limit_one_prefers_available_transcript_evidence(monkeypatch):
+    transcript = _transcript_hit()
+    monkeypatch.setattr(retrieve_module, "search_summaries", lambda *_args, **_kwargs: [_summary_hit(1)])
+    monkeypatch.setattr(retrieve_module, "_search_transcripts", lambda *_args, **_kwargs: [transcript])
+    monkeypatch.setattr(retrieve_module, "_load_adjacent_transcript_chunks", lambda *_args, **_kwargs: [transcript])
+
+    hits = retrieve("quota", limit=1)
+
+    assert hits == [transcript]
 
 
 def test_layered_summary_discovery_and_global_transcript_fallback(monkeypatch, tmp_path):

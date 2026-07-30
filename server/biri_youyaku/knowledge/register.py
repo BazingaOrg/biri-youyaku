@@ -105,7 +105,12 @@ def _register_job(job: Job) -> str:
 
     if existing is not None and existing.status == RECONCILE_FAILED:
         if existing.attempts >= MAX_RECONCILE_ATTEMPTS:
-            return RECONCILE_FAILED
+            if not (
+                existing.reason == "missing_bvid_or_cid"
+                and (job.bvid or "").strip()
+                and job.cid is not None
+            ):
+                return RECONCILE_FAILED
 
     # Eligibility.
     if job.status != JobStatus.COMPLETED:

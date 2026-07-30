@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from biri_youyaku.config import settings
+from biri_youyaku.jobs import repo as jobs_repo
 from biri_youyaku.knowledge import repo as knowledge_repo
 from biri_youyaku.knowledge.model import (
     MAX_RECONCILE_ATTEMPTS,
@@ -33,7 +34,12 @@ def _should_attempt(job_id: str) -> bool:
             return False
         return True
     if row.status == RECONCILE_FAILED:
-        return row.attempts < MAX_RECONCILE_ATTEMPTS
+        if row.attempts < MAX_RECONCILE_ATTEMPTS:
+            return True
+        if row.reason != "missing_bvid_or_cid":
+            return False
+        job = jobs_repo.get_job(job_id)
+        return job is not None and bool((job.bvid or "").strip()) and job.cid is not None
     # pending or unknown
     return True
 
@@ -50,7 +56,7 @@ def reconcile_once(limit: int = 50) -> dict[str, int]:
     if not settings.knowledge_register_enabled:
         return counts
     try:
-        job_ids = knowledge_repo.list_completed_jobs_with_summary(limit=max(limit * 4, 200))
+        job_ids = knowledge_repo.list_reconcilable_completed_jobs(limit=limit)
         for job_id in job_ids:
             if counts["attempted"] >= limit:
                 break

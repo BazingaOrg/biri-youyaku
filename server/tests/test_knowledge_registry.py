@@ -282,6 +282,75 @@ def test_reconcile_once_registers_historical(monkeypatch, tmp_path):
     assert knowledge_repo.get_reconcile(job.id).status == RECONCILE_REGISTERED
 
 
+def test_reconcile_reaches_old_pending_after_newer_registered_jobs(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    old_job, _ = _make_completed_job(bvid="BV1oldpending", cid=1)
+    with db.connect() as connection:
+        connection.execute("UPDATE jobs SET completed_at = 1 WHERE id = ?", (old_job.id,))
+
+    for index in range(201):
+        job, _ = _make_completed_job(bvid=f"BV1new{index:08d}", cid=index + 2)
+        knowledge_repo.set_reconcile(job.id, status=RECONCILE_REGISTERED)
+        document_id = knowledge_repo.upsert_document(
+            external_bvid=job.bvid,
+            external_cid=job.cid,
+            title=job.title,
+            author=job.author,
+            mid=job.mid,
+            source_url=job.url,
+        )
+        knowledge_repo.upsert_job_link(
+            job_id=job.id,
+            document_id=document_id,
+            summary_revision_id=None,
+            content_revision_id=None,
+        )
+        with db.connect() as connection:
+            connection.execute(
+                "UPDATE jobs SET completed_at = ? WHERE id = ?", (index + 2, job.id)
+            )
+
+    counts = reconcile_once(limit=1)
+    assert counts["attempted"] == 1
+    assert knowledge_repo.get_reconcile(old_job.id).status == RECONCILE_REGISTERED
+
+
+def test_metadata_repair_retries_only_missing_identity_exhaustion(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    repaired, _ = _make_completed_job(bvid="", cid=None)
+    for _ in range(5):
+        assert try_register_job(repaired.id) == RECONCILE_FAILED
+    jobs_repo.update_meta(
+        repaired.id,
+        bvid="BV1repaired01",
+        cid=11,
+        title="Repaired",
+        author="Author",
+        duration=12.0,
+        mid=42,
+    )
+
+    blocked, _ = _make_completed_job(bvid="BV1blocked001", cid=12)
+    knowledge_repo.set_reconcile(
+        blocked.id,
+        status=RECONCILE_FAILED,
+        reason="summary_file_missing",
+        increment_attempts=True,
+    )
+    for _ in range(4):
+        knowledge_repo.set_reconcile(
+            blocked.id,
+            status=RECONCILE_FAILED,
+            reason="summary_file_missing",
+            increment_attempts=True,
+        )
+
+    counts = reconcile_once(limit=10)
+    assert counts["registered"] == 1
+    assert knowledge_repo.get_reconcile(repaired.id).status == RECONCILE_REGISTERED
+    assert knowledge_repo.get_reconcile(blocked.id).attempts == 5
+
+
 def test_unlink_noop_without_link(monkeypatch, tmp_path):
     _setup(monkeypatch, tmp_path)
     # Should not raise when no knowledge row exists.
