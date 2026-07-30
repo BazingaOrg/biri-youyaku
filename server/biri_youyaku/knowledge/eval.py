@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -267,18 +268,28 @@ def run_eval(
         }
 
         if kind == "no_answer":
-            hits = search_summaries(text, limit=max(k_recall, k_mrr))
-            empty = len(hits) == 0
+            evidence = retrieve(text, mode="search", limit=max(k_recall, k_mrr))
+            empty = len(evidence) == 0
             no_answer_empty.append(1.0 if empty else 0.0)
             bucket["no_answer_empty"].append(1.0 if empty else 0.0)
             row["empty"] = empty
-            row["top_doc_keys"] = _unique_doc_keys_from_hits(hits, bvid_map=bvid_map)
+            row["top_doc_keys"] = _unique_doc_keys_from_hits(evidence, bvid_map=bvid_map)
             per_query.append(row)
             continue
 
         if layer == "transcript":
             evidence = retrieve(text, mode="search", limit=max(k_recall, 12))
-            ranked = _unique_doc_keys_from_hits(evidence, bvid_map=bvid_map)
+            transcript_evidence = [
+                hit
+                for hit in evidence
+                if (
+                    getattr(hit, "source_level", None)
+                    if not isinstance(hit, dict)
+                    else hit.get("source_level")
+                )
+                == "transcript"
+            ]
+            ranked = _unique_doc_keys_from_hits(transcript_evidence, bvid_map=bvid_map)
             rank = _first_gold_rank(ranked, gold_keys, k=k_recall)
             hit = rank is not None
             transcript_hits_flags.append(1.0 if hit else 0.0)
@@ -340,7 +351,7 @@ def run_eval(
 
 def evaluate_gates(
     report: dict[str, Any],
-    thresholds: dict[str, float],
+    thresholds: dict[str, Any],
 ) -> dict[str, Any]:
     """Compare metrics to thresholds. Missing metrics or empty eval → not met."""
     metrics = report.get("metrics") or {}
@@ -357,10 +368,52 @@ def evaluate_gates(
             }
         )
 
+    normalized_thresholds: dict[str, float] = {}
+    for key in thresholds:
+        if key not in _GATE_METRIC_KEYS:
+            failures.append(
+                {
+                    "metric": key,
+                    "actual": None,
+                    "threshold": thresholds[key],
+                    "reason": "unknown_threshold",
+                }
+            )
+
     for key in _GATE_METRIC_KEYS:
         if key not in thresholds:
+            failures.append(
+                {
+                    "metric": key,
+                    "actual": None,
+                    "threshold": None,
+                    "reason": "missing_threshold",
+                }
+            )
             continue
-        thr = float(thresholds[key])
+        value = thresholds[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            failures.append(
+                {
+                    "metric": key,
+                    "actual": None,
+                    "threshold": value,
+                    "reason": "invalid_threshold",
+                }
+            )
+            continue
+        thr = float(value)
+        if not math.isfinite(thr) or not 0 <= thr <= 1:
+            failures.append(
+                {
+                    "metric": key,
+                    "actual": None,
+                    "threshold": value,
+                    "reason": "invalid_threshold",
+                }
+            )
+            continue
+        normalized_thresholds[key] = thr
         actual = metrics.get(key)
         if actual is None:
             failures.append(
@@ -385,7 +438,7 @@ def evaluate_gates(
     return {
         "gates_met": len(failures) == 0,
         "failures": failures,
-        "thresholds": {k: float(thresholds[k]) for k in thresholds if k in _GATE_METRIC_KEYS or k in thresholds},
+        "thresholds": normalized_thresholds,
     }
 
 
@@ -440,6 +493,28 @@ def run_synthetic_eval(
         k_mrr=k_mrr,
     )
     gates = evaluate_gates(report, thresholds)
+    expected_doc_count = len(docs)
+    if expected_doc_count <= 0:
+        gates["failures"].append(
+            {
+                "metric": "seed",
+                "actual": expected_doc_count,
+                "threshold": 1,
+                "reason": "empty_corpus",
+            }
+        )
+    elif seed["failure_count"] > 0 or seed["registered_count"] != expected_doc_count:
+        gates["failures"].append(
+            {
+                "metric": "seed",
+                "actual": seed["registered_count"],
+                "threshold": expected_doc_count,
+                "reason": "seed_registration_incomplete",
+                "failure_count": seed["failure_count"],
+                "seed_failures": seed["failures"],
+            }
+        )
+    gates["gates_met"] = len(gates["failures"]) == 0
     return {
         "corpus": manifest.get("corpus", "unknown"),
         "fixtures_dir": str(fixtures),

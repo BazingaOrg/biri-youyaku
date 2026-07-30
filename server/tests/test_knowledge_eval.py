@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from biri_youyaku import db
 from biri_youyaku.config import settings
@@ -111,6 +112,96 @@ def test_empty_queries_do_not_claim_ready():
     assert gates["gates_met"] is False
     reasons = {f["reason"] for f in gates["failures"]}
     assert "empty_eval" in reasons or "missing_metric" in reasons
+
+
+def test_no_answer_uses_layered_retrieval(monkeypatch):
+    transcript_hit = SimpleNamespace(bvid="BVtranscript", source_level="transcript")
+    monkeypatch.setattr(
+        "biri_youyaku.knowledge.eval.retrieve", lambda *args, **kwargs: [transcript_hit]
+    )
+    report = run_eval(
+        queries=[{"id": "no-answer", "query": "npm install", "kind": "no_answer"}],
+        bvid_map={"BVtranscript": "doc_cli"},
+    )
+    assert report["metrics"]["no_answer_empty_rate"] == 0.0
+    assert report["per_query"][0]["empty"] is False
+
+
+def test_transcript_recall_ignores_summary_evidence(monkeypatch):
+    summary_hit = SimpleNamespace(bvid="BVsummary", source_level="summary")
+    monkeypatch.setattr(
+        "biri_youyaku.knowledge.eval.retrieve", lambda *args, **kwargs: [summary_hit]
+    )
+    report = run_eval(
+        queries=[
+            {
+                "id": "transcript",
+                "query": "npm install",
+                "kind": "answerable",
+                "layer": "transcript",
+                "gold_doc_keys": ["doc_cli"],
+            }
+        ],
+        bvid_map={"BVsummary": "doc_cli"},
+    )
+    assert report["metrics"]["transcript_doc_recall_at_5"] == 0.0
+
+
+def test_invalid_thresholds_fail_closed():
+    report = {
+        "metrics": {
+            "n_queries": 1,
+            "summary_recall_at_5": 1.0,
+            "summary_mrr_at_10": 1.0,
+            "no_answer_empty_rate": 1.0,
+            "transcript_doc_recall_at_5": 1.0,
+        }
+    }
+    cases = (
+        {},
+        {"summary_recall_at_5": 1.0},
+        {"typo": 1.0},
+        {
+            "summary_recall_at_5": True,
+            "summary_mrr_at_10": 1.0,
+            "no_answer_empty_rate": 1.0,
+            "transcript_doc_recall_at_5": 1.0,
+        },
+        {
+            "summary_recall_at_5": 1.1,
+            "summary_mrr_at_10": 1.0,
+            "no_answer_empty_rate": 1.0,
+            "transcript_doc_recall_at_5": 1.0,
+        },
+    )
+    for thresholds in cases:
+        gates = evaluate_gates(report, thresholds)
+        assert gates["gates_met"] is False
+        assert gates["failures"]
+
+
+def test_partial_seed_failure_fails_synthetic_runner(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "biri_youyaku.knowledge.eval.seed_eval_corpus",
+        lambda docs: {
+            "registered_count": len(docs) - 1,
+            "failure_count": 1,
+            "registered": [],
+            "failures": [{"doc_key": "doc_cli", "reason": "register_failed"}],
+        },
+    )
+    result = run_synthetic_eval(
+        fixtures_dir=default_fixtures_dir(),
+        root=tmp_path,
+        init_db=False,
+        configure_settings=False,
+    )
+    assert result["gates_met"] is False
+    assert any(
+        failure["reason"] == "seed_registration_incomplete"
+        for failure in result["gates"]["failures"]
+    )
 
 
 def test_empty_corpus_seed(monkeypatch, tmp_path):

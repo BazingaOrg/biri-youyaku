@@ -30,6 +30,7 @@ server/data/
 server/**/__pycache__/
 server/.pytest_cache/
 server/.ruff_cache/
+server/tests/fixtures/knowledge_eval_private/
 web/node_modules/
 web/dist/
 web/.env
