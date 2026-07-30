@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     llm_model: str = "deepseek-v4-flash"
     llm_timeout_seconds: int = Field(default=300, gt=0)
     llm_max_retries: int = 2
+    # None / 空字符串 = 走代码内默认温度（见 modules/llm/client.resolve_temperature）
     llm_temperature: float | None = None
     llm_chunk_token_threshold: int = 30000
     # 段级总结并发上限，>1 时长视频分段总结走 asyncio.gather。
@@ -123,6 +124,14 @@ class Settings(BaseSettings):
             for item in self.llm_base_url_allowed_hosts.split(",")
             if item.strip()
         ]
+
+    @field_validator("llm_temperature", mode="before")
+    @classmethod
+    def empty_temperature_as_none(cls, value: object):
+        # .env 里 `LLM_TEMPERATURE=` 会进成 ""，不能当 float 解析。
+        if value is None or value == "":
+            return None
+        return value
 
     @field_validator(
         "audio_storage_dir",
