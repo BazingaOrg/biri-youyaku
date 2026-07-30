@@ -105,9 +105,13 @@ export function KnowledgePage() {
   const [searchError, setSearchError] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState(false)
 
-  const chatEnabled = Boolean(runtime?.knowledge_chat_enabled ?? status?.chat_enabled)
+  // Prefer knowledge status (auth'd, same process flags) over runtime probe.
+  // Runtime FALLBACK used to set knowledge_chat_enabled=false, and `??` does not
+  // fall through on false — so a failed /config/runtime hid the ask toggle even
+  // when /knowledge/status returned chat_enabled=true.
+  const chatEnabled = Boolean(status?.chat_enabled ?? runtime?.knowledge_chat_enabled)
   const searchEnabled = Boolean(
-    runtime?.knowledge_search_enabled ?? status?.search_enabled ?? true,
+    status?.search_enabled ?? runtime?.knowledge_search_enabled ?? true,
   )
   const activeMode: QueryMode = chatEnabled ? mode : 'search'
 

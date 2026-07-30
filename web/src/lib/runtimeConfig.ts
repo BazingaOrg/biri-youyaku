@@ -12,8 +12,9 @@ const FALLBACK: RuntimeConfig = {
   llm_configured: false,
   email_configured: false,
   bilibili_cookie_configured: false,
-  knowledge_chat_enabled: false,
-  knowledge_search_enabled: false,
+  // 不在 fallback 里写 knowledge_* = false：否则 KnowledgePage 里
+  // `runtime?.knowledge_chat_enabled ?? status?.chat_enabled` 会因 false 不触发 ??，
+  // 把 /v1/knowledge/status 已返回的 chat_enabled=true 盖掉，切换按钮永远不出现。
 }
 
 let cached: Promise<RuntimeConfig> | null = null
