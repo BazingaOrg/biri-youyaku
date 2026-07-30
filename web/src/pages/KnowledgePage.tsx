@@ -282,15 +282,29 @@ export function KnowledgePage() {
     }
   }
 
+  const runAsSearch = () => {
+    setMode('search')
+    const q = query.trim()
+    if (!q) return
+    void runSearch(q)
+  }
+
+  const runAsAsk = () => {
+    if (!chatEnabled) return
+    setMode('ask')
+    const q = query.trim()
+    if (!q) return
+    runChat(q)
+  }
+
   const busy = activeMode === 'ask' ? chatBusy : searching
   const isAsk = activeMode === 'ask'
-  const submitLabel = isAsk ? '提问' : '搜索'
   const placeholder = isAsk
     ? '根据已总结与转写的视频提问…'
     : '搜总结或转写里的关键词、数字、术语…'
 
   const subtitle = chatEnabled
-    ? '可切换「检索」关键词或「提问」问答；事实与数字优先引用转写时间段。'
+    ? '右侧「搜索」查片段，「提问」用已登记总结/转写做问答（会调用 LLM）。'
     : '在 AI 总结与转写片段中检索；列表默认显示摘录，可展开全文。'
 
   const purgeExpected =
@@ -388,45 +402,14 @@ export function KnowledgePage() {
         ) : (
           <>
             <div className="border-y border-line/70 py-3">
-              {chatEnabled && (
-                <div
-                  className="mb-3 inline-flex rounded-2xl bg-lift p-1 ring-1 ring-line/70"
-                  role="tablist"
-                  aria-label="知识库模式"
-                >
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={!isAsk}
-                    disabled={busy}
-                    onClick={() => setMode('search')}
-                    className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl px-3 text-sm transition ${
-                      !isAsk
-                        ? 'bg-panel font-medium text-ink shadow-card'
-                        : 'text-muted hover:text-ink'
-                    } disabled:opacity-40`}
-                  >
-                    <Search size={15} />
-                    检索
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={isAsk}
-                    disabled={busy}
-                    onClick={() => setMode('ask')}
-                    className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl px-3 text-sm transition ${
-                      isAsk
-                        ? 'bg-panel font-medium text-ink shadow-card'
-                        : 'text-muted hover:text-ink'
-                    } disabled:opacity-40`}
-                  >
-                    <MessageCircle size={15} />
-                    提问
-                  </button>
-                </div>
-              )}
-              <form onSubmit={onSubmit} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+              <form
+                onSubmit={onSubmit}
+                className={`grid gap-2 ${
+                  chatEnabled
+                    ? 'grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto_auto]'
+                    : 'grid-cols-[minmax(0,1fr)_auto]'
+                }`}
+              >
                 <label className="relative block min-w-0">
                   <Search
                     size={15}
@@ -435,25 +418,46 @@ export function KnowledgePage() {
                   <input
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder={placeholder}
+                    placeholder={
+                      chatEnabled
+                        ? '输入关键词搜索，或点右侧「提问」做知识问答…'
+                        : placeholder
+                    }
                     disabled={busy}
                     className="min-h-11 w-full rounded-2xl bg-lift py-2 pl-10 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30 disabled:opacity-60"
                   />
                 </label>
-                <button
-                  type="submit"
-                  disabled={busy || !query.trim()}
-                  className="inline-flex min-h-11 min-w-[5.5rem] items-center justify-center gap-2 rounded-2xl bg-brand px-4 text-sm font-medium text-white shadow-card disabled:opacity-40"
-                >
-                  {busy ? (
-                    <Spinner size={14} />
-                  ) : isAsk ? (
-                    <Send size={15} />
-                  ) : (
-                    <Search size={15} />
-                  )}
-                  {submitLabel}
-                </button>
+                {chatEnabled ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={runAsSearch}
+                      disabled={busy || !query.trim()}
+                      className="inline-flex min-h-11 min-w-[5.5rem] items-center justify-center gap-2 rounded-2xl bg-lift px-4 text-sm font-medium text-ink ring-1 ring-line/80 disabled:opacity-40"
+                    >
+                      {searching ? <Spinner size={14} /> : <Search size={15} />}
+                      搜索
+                    </button>
+                    <button
+                      type="button"
+                      onClick={runAsAsk}
+                      disabled={busy || !query.trim()}
+                      className="inline-flex min-h-11 min-w-[5.5rem] items-center justify-center gap-2 rounded-2xl bg-brand px-4 text-sm font-medium text-white shadow-card disabled:opacity-40"
+                    >
+                      {chatBusy ? <Spinner size={14} /> : <MessageCircle size={15} />}
+                      提问
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={busy || !query.trim()}
+                    className="inline-flex min-h-11 min-w-[5.5rem] items-center justify-center gap-2 rounded-2xl bg-brand px-4 text-sm font-medium text-white shadow-card disabled:opacity-40"
+                  >
+                    {busy ? <Spinner size={14} /> : <Search size={15} />}
+                    搜索
+                  </button>
+                )}
               </form>
             </div>
 
