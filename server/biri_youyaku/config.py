@@ -59,7 +59,8 @@ class Settings(BaseSettings):
 
     # 公网部署防滥用：视频时长上限（秒）。超长视频拖死 ASR/LLM 槽位且总结质量差。
     # 默认 2.5 小时；公网部署可按机器能力收紧，避免超长视频拖死 ASR/LLM 槽位。
-    max_video_duration_seconds: int = 9000
+    # 4 hours; override with MAX_VIDEO_DURATION_SECONDS in .env
+    max_video_duration_seconds: int = 14400
     # 在飞任务总数上限（PENDING + 各 RUNNING 阶段总和）。即便单 IP 在限流内灌任务，
     # 也不会让 PENDING 队列无限堆积。超出 → 503 让前端友好提示「忙不过来」。
     max_inflight_jobs: int = Field(default=20, gt=0)
