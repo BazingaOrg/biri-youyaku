@@ -14,6 +14,7 @@ from typing import Any
 from biri_youyaku.config import settings
 from biri_youyaku.db import connect
 from biri_youyaku.jobs.repo import now_ms
+from biri_youyaku.knowledge import artifacts as art
 from biri_youyaku.knowledge.chunker import (
     chunk_summary_markdown,
     fts_prepare_text,
@@ -106,7 +107,7 @@ def index_summary_revision(
     if body is None:
         if artifact_path is None:
             raise ValueError("artifact_path or text required")
-        path = Path(artifact_path)
+        path = art.resolve_stored_path(artifact_path)
         if not path.is_file():
             logger.warning(
                 "index_summary_revision: artifact missing doc=%s rev=%s path=%s",
@@ -279,7 +280,7 @@ def index_content_revision(
     if segs is None:
         if artifact_path is None:
             raise ValueError("artifact_path or segments required")
-        path = Path(artifact_path)
+        path = art.resolve_stored_path(artifact_path)
         if not path.is_file():
             logger.warning(
                 "index_content_revision: artifact missing doc=%s rev=%s path=%s",

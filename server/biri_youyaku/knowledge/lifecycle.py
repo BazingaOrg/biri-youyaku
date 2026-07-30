@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-from pathlib import Path
 from typing import Any
 
 from biri_youyaku.db import connect
@@ -246,7 +245,7 @@ def purge_permanent(
 
     # Disk: individual files then document directory if empty/remaining.
     for path_str in storage_paths:
-        path = Path(path_str)
+        path = art.resolve_stored_path(path_str)
         try:
             if path.is_file():
                 path.unlink()

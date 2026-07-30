@@ -140,11 +140,24 @@ Each backup under `KNOWLEDGE_BACKUP_DIR/<timestamp>/` contains:
 - `summaries/` — legacy summary files
 - `manifest.json` — relative paths + SHA-256 + restore hint
 
-**Restore (local only; not Aliyun cutover):**
+**Restore (local only; not full Aliyun cutover — see `docs/runbooks/cutover.md`):**
 
-1. Stop the server.
-2. Replace `DB_PATH` with the backup DB (file replace while stopped, or `sqlite3 data/biri_youyaku.db ".restore '…/biri_youyaku.db'"`).
-3. Restore `knowledge/` → `KNOWLEDGE_STORAGE_DIR` and `summaries/` → `SUMMARY_STORAGE_DIR`.
-4. Restart. If FTS is empty, `POST /v1/knowledge/reindex`.
+```bash
+# Stop the server first, then from server/:
+uv run python scripts/knowledge_restore.py --from data/backups/<timestamp>
+uv run python scripts/knowledge_restore.py --from data/backups/<timestamp> --dry-run
+uv run python scripts/knowledge_restore.py --from data/backups/<timestamp> --force  # ignore hash mismatch
+```
+
+Restore verifies `manifest.json` hashes, then copies `biri_youyaku.db`, `knowledge/`, and `summaries/` to settings paths (or `--dest-*` overrides). It does **not** reindex FTS; after restart run `POST /v1/knowledge/reindex` if search is empty.
+
+**Path rewrite (absolute → relative under storage roots, for machine move):**
+
+```bash
+uv run python scripts/knowledge_rewrite_paths.py --dry-run
+uv run python scripts/knowledge_rewrite_paths.py
+```
+
+Artifact `storage_path` and job `summary_path` are stored relative when under the configured roots; readers resolve via knowledge/summary helpers (legacy absolute paths still work).
 
 Soft-deleted documents are excluded from search/status “visible” counts; after `KNOWLEDGE_SOFT_DELETE_DAYS` (default 30) cleanup permanently purges them.

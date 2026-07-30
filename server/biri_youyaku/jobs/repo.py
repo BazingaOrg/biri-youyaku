@@ -400,11 +400,23 @@ def all_audio_paths() -> set[str]:
 
 
 def all_summary_paths() -> set[str]:
+    """Resolved absolute path strings for orphan scan (legacy absolute + relative)."""
+    from biri_youyaku.modules.storage import summary as summary_storage
+
     with connect() as connection:
         rows = connection.execute(
             "SELECT summary_path FROM jobs WHERE summary_path IS NOT NULL"
         ).fetchall()
-    return {row["summary_path"] for row in rows if row["summary_path"]}
+    known: set[str] = set()
+    for row in rows:
+        stored = row["summary_path"]
+        if not stored:
+            continue
+        resolved = summary_storage.resolve_stored_path(stored)
+        known.add(str(resolved))
+        # Keep raw DB form too so mixed absolute/relative comparisons still work.
+        known.add(stored)
+    return known
 
 
 def update_status(job_id: str, status: JobStatus) -> None:
@@ -604,8 +616,10 @@ def update_options(
     )
 
 
-def set_summary_path(job_id: str, summary_path: Path) -> None:
-    _set(job_id, summary_path=str(summary_path))
+def set_summary_path(job_id: str, summary_path: Path | str) -> None:
+    from biri_youyaku.modules.storage import summary as summary_storage
+
+    _set(job_id, summary_path=summary_storage.to_stored_path(summary_path))
 
 
 def add_stage_timing(job_id: str, stage: str, started_at: int, ended_at: int) -> None:
@@ -742,7 +756,9 @@ def find_active_distill_by_bvid(bvid: str) -> Job | None:
 def read_summary(job: Job) -> str | None:
     if job.summary_path is None:
         return None
-    path = Path(job.summary_path)
+    from biri_youyaku.modules.storage import summary as summary_storage
+
+    path = summary_storage.resolve_stored_path(job.summary_path)
     if not path.exists():
         return None
     return path.read_text(encoding="utf-8")

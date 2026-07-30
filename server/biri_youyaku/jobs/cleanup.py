@@ -49,7 +49,9 @@ def delete_job_files(job: Job, *, audio_only: bool = False) -> None:
         except OSError:
             logger.warning("Failed to remove audio files for job %s", job.id, exc_info=True)
     if not audio_only and job.summary_path:
-        summary_path = Path(job.summary_path)
+        from biri_youyaku.modules.storage import summary as summary_storage
+
+        summary_path = summary_storage.resolve_stored_path(job.summary_path)
         try:
             if summary_path.is_file():
                 summary_path.unlink()
@@ -81,15 +83,26 @@ def collect_job_file_cleanup_targets(job: Job) -> list[dict[str, str]]:
                 if sibling.is_file()
             )
     if job.summary_path:
-        targets.append({"job_id": job.id, "file_type": "summary", "path": job.summary_path})
+        from biri_youyaku.modules.storage import summary as summary_storage
+
+        summary_path = summary_storage.resolve_stored_path(job.summary_path)
+        targets.append(
+            {"job_id": job.id, "file_type": "summary", "path": str(summary_path)}
+        )
     return targets
 
 
 def delete_job_file_targets_with_result(targets: list[dict[str, str]]) -> list[dict[str, str]]:
     """Delete a pre-commit file snapshot and return any post-commit failures."""
+    from biri_youyaku.modules.storage import summary as summary_storage
+
     failures: list[dict[str, str]] = []
     for target in targets:
-        path = Path(target["path"])
+        raw = target["path"]
+        if target["file_type"] == "summary":
+            path = summary_storage.resolve_stored_path(raw)
+        else:
+            path = Path(raw)
         try:
             if path.is_file():
                 path.unlink()

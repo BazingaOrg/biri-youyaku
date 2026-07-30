@@ -6,7 +6,6 @@ Failures are recorded in knowledge_reconcile and never raised to job callers.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from biri_youyaku.config import settings
 from biri_youyaku.jobs import repo as jobs_repo
@@ -137,7 +136,9 @@ def _register_job(job: Job) -> str:
         )
         return RECONCILE_SKIPPED
 
-    summary_path = Path(job.summary_path)
+    from biri_youyaku.modules.storage import summary as summary_storage
+
+    summary_path = summary_storage.resolve_stored_path(job.summary_path)
     if not summary_path.is_file():
         knowledge_repo.set_reconcile(
             job_id,
@@ -186,7 +187,7 @@ def _register_job(job: Job) -> str:
         document_id=document_id,
         kind=ARTIFACT_KIND_TRANSCRIPT_RAW,
         content_hash=transcript_hash,
-        storage_path=str(transcript_path),
+        storage_path=art.to_stored_path(transcript_path),
         byte_size=len(transcript_bytes),
     )
     content_revision_id = knowledge_repo.upsert_content_revision(
@@ -203,7 +204,7 @@ def _register_job(job: Job) -> str:
         document_id=document_id,
         kind=ARTIFACT_KIND_SUMMARY,
         content_hash=summary_hash,
-        storage_path=str(summary_art_path),
+        storage_path=art.to_stored_path(summary_art_path),
         byte_size=len(summary_bytes),
     )
     summary_revision_id = knowledge_repo.upsert_summary_revision(

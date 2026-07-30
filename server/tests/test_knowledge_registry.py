@@ -212,7 +212,9 @@ async def test_unlink_on_single_delete(monkeypatch, tmp_path):
     doc_id = knowledge_repo.find_document_id(
         provider="bilibili", external_bvid=job.bvid, external_cid=job.cid
     )
-    artifact_paths = [Path(p) for p in knowledge_repo.list_artifact_paths(doc_id)]
+    artifact_paths = [
+        art.resolve_stored_path(p) for p in knowledge_repo.list_artifact_paths(doc_id)
+    ]
     assert artifact_paths
     assert all(p.is_file() for p in artifact_paths)
 
@@ -238,7 +240,9 @@ async def test_unlink_on_bulk_delete(monkeypatch, tmp_path):
     doc_id = knowledge_repo.find_document_id(
         provider="bilibili", external_bvid="BV1bulk000001", external_cid=88
     )
-    artifact_paths = [Path(p) for p in knowledge_repo.list_artifact_paths(doc_id)]
+    artifact_paths = [
+        art.resolve_stored_path(p) for p in knowledge_repo.list_artifact_paths(doc_id)
+    ]
 
     preview = await jobs_route.preview_bulk_delete(
         jobs_route.BulkDeleteFilterPayload(author="BulkAuthor")

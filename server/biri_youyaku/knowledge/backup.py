@@ -174,10 +174,9 @@ def create_backup(
         "file_count": len(backup_manifest),
         "total_bytes": sum(int(e.get("bytes") or 0) for e in backup_manifest),
         "restore_hint": (
-            "Stop the server. Replace data/biri_youyaku.db with the backup DB "
-            "(prefer sqlite3 .backup restore or file replace while stopped). "
-            "Restore knowledge/ under KNOWLEDGE_STORAGE_DIR and summaries/ under "
-            "SUMMARY_STORAGE_DIR. Restart; run POST /v1/knowledge/reindex if FTS empty."
+            "Stop the server. From server/: "
+            "uv run python scripts/knowledge_restore.py --from <this_dir> "
+            "(or --dry-run / --force). Then restart; POST /v1/knowledge/reindex if FTS empty."
         ),
     }
     manifest_path = dest / "manifest.json"
@@ -210,5 +209,163 @@ def create_backup(
         dest,
         result["file_count"],
         result["total_bytes"],
+    )
+    return result
+
+
+def verify_backup(backup_dir: Path) -> dict[str, Any]:
+    """Load manifest.json under backup_dir and re-hash each listed file.
+
+    Returns ok, checked, ok_count, mismatches, missing, and optional error.
+    """
+    backup_dir = Path(backup_dir)
+    manifest_path = backup_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return {
+            "ok": False,
+            "error": f"manifest.json not found under {backup_dir}",
+            "checked": 0,
+            "ok_count": 0,
+            "mismatches": [],
+            "missing": [],
+        }
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            "ok": False,
+            "error": f"failed to read manifest: {exc}",
+            "checked": 0,
+            "ok_count": 0,
+            "mismatches": [],
+            "missing": [],
+        }
+
+    files = payload.get("files") or []
+    mismatches: list[dict[str, Any]] = []
+    missing: list[str] = []
+    ok_count = 0
+    for entry in files:
+        rel = str(entry.get("path") or "")
+        if not rel:
+            continue
+        expected = entry.get("sha256")
+        path = backup_dir / rel
+        if not path.is_file():
+            missing.append(rel)
+            continue
+        actual = _sha256_file(path)
+        if expected is None:
+            if entry.get("missing"):
+                # Manifest marked source missing; file now present is odd but not a hash fail.
+                ok_count += 1
+            else:
+                mismatches.append(
+                    {"path": rel, "expected": None, "actual": actual, "reason": "no_expected_hash"}
+                )
+            continue
+        if actual != expected:
+            mismatches.append({"path": rel, "expected": expected, "actual": actual})
+        else:
+            ok_count += 1
+
+    return {
+        "ok": len(mismatches) == 0 and len(missing) == 0,
+        "checked": len(files),
+        "ok_count": ok_count,
+        "mismatches": mismatches,
+        "missing": missing,
+        "backup_dir": str(backup_dir),
+        "manifest_path": str(manifest_path),
+    }
+
+
+def restore_backup(
+    backup_dir: Path,
+    *,
+    dest_db: Path | None = None,
+    dest_knowledge: Path | None = None,
+    dest_summaries: Path | None = None,
+    dry_run: bool = False,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Restore DB + knowledge + summaries from a backup directory.
+
+    Operator must stop the server first (no lock file enforced here).
+
+    dry_run: verify + report planned targets only.
+    live: verify first (fail on hash mismatch/missing unless force); then copy.
+    Does not start reindex automatically.
+    """
+    backup_dir = Path(backup_dir)
+    if not backup_dir.is_dir():
+        raise FileNotFoundError(f"backup dir not found: {backup_dir}")
+
+    dest_db = Path(dest_db or settings.db_path)
+    dest_knowledge = Path(dest_knowledge or settings.knowledge_storage_dir)
+    dest_summaries = Path(dest_summaries or settings.summary_storage_dir)
+
+    src_db = backup_dir / "biri_youyaku.db"
+    src_knowledge = backup_dir / "knowledge"
+    src_summaries = backup_dir / "summaries"
+
+    verification = verify_backup(backup_dir)
+    planned = {
+        "dest_db": str(dest_db),
+        "dest_knowledge": str(dest_knowledge),
+        "dest_summaries": str(dest_summaries),
+        "src_db": str(src_db),
+        "src_knowledge": str(src_knowledge) if src_knowledge.exists() else None,
+        "src_summaries": str(src_summaries) if src_summaries.exists() else None,
+    }
+
+    result: dict[str, Any] = {
+        "ok": verification.get("ok", False),
+        "dry_run": dry_run,
+        "force": force,
+        "backup_dir": str(backup_dir),
+        "verify": verification,
+        "planned": planned,
+        "restored": False,
+    }
+
+    if dry_run:
+        # Keep verify outcome in ok so CLI/operators see hash failures.
+        result["message"] = (
+            "dry_run: no files written; stop the server before a live restore"
+        )
+        return result
+
+    if not verification.get("ok") and not force:
+        result["error"] = "manifest verify failed; pass force=True to restore anyway"
+        return result
+
+    if not src_db.is_file():
+        result["ok"] = False
+        result["error"] = f"backup database missing: {src_db}"
+        return result
+
+    dest_db.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src_db, dest_db)
+
+    if src_knowledge.is_dir():
+        dest_knowledge.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src_knowledge, dest_knowledge, dirs_exist_ok=True)
+
+    if src_summaries.is_dir():
+        dest_summaries.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src_summaries, dest_summaries, dirs_exist_ok=True)
+
+    result["ok"] = True
+    result["restored"] = True
+    result["message"] = (
+        "restore complete; restart server; run POST /v1/knowledge/reindex if FTS empty"
+    )
+    logger.info(
+        "knowledge restore from %s → db=%s knowledge=%s summaries=%s",
+        backup_dir,
+        dest_db,
+        dest_knowledge,
+        dest_summaries,
     )
     return result

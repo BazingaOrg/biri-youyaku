@@ -6,12 +6,20 @@ Usage (from server/):
   uv run python scripts/knowledge_backup.py --dry-run
   uv run python scripts/knowledge_backup.py --out /path/to/backups
 
-Restore (not automated):
+Restore (automated; stop the server first):
+  uv run python scripts/knowledge_restore.py --from data/backups/<timestamp>
+  uv run python scripts/knowledge_restore.py --from data/backups/<timestamp> --dry-run
+  uv run python scripts/knowledge_restore.py --from data/backups/<timestamp> --force
+
+Manual restore alternative:
   1. Stop the server.
-  2. Replace data/biri_youyaku.db with backup/biri_youyaku.db
-     (or use sqlite3: sqlite3 data/biri_youyaku.db ".restore 'backup/biri_youyaku.db'").
+  2. Replace data/biri_youyaku.db with backup/biri_youyaku.db.
   3. Restore knowledge/ → KNOWLEDGE_STORAGE_DIR and summaries/ → SUMMARY_STORAGE_DIR.
   4. Restart; if FTS empty run POST /v1/knowledge/reindex.
+
+Path rewrite (absolute → relative under storage roots, for cutover):
+  uv run python scripts/knowledge_rewrite_paths.py
+  uv run python scripts/knowledge_rewrite_paths.py --dry-run
 """
 
 from __future__ import annotations

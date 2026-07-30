@@ -127,7 +127,7 @@ def test_purge_requires_confirm_and_removes_artifacts(monkeypatch, tmp_path):
     paths_before = knowledge_repo.list_artifact_paths(doc_id)
     assert paths_before
     for path in paths_before:
-        assert Path(path).is_file()
+        assert art.resolve_stored_path(path).is_file()
 
     from biri_youyaku.knowledge.lifecycle import LifecycleError
 
@@ -144,7 +144,7 @@ def test_purge_requires_confirm_and_removes_artifacts(monkeypatch, tmp_path):
     assert knowledge_repo.count_documents(include_deleted=True) == 0
     assert not art.document_dir(doc_id).exists()
     for path in paths_before:
-        assert not Path(path).exists()
+        assert not art.resolve_stored_path(path).exists()
 
 
 def test_purge_api_confirm_mismatch_400(monkeypatch, tmp_path):

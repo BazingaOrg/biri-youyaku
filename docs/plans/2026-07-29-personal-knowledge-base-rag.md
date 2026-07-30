@@ -335,3 +335,7 @@ B 默认 FTS-only：1,000-document benchmark search p95 ≤200ms、FTS backfill 
 **验证**
 
 - lifecycle + transcript + search + registry：**40 passed**；`tsc --noEmit` ok。
+
+### S1 path/restore prep（2026-07-30，上云前置）
+
+- 启动 cloud cutover prep（详见 `docs/plans/2026-07-30-cloud-cutover-prep.md`）：knowledge artifact / job summary 相对路径入库与 resolve、path rewrite CLI、backup manifest verify + restore CLI、cutover runbook。未改 RAG 检索/chat 语义；chat 仍默认关。

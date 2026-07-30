@@ -17,6 +17,71 @@ def knowledge_root() -> Path:
     return Path(settings.knowledge_storage_dir)
 
 
+def to_stored_path(path: Path, *, root: Path | None = None) -> str:
+    """Return POSIX path relative to knowledge root when path is under root; else absolute POSIX."""
+    base = (root or knowledge_root()).resolve()
+    resolved = Path(path).expanduser().resolve()
+    try:
+        return resolved.relative_to(base).as_posix()
+    except ValueError:
+        return resolved.as_posix()
+
+
+def resolve_stored_path(stored: str | Path, *, root: Path | None = None) -> Path:
+    """If stored is absolute → use as-is (legacy). If relative → knowledge_root() / stored."""
+    path = Path(stored)
+    if path.is_absolute():
+        return path
+    base = root if root is not None else knowledge_root()
+    return Path(base) / path
+
+
+def rewrite_artifact_paths_in_db() -> dict[str, int]:
+    """Rewrite absolute knowledge_artifacts.storage_path under root to relative.
+
+    Returns counts: total, rewritten, already_relative, outside_root.
+    """
+    from biri_youyaku.db import connect
+
+    root = knowledge_root().resolve()
+    total = 0
+    rewritten = 0
+    already_relative = 0
+    outside_root = 0
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT id, storage_path FROM knowledge_artifacts"
+        ).fetchall()
+        for row in rows:
+            total += 1
+            stored = row["storage_path"]
+            if not stored:
+                continue
+            path = Path(stored)
+            if not path.is_absolute():
+                already_relative += 1
+                continue
+            try:
+                rel = path.expanduser().resolve().relative_to(root).as_posix()
+            except ValueError:
+                outside_root += 1
+                continue
+            if rel == stored:
+                already_relative += 1
+                continue
+            connection.execute(
+                "UPDATE knowledge_artifacts SET storage_path = ? WHERE id = ?",
+                (rel, row["id"]),
+            )
+            rewritten += 1
+    return {
+        "total": total,
+        "rewritten": rewritten,
+        "already_relative": already_relative,
+        "outside_root": outside_root,
+    }
+
+
 def artifacts_root() -> Path:
     return knowledge_root() / "artifacts"
 
