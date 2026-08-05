@@ -103,8 +103,10 @@ def get_document(document_id: str) -> dict[str, Any] | None:
     return dict(row)
 
 
-def list_documents(*, include_deleted: bool = False) -> list[dict[str, Any]]:
-    """Lite list: id, title, author, bvid, cid, deleted_at."""
+def list_documents(
+    *, include_deleted: bool = False, limit: int = 200, offset: int = 0
+) -> list[dict[str, Any]]:
+    """Lite list: id, title, author, bvid, cid, deleted_at. Supports pagination."""
     sql = """
         SELECT
           id,
@@ -117,9 +119,9 @@ def list_documents(*, include_deleted: bool = False) -> list[dict[str, Any]]:
     """
     if not include_deleted:
         sql += " WHERE deleted_at IS NULL"
-    sql += " ORDER BY updated_at DESC, created_at DESC"
+    sql += " ORDER BY updated_at DESC, created_at DESC LIMIT ? OFFSET ?"
     with connect() as connection:
-        rows = connection.execute(sql).fetchall()
+        rows = connection.execute(sql, (limit, offset)).fetchall()
     return [dict(row) for row in rows]
 
 

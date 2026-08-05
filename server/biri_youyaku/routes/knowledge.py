@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from biri_youyaku.auth import require_token
 from biri_youyaku.config import settings
+from biri_youyaku.rate_limit import limiter
 from biri_youyaku.knowledge import backup as knowledge_backup
 from biri_youyaku.knowledge import index as knowledge_index
 from biri_youyaku.knowledge import lifecycle as knowledge_lifecycle
@@ -71,7 +73,8 @@ async def knowledge_search(
 
 
 @router.post("/knowledge/chat")
-async def knowledge_chat(body: ChatBody) -> EventSourceResponse:
+@limiter.limit("10/minute")
+async def knowledge_chat(request: Request, body: ChatBody) -> EventSourceResponse:
     if not settings.knowledge_chat_enabled:
         raise HTTPException(
             status_code=403,
@@ -122,16 +125,17 @@ async def knowledge_reindex() -> dict[str, Any]:
     if not settings.knowledge_register_enabled:
         raise HTTPException(status_code=403, detail="知识登记未启用")
     try:
-        revisions = knowledge_index.rebuild_all()
+        # rebuild_all does heavy FTS writes — run in thread to avoid blocking the event loop.
+        revisions = await asyncio.to_thread(knowledge_index.rebuild_all)
     except Exception as exc:
         logger.exception("knowledge reindex failed")
-        raise HTTPException(status_code=500, detail=f"重建索引失败：{exc}") from exc
+        raise HTTPException(status_code=500, detail="重建索引失败") from exc
     return {
         "ok": True,
         "revisions_indexed": revisions,
-        "chunks": knowledge_index.count_chunks(),
-        "summary_chunks": knowledge_index.count_summary_chunks(),
-        "transcript_chunks": knowledge_index.count_transcript_chunks(),
+        "chunks": await asyncio.to_thread(knowledge_index.count_chunks),
+        "summary_chunks": await asyncio.to_thread(knowledge_index.count_summary_chunks),
+        "transcript_chunks": await asyncio.to_thread(knowledge_index.count_transcript_chunks),
     }
 
 
@@ -141,8 +145,12 @@ async def knowledge_reindex() -> dict[str, Any]:
 @router.get("/knowledge/documents")
 async def knowledge_list_documents(
     include_deleted: bool = Query(default=False),
+    limit: int = Query(default=200, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
-    docs = knowledge_lifecycle.list_documents(include_deleted=include_deleted)
+    docs = knowledge_lifecycle.list_documents(
+        include_deleted=include_deleted, limit=limit, offset=offset,
+    )
     return {"ok": True, "documents": docs}
 
 
@@ -242,10 +250,13 @@ async def knowledge_audit(limit: int = Query(default=50, ge=1, le=200)) -> dict[
 async def create_knowledge_backup(body: BackupBody | None = None) -> dict[str, Any]:
     dry_run = bool(body.dry_run) if body else False
     try:
-        result = knowledge_backup.create_backup(dry_run=dry_run, actor="api")
+        # create_backup hashes artifacts and copies trees — run in thread.
+        result = await asyncio.to_thread(
+            knowledge_backup.create_backup, dry_run=dry_run, actor="api"
+        )
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="备份失败：源文件缺失") from exc
     except Exception as exc:
         logger.exception("knowledge backup failed")
-        raise HTTPException(status_code=500, detail=f"备份失败：{exc}") from exc
+        raise HTTPException(status_code=500, detail="备份失败") from exc
     return result

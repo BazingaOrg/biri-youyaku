@@ -151,7 +151,12 @@ flowchart LR
 - 公网拆分：[`DEPLOY.md`](DEPLOY.md) — Vercel 前端 + Cloudflare Tunnel 后端
 - [`CONFIG.md`](CONFIG.md) — `server/.env` 全部可调项
 
-提交前本地检查：`cd server && uv run pytest -q && uv run ruff check .`，`cd web && npm run build`（含 tsc）。
+提交前本地检查：
+
+```bash
+cd server && uv sync --extra dev && uv run pytest -q && uv run ruff check .
+cd web && npm ci && npm test && npm run build  # build 含 tsc
+```
 
 完整 API 见后端运行后的 `/docs`（FastAPI 自动生成）。
 

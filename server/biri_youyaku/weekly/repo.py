@@ -61,31 +61,31 @@ def _job_week_at(job: Job) -> int:
 
 def sources_for_week(week_start: str, *, connection=None) -> list[Job]:
     start_ms, end_ms, _ = week_bounds(week_start)
-    # Summary files are intentionally verified below: a stale path must not become an LLM source.
+    # Use the lite projection to avoid pulling transcript_json / chapters_json blobs
+    # that _row_to_job doesn't need here.  read_summary verifies the file on disk anyway.
+    columns = (
+        "id, url, bvid, cid, mid, title, author, duration, status, "
+        "error_stage, error_message, error_code, audio_path, "
+        "subtitle_source, summary_path, options_json, effective_options_json, "
+        "created_at, updated_at, completed_at, "
+        "token_usage_json, tags_json"
+    )
+    sql = f"""
+        SELECT {columns} FROM jobs
+        WHERE status = ?
+          AND json_extract(effective_options_json, '$.task_type') IS NOT 'distill'
+          AND COALESCE(completed_at, created_at) >= ?
+          AND COALESCE(completed_at, created_at) < ?
+        ORDER BY COALESCE(completed_at, created_at), id
+    """
     if connection is None:
         with connect() as read_connection:
             rows = read_connection.execute(
-                """
-                SELECT * FROM jobs
-                WHERE status = ?
-                  AND json_extract(effective_options_json, '$.task_type') IS NOT 'distill'
-                  AND COALESCE(completed_at, created_at) >= ?
-                  AND COALESCE(completed_at, created_at) < ?
-                ORDER BY COALESCE(completed_at, created_at), id
-                """,
-                (JobStatus.COMPLETED.value, start_ms, end_ms),
+                sql, (JobStatus.COMPLETED.value, start_ms, end_ms)
             ).fetchall()
     else:
         rows = connection.execute(
-            """
-            SELECT * FROM jobs
-            WHERE status = ?
-              AND json_extract(effective_options_json, '$.task_type') IS NOT 'distill'
-              AND COALESCE(completed_at, created_at) >= ?
-              AND COALESCE(completed_at, created_at) < ?
-            ORDER BY COALESCE(completed_at, created_at), id
-            """,
-            (JobStatus.COMPLETED.value, start_ms, end_ms),
+            sql, (JobStatus.COMPLETED.value, start_ms, end_ms)
         ).fetchall()
     jobs = [jobs_repo._row_to_job(row) for row in rows]
     return [job for job in jobs if job.summary_path and jobs_repo.read_summary(job)]
