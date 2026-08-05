@@ -11,6 +11,10 @@ import {BackButton} from '../../components/BackButton'
 import {DistillButton} from './DistillButton'
 import {VideoRow} from './VideoRow'
 
+// 蒸馏语料是实验性功能：默认隐藏入口（后端 API 照常可用），
+// 想启用时在 web/.env 里设 VITE_DISTILL_ENABLED=true 后重新构建。
+const DISTILL_ENABLED = (import.meta.env.VITE_DISTILL_ENABLED ?? '') === 'true'
+
 type Filter = 'all' | 'todo' | 'done'
 
 export function UpList({mid}: {mid: number}) {
@@ -95,6 +99,7 @@ export function UpList({mid}: {mid: number}) {
 
   // 进页面先查一次有没有正在跑（或已跑完/失败）的蒸馏 run，有就直接展示面板而不是按钮。
   useEffect(() => {
+    if (!DISTILL_ENABLED) return
     let cancelled = false
     setDistillChecked(false)
     setDistillRun(null)
@@ -194,9 +199,9 @@ export function UpList({mid}: {mid: number}) {
               共 {total} 条投稿{videos.length > 0 && ` · 已加载 ${videos.length}`}
             </p>
           </div>
-          {distillChecked && !distillRun && <DistillButton mid={mid} onStarted={setDistillRun} />}
+          {DISTILL_ENABLED && distillChecked && !distillRun && <DistillButton mid={mid} onStarted={setDistillRun} />}
         </div>
-        {distillChecked && distillRun && (
+        {DISTILL_ENABLED && distillChecked && distillRun && (
           <DistillPanel key={distillRun.id} mid={mid} run={distillRun} onRunChange={setDistillRun} />
         )}
       </header>

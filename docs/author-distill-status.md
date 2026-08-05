@@ -36,6 +36,7 @@
 
 - distill 相关 pytest + `from biri_youyaku.app import app` 冒烟见 A2 实现说明。
 - **未做**：真实 UP 主的浏览器端到端蒸馏（需要 SESSDATA + 本地 ASR 长时间跑）。
+- **2026-08-05 减法**：前端入口默认隐藏（`VITE_DISTILL_ENABLED=true` 启用）；后端 API 照常可用。
 
 ## 语料包产物（给蒸馏 skill 的输入契约）
 
