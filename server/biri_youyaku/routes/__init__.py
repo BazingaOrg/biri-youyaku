@@ -6,7 +6,6 @@ from biri_youyaku.routes.healthz import router as healthz_router
 from biri_youyaku.routes.jobs import router as jobs_router
 from biri_youyaku.routes.knowledge import router as knowledge_router
 from biri_youyaku.routes.up import router as up_router
-from biri_youyaku.routes.weekly_summaries import router as weekly_summaries_router
 
 __all__ = [
     "config_router",
@@ -17,5 +16,4 @@ __all__ = [
     "jobs_router",
     "knowledge_router",
     "up_router",
-    "weekly_summaries_router",
 ]

@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from unittest.mock import patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from biri_youyaku import db
@@ -17,7 +14,6 @@ from biri_youyaku.jobs.repo import now_ms
 from biri_youyaku.knowledge import try_register_job
 from biri_youyaku.knowledge.chunker import chunk_summary_markdown, fts_prepare_text
 from biri_youyaku.knowledge import index as knowledge_index
-from biri_youyaku.knowledge.chat import REFUSE_NO_HITS, stream_chat
 from biri_youyaku.knowledge.model import RECONCILE_REGISTERED
 from biri_youyaku.knowledge.search import search_summaries
 from biri_youyaku.modules.transcript import TranscriptItem
@@ -29,7 +25,6 @@ def _setup(monkeypatch, tmp_path: Path) -> Path:
     monkeypatch.setattr(settings, "knowledge_storage_dir", knowledge_dir)
     monkeypatch.setattr(settings, "knowledge_register_enabled", True)
     monkeypatch.setattr(settings, "knowledge_search_enabled", True)
-    monkeypatch.setattr(settings, "knowledge_chat_enabled", False)
     monkeypatch.setattr(settings, "summary_storage_dir", tmp_path / "summaries")
     monkeypatch.setattr(settings, "api_token", "")
     db.init_db()
@@ -193,132 +188,6 @@ def test_empty_query_returns_empty(monkeypatch, tmp_path):
     assert search_summaries("   ") == []
 
 
-# --- chat routes / stream ---
-
-
-def test_chat_disabled_returns_403(monkeypatch, tmp_path):
-    _setup(monkeypatch, tmp_path)
-    monkeypatch.setattr(settings, "knowledge_chat_enabled", False)
-    from biri_youyaku.app import create_app
-
-    client = TestClient(create_app())
-    response = client.post("/v1/knowledge/chat", json={"query": "hello"})
-    assert response.status_code == 403
-
-
-@pytest.mark.asyncio
-async def test_chat_enabled_no_hits_refuses_without_llm(monkeypatch, tmp_path):
-    _setup(monkeypatch, tmp_path)
-    monkeypatch.setattr(settings, "knowledge_chat_enabled", True)
-    monkeypatch.setattr(settings, "llm_api_key", "fake-key")
-
-    create_calls = []
-
-    class FakeCompletions:
-        async def create(self, **kwargs):
-            create_calls.append(kwargs)
-            raise AssertionError("LLM should not be called when no hits")
-
-    class FakeChat:
-        completions = FakeCompletions()
-
-    class FakeClient:
-        chat = FakeChat()
-
-    with patch(
-        "biri_youyaku.knowledge.chat.openai_client",
-        return_value=FakeClient(),
-    ):
-        events = []
-        async for event in stream_chat("zzzznonexistentterm999", limit=6):
-            events.append(event)
-
-    assert create_calls == []
-    kinds = [e["event"] for e in events]
-    assert "done" in kinds
-    done = next(e for e in events if e["event"] == "done")
-    payload = json.loads(done["data"])
-    assert payload.get("refused") is True
-    delta = next(e for e in events if e["event"] == "delta")
-    assert REFUSE_NO_HITS in json.loads(delta["data"])["text"]
-
-
-@pytest.mark.asyncio
-async def test_chat_enabled_with_hits_citations_from_retrieval(monkeypatch, tmp_path):
-    _setup(monkeypatch, tmp_path)
-    monkeypatch.setattr(settings, "knowledge_chat_enabled", True)
-    monkeypatch.setattr(settings, "llm_api_key", "fake-key")
-
-    job = _make_completed_job(
-        bvid="BV1chat",
-        cid=3,
-        title="Chat source",
-        summary_body="## TL;DR\nSpecialChatToken 用于问答测试。\n",
-    )
-    assert try_register_job(job.id) == RECONCILE_REGISTERED
-
-    class Delta:
-        def __init__(self, content):
-            self.content = content
-
-    class Choice:
-        def __init__(self, content):
-            self.delta = Delta(content)
-
-    class Chunk:
-        def __init__(self, content):
-            self.choices = [Choice(content)]
-
-    class FakeStream:
-        def __init__(self, parts):
-            self._parts = parts
-
-        def __aiter__(self):
-            return self
-
-        async def __anext__(self):
-            if not self._parts:
-                raise StopAsyncIteration
-            return Chunk(self._parts.pop(0))
-
-    class FakeCompletions:
-        async def create(self, **kwargs):
-            return FakeStream(["根据", "总结，SpecialChatToken 相关。"])
-
-    class FakeChat:
-        completions = FakeCompletions()
-
-    class FakeClient:
-        chat = FakeChat()
-
-    with patch(
-        "biri_youyaku.knowledge.chat.openai_client",
-        return_value=FakeClient(),
-    ):
-        events = []
-        async for event in stream_chat("SpecialChatToken", limit=6):
-            events.append(event)
-
-    cite_events = [e for e in events if e["event"] == "citations"]
-    assert cite_events
-    cites = json.loads(cite_events[0]["data"])["citations"]
-    assert cites
-    for c in cites:
-        assert c["source_level"] == "summary"
-        assert c["heading_path"].startswith("AI 总结：")
-        assert c["id"]
-
-    hits = search_summaries("SpecialChatToken", limit=6)
-    allowed = {h.chunk_id for h in hits}
-    for c in cites:
-        assert c["id"] in allowed
-
-    done = next(e for e in events if e["event"] == "done")
-    payload = json.loads(done["data"])
-    assert payload.get("refused") is False
-    assert "SpecialChatToken" in payload.get("text", "")
-
-
 def test_search_route_and_status(monkeypatch, tmp_path):
     _setup(monkeypatch, tmp_path)
     job = _make_completed_job(
@@ -339,7 +208,6 @@ def test_search_route_and_status(monkeypatch, tmp_path):
     assert body["documents"] >= 1
     assert body["chunks"] >= 1
     assert body["search_enabled"] is True
-    assert body["chat_enabled"] is False
 
     search = client.get("/v1/knowledge/search", params={"q": "RouteUniqueWord"})
     assert search.status_code == 200

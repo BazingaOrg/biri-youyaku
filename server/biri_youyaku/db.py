@@ -99,31 +99,6 @@ CREATE TABLE IF NOT EXISTS provider_balance_snapshots (
 CREATE INDEX IF NOT EXISTS idx_provider_balance_snapshots_latest
   ON provider_balance_snapshots(provider, key_fingerprint, observed_at DESC);
 
--- 周总结是派生缓存，和单条总结文件分开保存；来源快照用于检测新来源和删除失效。
-CREATE TABLE IF NOT EXISTS weekly_summaries (
-  week_start       TEXT PRIMARY KEY,
-  week_end         TEXT NOT NULL,
-  timezone         TEXT NOT NULL,
-  status           TEXT NOT NULL,
-  content          TEXT,
-  references_json  TEXT,
-  sources_fingerprint TEXT,
-  generation_token  TEXT,
-  generation_expires_at INTEGER,
-  error            TEXT,
-  generated_at     INTEGER,
-  created_at       INTEGER NOT NULL,
-  updated_at       INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_weekly_summaries_status ON weekly_summaries(status);
-
-CREATE TABLE IF NOT EXISTS weekly_summary_sources (
-  week_start       TEXT NOT NULL REFERENCES weekly_summaries(week_start) ON DELETE CASCADE,
-  job_id           TEXT NOT NULL,
-  PRIMARY KEY (week_start, job_id)
-);
-CREATE INDEX IF NOT EXISTS idx_weekly_summary_sources_job ON weekly_summary_sources(job_id);
-
 -- 批量删除先提交数据库、再清理磁盘。失败的文件留在此处供后续维护任务重试，
 -- 避免把“数据库已删除”误报为“文件已全部删除”。
 CREATE TABLE IF NOT EXISTS pending_file_cleanup (
@@ -351,16 +326,6 @@ def init_db() -> None:
         if "scope" not in balance_columns:
             connection.execute(
                 "ALTER TABLE provider_balance_snapshots ADD COLUMN scope TEXT NOT NULL DEFAULT 'account_balance'"
-            )
-        weekly_columns = {
-            row["name"]
-            for row in connection.execute("PRAGMA table_info(weekly_summaries)").fetchall()
-        }
-        if "generation_token" not in weekly_columns:
-            connection.execute("ALTER TABLE weekly_summaries ADD COLUMN generation_token TEXT")
-        if "generation_expires_at" not in weekly_columns:
-            connection.execute(
-                "ALTER TABLE weekly_summaries ADD COLUMN generation_expires_at INTEGER"
             )
         knowledge_doc_columns = {
             row["name"]

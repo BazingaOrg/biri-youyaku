@@ -5,7 +5,17 @@ import tempfile
 import time
 from pathlib import Path
 
-from biri_youyaku.config import settings
+from biri_youyaku.config import (
+    AUDIO_RETENTION_DAYS,
+    CLEANUP_INTERVAL_SECONDS,
+    DB_VACUUM_INTERVAL_DAYS,
+    JOB_RETENTION_DAYS,
+    KNOWLEDGE_SOFT_DELETE_DAYS,
+    ORPHAN_FILE_RETENTION_DAYS,
+    STALE_RUNNING_FAIL_HOURS,
+    WAL_CHECKPOINT_INTERVAL_HOURS,
+    settings,
+)
 from biri_youyaku.db import connect, maintenance_connection
 from biri_youyaku.distill import repo as distill_repo
 from biri_youyaku.jobs import repo
@@ -16,7 +26,6 @@ from biri_youyaku.jobs.model import (
     RETENTION_DELETE_JOB_STATUSES,
 )
 from biri_youyaku.jobs.runner import has_active_task
-from biri_youyaku.weekly import repo as weekly_summary_repo
 
 logger = logging.getLogger(__name__)
 
@@ -187,8 +196,8 @@ async def cleanup_once() -> dict[str, int]:
     - FAILED/CANCELED with no summary: after job_retention_days, delete files + row
     """
     now = repo.now_ms()
-    audio_cutoff = now - settings.audio_retention_days * 24 * 60 * 60 * 1000
-    job_cutoff = now - settings.job_retention_days * 24 * 60 * 60 * 1000
+    audio_cutoff = now - AUDIO_RETENTION_DAYS * 24 * 60 * 60 * 1000
+    job_cutoff = now - JOB_RETENTION_DAYS * 24 * 60 * 60 * 1000
     audio_removed = 0
     jobs_removed = 0
 
@@ -203,7 +212,6 @@ async def cleanup_once() -> dict[str, int]:
         if not is_auto_job_purge_eligible(job):
             continue
         delete_job_files(job)
-        weekly_summary_repo.mark_stale_for_job_ids([job.id])
         jobs_removed += repo.delete_job(job.id)
 
     # D: auto-purge soft-deleted knowledge documents past retention window.
@@ -212,7 +220,7 @@ async def cleanup_once() -> dict[str, int]:
         from biri_youyaku.knowledge.lifecycle import purge_expired_soft_deleted
 
         knowledge_purged = purge_expired_soft_deleted(
-            retention_days=settings.knowledge_soft_delete_days
+            retention_days=KNOWLEDGE_SOFT_DELETE_DAYS
         )
         if knowledge_purged:
             logger.info("Purged %d expired soft-deleted knowledge documents", knowledge_purged)
@@ -234,7 +242,7 @@ async def fail_stale_running_once() -> int:
 
     避免 SenseVoice 死锁、yt-dlp hang 这类不抛异常的卡死把 job 永远留在中间态。
     """
-    hours = max(1, settings.stale_running_fail_hours)
+    hours = max(1, STALE_RUNNING_FAIL_HOURS)
     cutoff = repo.now_ms() - hours * 60 * 60 * 1000
     count = 0
     for job in repo.list_running_jobs_stale_before(cutoff):
@@ -312,7 +320,7 @@ def _scan_orphan_distill_dirs(directory: Path, retention_days: int) -> int:
 async def scan_orphans_once() -> dict[str, int]:
     """文件 → DB 反向校验：DB 不引用的文件清掉。"""
     retry_pending_file_cleanup_once()
-    retention = max(0, settings.orphan_file_retention_days)
+    retention = max(0, ORPHAN_FILE_RETENTION_DAYS)
     audio_dir = Path(settings.audio_storage_dir)
     summary_dir = Path(settings.summary_storage_dir)
     distill_dir = Path(settings.distill_storage_dir)
@@ -394,9 +402,9 @@ async def cleanup_loop() -> None:
     WAL/VACUUM 用 monotonic wall-clock 跟踪，避免「上一轮 cleanup 跑了几分钟」把
     维护时点逻辑性地推迟掉。
     """
-    interval = max(60, settings.cleanup_interval_seconds)
-    wal_every = max(1, settings.wal_checkpoint_interval_hours) * 3600
-    vacuum_every = max(1, settings.db_vacuum_interval_days) * 24 * 3600
+    interval = max(60, CLEANUP_INTERVAL_SECONDS)
+    wal_every = max(1, WAL_CHECKPOINT_INTERVAL_HOURS) * 3600
+    vacuum_every = max(1, DB_VACUUM_INTERVAL_DAYS) * 24 * 3600
     last_wal = time.monotonic()
     last_vacuum = time.monotonic()
     # lifespan 启动期已经手动跑过一遍常规清理，循环先 sleep 再做活，避免双跑

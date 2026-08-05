@@ -31,13 +31,13 @@ def test_render_prompt_replaces_supported_placeholders():
 
 
 def test_resolve_temperature_uses_settings_override(monkeypatch):
-    monkeypatch.setattr(client.settings, "llm_temperature", 0.7)
+    monkeypatch.setattr(client, "LLM_TEMPERATURE", 0.7)
 
     assert client.resolve_temperature() == 0.7
 
 
 def test_resolve_temperature_defaults_to_zero_point_two(monkeypatch):
-    monkeypatch.setattr(client.settings, "llm_temperature", None)
+    monkeypatch.setattr(client, "LLM_TEMPERATURE", None)
 
     assert client.resolve_temperature() == 0.2
 
@@ -93,9 +93,9 @@ async def test_summarize_chunked_summarizes_segments_then_merges(monkeypatch):
         return "merged"
 
     monkeypatch.setattr(client.settings, "llm_api_key", "key")
-    monkeypatch.setattr(client.settings, "llm_chunk_token_threshold", 5)
+    monkeypatch.setattr(client, "LLM_CHUNK_TOKEN_THRESHOLD", 5)
     # 并发=1 让段级调用顺序稳定可断言
-    monkeypatch.setattr(client.settings, "llm_segment_concurrency", 1)
+    monkeypatch.setattr(client, "LLM_SEGMENT_CONCURRENCY", 1)
     monkeypatch.setattr(client, "_summarize_segment_markdown", fake_segment_markdown)
     monkeypatch.setattr(client, "_complete_json_summary", fake_complete_json_summary)
 
@@ -140,8 +140,8 @@ async def test_summarize_chunked_cancels_sibling_segments_on_failure(monkeypatch
             raise
         return "should not finish"
 
-    monkeypatch.setattr(client.settings, "llm_chunk_token_threshold", 5)
-    monkeypatch.setattr(client.settings, "llm_segment_concurrency", 2)
+    monkeypatch.setattr(client, "LLM_CHUNK_TOKEN_THRESHOLD", 5)
+    monkeypatch.setattr(client, "LLM_SEGMENT_CONCURRENCY", 2)
     monkeypatch.setattr(client, "_summarize_segment_markdown", fake_segment_markdown)
 
     with pytest.raises(RuntimeError, match="segment failed"):

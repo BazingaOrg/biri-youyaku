@@ -305,37 +305,6 @@ async def test_list_jobs_scope_cursor_response_contract(monkeypatch, tmp_path):
     assert exc_info.value.status_code == 422
 
 
-def test_history_facets_are_complete_and_exclude_distill(monkeypatch, tmp_path):
-    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
-    db.init_db()
-    first = repo.create_job("https://www.bilibili.com/video/BVfirst", JobOptions())
-    second = repo.create_job("https://www.bilibili.com/video/BVsecond", JobOptions())
-    unknown = repo.create_job("https://www.bilibili.com/video/BVunknown", JobOptions())
-    hidden = repo.create_job(
-        "https://www.bilibili.com/video/BVhidden", JobOptions(task_type="distill")
-    )
-    for job, title, author, tags in [
-        (first, "Alpha", "Alice", ["AI", "技术"]),
-        (second, "Beta", "Alice", ["AI"]),
-        (unknown, "Gamma", "", ["生活"]),
-        (hidden, "Hidden", "Alice", ["隐藏"]),
-    ]:
-        repo.update_meta(job.id, bvid=job.id, cid=None, title=title, author=author, duration=1)
-        repo.set_tags(job.id, tags)
-
-    facets = repo.list_job_facets()
-
-    assert facets["authors"] == [
-        {"key": "Alice", "label": "Alice", "count": 2},
-        {"key": "未知 UP", "label": "未知 UP", "count": 1},
-    ]
-    assert facets["tags"] == [
-        {"key": "AI", "label": "AI", "count": 2},
-        {"key": "技术", "label": "技术", "count": 1},
-        {"key": "生活", "label": "生活", "count": 1},
-    ]
-
-
 def test_stage_timings_and_token_usage_are_persisted(monkeypatch, tmp_path):
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
     db.init_db()

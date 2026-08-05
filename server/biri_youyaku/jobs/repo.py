@@ -300,37 +300,6 @@ def list_jobs(
     return [_row_to_job_lite(row) for row in rows]
 
 
-def list_job_facets(*, search: str | None = None) -> dict[str, list[dict[str, Any]]]:
-    """All non-distill author/tag facets, independent from loaded history pages."""
-    query_clauses, parameters = _history_filter_clauses(query=search)
-    # Search applies to the facet universe, but never carries author/tag from
-    # the current filter; that would hide values needed to change filters.
-    where = " AND ".join(query_clauses)
-    with connect() as connection:
-        author_rows = connection.execute(
-            f"""
-            SELECT CASE WHEN author IS NULL OR TRIM(author) = '' THEN ? ELSE TRIM(author) END AS value,
-                   COUNT(*) AS count
-            FROM jobs WHERE {where}
-            GROUP BY value ORDER BY count DESC, value COLLATE NOCASE ASC
-            """,
-            [UNKNOWN_AUTHOR_SENTINEL, *parameters],
-        ).fetchall()
-        tag_rows = connection.execute(
-            f"""
-            SELECT TRIM(CAST(tag_item.value AS TEXT)) AS value, COUNT(*) AS count
-            FROM jobs JOIN json_each(COALESCE(jobs.tags_json, '[]')) AS tag_item
-            WHERE {where} AND TRIM(CAST(tag_item.value AS TEXT)) != ''
-            GROUP BY value ORDER BY count DESC, value COLLATE NOCASE ASC
-            """,
-            parameters,
-        ).fetchall()
-    return {
-        "authors": [{"key": row["value"], "label": row["value"], "count": row["count"]} for row in author_rows],
-        "tags": [{"key": row["value"], "label": row["value"], "count": row["count"]} for row in tag_rows],
-    }
-
-
 def list_recoverable_jobs() -> list[Job]:
     """启动恢复：只需要 status / url / options 这些 lite 字段决定是否能恢复。"""
     placeholders, values = _status_filter(PAUSED_OR_TERMINAL_JOB_STATUSES)

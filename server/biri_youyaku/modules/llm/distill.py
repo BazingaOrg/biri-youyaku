@@ -11,7 +11,12 @@ from __future__ import annotations
 
 import logging
 
-from biri_youyaku.config import settings
+from biri_youyaku.config import (
+    LLM_CHUNK_TOKEN_THRESHOLD,
+    LLM_MAX_RETRIES,
+    LLM_TIMEOUT_SECONDS,
+    settings,
+)
 from biri_youyaku.modules._http import openai_client
 from biri_youyaku.modules.llm.client import complete, resolve_temperature
 from biri_youyaku.modules.llm.usage import make_context
@@ -35,8 +40,8 @@ def _client():
     return openai_client(
         api_key=api_key,
         base_url=settings.llm_base_url,
-        timeout=settings.llm_timeout_seconds,
-        max_retries=settings.llm_max_retries,
+        timeout=LLM_TIMEOUT_SECONDS,
+        max_retries=LLM_MAX_RETRIES,
     )
 
 
@@ -79,20 +84,20 @@ def _pseudo_items(text: str) -> list[TranscriptItem]:
 async def extract_video_viewpoints(
     title: str, transcript_text: str, language: str, *, run_id: str | None = None
 ) -> str:
-    """单视频观点提取。转写超过 `settings.llm_chunk_token_threshold` 时按分段
+    """单视频观点提取。转写超过 `LLM_CHUNK_TOKEN_THRESHOLD` 时按分段
     提取、再用 MERGE 合并（模式仿 `client._summarize_chunked`，但不需要流式/
     并发进度回调）；分段内部顺序执行——分段间没有并发要求，编排层面的并发
     （同一个 run 里多个视频并行提取）由调用方（distill/orchestrator.py）用
     `asyncio.Semaphore(2)` 控制。
     """
     items = _pseudo_items(transcript_text)
-    if not should_chunk(items, settings.llm_chunk_token_threshold):
+    if not should_chunk(items, LLM_CHUNK_TOKEN_THRESHOLD):
         prompt = _render(
             DISTILL_EXTRACT_PROMPT, title=title, transcript=transcript_text, language=language
         )
         return await _complete_prompt(prompt, operation="distill_extract", run_id=run_id)
 
-    segments = split_transcript(items, settings.llm_chunk_token_threshold)
+    segments = split_transcript(items, LLM_CHUNK_TOKEN_THRESHOLD)
     extracts: list[str] = []
     for index, segment in enumerate(segments, start=1):
         segment_text = "\n".join(item.text for item in segment)

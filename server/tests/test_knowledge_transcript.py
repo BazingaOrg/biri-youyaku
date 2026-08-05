@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from unittest.mock import patch
 
-import pytest
 
 from biri_youyaku import db
 from biri_youyaku.config import settings
@@ -17,7 +14,6 @@ from biri_youyaku.knowledge import try_register_job
 from biri_youyaku.knowledge.chunker import window_transcript_segments
 from biri_youyaku.knowledge import index as knowledge_index
 from biri_youyaku.knowledge import repo as knowledge_repo
-from biri_youyaku.knowledge.chat import stream_chat
 from biri_youyaku.knowledge.model import RECONCILE_REGISTERED
 from biri_youyaku.knowledge.retrieve import (
     EvidenceHit,
@@ -37,7 +33,6 @@ def _setup(monkeypatch, tmp_path: Path) -> Path:
     monkeypatch.setattr(settings, "knowledge_storage_dir", knowledge_dir)
     monkeypatch.setattr(settings, "knowledge_register_enabled", True)
     monkeypatch.setattr(settings, "knowledge_search_enabled", True)
-    monkeypatch.setattr(settings, "knowledge_chat_enabled", False)
     monkeypatch.setattr(settings, "knowledge_transcript_index_enabled", True)
     monkeypatch.setattr(settings, "summary_storage_dir", tmp_path / "summaries")
     monkeypatch.setattr(settings, "api_token", "")
@@ -376,82 +371,6 @@ def test_phrase_search_on_transcript_fts(monkeypatch, tmp_path):
     assert any(
         h.source_level == "transcript" and "量子" in h.chunk_text for h in hits
     ) or any("量子" in h.chunk_text for h in hits)
-
-
-@pytest.mark.asyncio
-async def test_chat_citations_can_be_transcript(monkeypatch, tmp_path):
-    _setup(monkeypatch, tmp_path)
-    monkeypatch.setattr(settings, "knowledge_chat_enabled", True)
-    monkeypatch.setattr(settings, "llm_api_key", "fake-key")
-
-    job = _make_completed_job(
-        bvid="BV1chattx",
-        cid=30,
-        title="Chat tx source",
-        summary_body="## TL;DR\n总结不含密钥数字。\n",
-        transcript=[
-            {"start": 30.0, "end": 40.0, "text": "密钥长度设为 2048 位 RSA"},
-        ],
-        subtitle_source="asr",
-    )
-    assert try_register_job(job.id) == RECONCILE_REGISTERED
-
-    class Delta:
-        def __init__(self, content):
-            self.content = content
-
-    class Choice:
-        def __init__(self, content):
-            self.delta = Delta(content)
-
-    class Chunk:
-        def __init__(self, content):
-            self.choices = [Choice(content)]
-
-    class FakeStream:
-        def __init__(self, parts):
-            self._parts = parts
-
-        def __aiter__(self):
-            return self
-
-        async def __anext__(self):
-            if not self._parts:
-                raise StopAsyncIteration
-            return Chunk(self._parts.pop(0))
-
-    class FakeCompletions:
-        async def create(self, **kwargs):
-            return FakeStream(["根据转写，密钥长度 2048。"])
-
-    class FakeChat:
-        completions = FakeCompletions()
-
-    class FakeClient:
-        chat = FakeChat()
-
-    with patch(
-        "biri_youyaku.knowledge.chat.openai_client",
-        return_value=FakeClient(),
-    ):
-        events = []
-        async for event in stream_chat("2048", limit=6):
-            events.append(event)
-
-    cite_events = [e for e in events if e["event"] == "citations"]
-    assert cite_events
-    cites = json.loads(cite_events[0]["data"])["citations"]
-    assert cites
-    assert any(c["source_level"] == "transcript" for c in cites)
-    tx_cites = [c for c in cites if c["source_level"] == "transcript"]
-    for c in tx_cites:
-        assert c["locator"].startswith("转写：")
-        assert "start_sec" in c and "end_sec" in c
-        assert c.get("subtitle_source") == "asr"
-
-    done = next(e for e in events if e["event"] == "done")
-    payload = json.loads(done["data"])
-    assert payload.get("refused") is False
 
 
 def test_search_route_returns_transcript_fields(monkeypatch, tmp_path):

@@ -195,7 +195,6 @@ export interface RuntimeConfig {
   llm_configured: boolean
   email_configured: boolean
   bilibili_cookie_configured: boolean
-  knowledge_chat_enabled?: boolean
   knowledge_search_enabled?: boolean
 }
 
@@ -238,19 +237,9 @@ export interface KnowledgeStatus {
   chunks: number
   summary_chunks?: number
   transcript_chunks?: number
-  chat_enabled: boolean
   search_enabled: boolean
   register_enabled: boolean
   transcript_index_enabled?: boolean
-}
-
-export interface KnowledgeDocumentLite {
-  id: string
-  title?: string | null
-  author?: string | null
-  bvid?: string | null
-  cid?: number | null
-  deleted_at?: number | null
 }
 
 export function searchKnowledge(q: string, limit = 10) {
@@ -264,44 +253,6 @@ export function searchKnowledge(q: string, limit = 10) {
 
 export function getKnowledgeStatus() {
   return request<KnowledgeStatus>('/v1/knowledge/status')
-}
-
-export function listKnowledgeDocuments(includeDeleted = false) {
-  const params = new URLSearchParams()
-  if (includeDeleted) params.set('include_deleted', 'true')
-  const suffix = params.toString() ? `?${params.toString()}` : ''
-  return request<{ok: true; documents: KnowledgeDocumentLite[]}>(
-    `/v1/knowledge/documents${suffix}`,
-  )
-}
-
-export function softDeleteKnowledgeDocument(documentId: string, reason?: string) {
-  return request<{ok: true; document: KnowledgeDocumentLite}>(
-    `/v1/knowledge/documents/${encodeURIComponent(documentId)}/soft-delete`,
-    {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({confirm: true, reason: reason ?? null}),
-    },
-  )
-}
-
-export function restoreKnowledgeDocument(documentId: string) {
-  return request<{ok: true; document: KnowledgeDocumentLite}>(
-    `/v1/knowledge/documents/${encodeURIComponent(documentId)}/restore`,
-    {method: 'POST'},
-  )
-}
-
-export function purgeKnowledgeDocument(documentId: string, confirmTitle: string) {
-  return request<{ok: true; id: string; purged: boolean}>(
-    `/v1/knowledge/documents/${encodeURIComponent(documentId)}/purge`,
-    {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({confirm: true, confirm_title: confirmTitle}),
-    },
-  )
 }
 
 export function getRuntimeConfig() {
@@ -378,56 +329,6 @@ export function getCostSummary(refreshBalance = false) {
   return request<CostSummaryResponse>(`/v1/stats/costs${refreshBalance ? '?refresh_balance=true' : ''}`)
 }
 
-/** 周总结接口使用用户时区的周一日期（YYYY-MM-DD）。 */
-export interface WeeklySummaryReference {
-  job_id: string
-  title: string
-  author?: string | null
-  url?: string
-}
-
-export interface WeeklySummary {
-  week_start: string
-  week_end: string
-  timezone?: string | null
-  status: 'MISSING' | 'EMPTY' | 'GENERATING' | 'COMPLETED' | 'FAILED' | 'STALE'
-  source_count: number
-  content: string | null
-  references: WeeklySummaryReference[]
-  error: string | null
-  generated_at: number | null
-}
-
-export function getWeeklySummary(weekStart: string) {
-  return request<{ok: true} & WeeklySummary>(`/v1/weekly-summaries?week_start=${encodeURIComponent(weekStart)}`)
-}
-
-/** 批量查询各周周总结状态（仅 status，供历史周柱标注）。 */
-export function getWeeklySummaryStatuses(weekStarts: string[]) {
-  type StatusMap = Record<string, WeeklySummary['status']>
-  if (!weekStarts.length) {
-    return Promise.resolve({ok: true as const, statuses: {} as StatusMap})
-  }
-  const query = weekStarts.map(encodeURIComponent).join(',')
-  return request<{ok: true; statuses: StatusMap}>(
-    `/v1/weekly-summaries/statuses?week_starts=${query}`,
-  )
-}
-
-export function generateWeeklySummary(weekStart: string, refresh = false) {
-  return request<{ok: true} & WeeklySummary>(`/v1/weekly-summaries/${encodeURIComponent(weekStart)}/generate`, {
-    method: 'POST',
-    body: JSON.stringify({refresh}),
-  })
-}
-
-/** 只删除该周的周总结缓存，不影响该周视频任务。 */
-export function deleteWeeklySummary(weekStart: string) {
-  return request<{ok: true} & WeeklySummary>(`/v1/weekly-summaries/${encodeURIComponent(weekStart)}`, {
-    method: 'DELETE',
-  })
-}
-
 export function createJob(url: string, options: JobOptionOverrides, params: {dedupe?: boolean} = {}) {
   // deduped: 后端发现这条视频之前已总结完成，直接复用了旧任务（没有新建、没有再烧 token）。
   return request<{ok: true; job_id: string; deduped?: boolean}>('/v1/jobs', {
@@ -467,18 +368,6 @@ export interface HistoryFilters {
   tag?: string
 }
 
-export interface HistoryFacet {
-  key: string
-  label: string
-  count: number
-}
-
-export interface HistoryFacetsResponse {
-  ok: true
-  authors: HistoryFacet[]
-  tags: HistoryFacet[]
-}
-
 export function listJobs(params: HistoryFilters & {limit?: number; offset?: number; cursor?: string | number | null; active_only?: boolean; terminal_only?: boolean} = {}, init?: RequestInit) {
   const search = new URLSearchParams()
   search.set('limit', String(params.limit ?? 50))
@@ -494,11 +383,6 @@ export function listJobs(params: HistoryFilters & {limit?: number; offset?: numb
     if (params[key]) search.set(key, params[key]!)
   }
   return request<{ok: true; jobs: Job[]; next_cursor?: string | number | null}>(`/v1/jobs?${search.toString()}`, init)
-}
-
-export function getHistoryFacets(search?: string, init?: RequestInit) {
-  const suffix = search?.trim() ? `?search=${encodeURIComponent(search.trim())}` : ''
-  return request<HistoryFacetsResponse>(`/v1/jobs/facets${suffix}`, init)
 }
 
 export function resendEmail(jobId: string) {
@@ -525,7 +409,6 @@ export interface BulkDeletePreview {
   by_status: Partial<Record<'COMPLETED' | 'FAILED' | 'CANCELED', number>>
   sample: Array<{id: string; title?: string; author?: string; completed_at?: number; created_at?: number}>
   sample_truncated_count: number
-  affected_weekly_summaries: number
   preview_token: string
   /** 预览令牌的过期时间；旧服务端可能不返回，执行时仍会以 409 拒绝过期令牌。 */
   expires_at: number
@@ -543,7 +426,6 @@ export function executeBulkDelete(previewToken: string) {
   return request<{
     ok: true
     deleted_count: number
-    affected_weekly_summaries: number
     cleanup_pending_count?: number
     cleanup_failures?: Array<{job_id: string; file_type: 'audio' | 'summary' | 'subtitle'}>
   }>('/v1/jobs/bulk-delete/execute', {

@@ -36,7 +36,6 @@ async def test_runtime_config_returns_only_booleans(monkeypatch):
     assert response["llm_configured"] is True
     assert response["email_configured"] is True
     assert response["bilibili_cookie_configured"] is True
-    assert isinstance(response.get("knowledge_chat_enabled"), bool)
     assert isinstance(response.get("knowledge_search_enabled"), bool)
 
 

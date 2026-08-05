@@ -1,7 +1,7 @@
 """A1 compatibility baseline — knowledge/RAG must not break these contracts.
 
-Freezes legacy summary path/hash, API/SSE contracts, weekly summary fingerprint,
-and email markdown payload. Rollback = delete fixtures only.
+Freezes legacy summary path/hash, API/SSE contracts, and email markdown payload.
+Rollback = delete fixtures only.
 """
 from __future__ import annotations
 
@@ -20,7 +20,6 @@ from biri_youyaku.modules.bilibili.meta import VideoMeta
 from biri_youyaku.modules.email import webhook
 from biri_youyaku.modules.storage import summary as summary_storage
 from biri_youyaku.routes.jobs import serialize_job
-from biri_youyaku.weekly import repo as weekly_repo
 
 FIXTURES = Path(__file__).parent / "fixtures" / "compatibility"
 LEGACY_SUMMARY_PATH = FIXTURES / "legacy_summary.md"
@@ -106,33 +105,6 @@ def test_read_summary_round_trip(monkeypatch, tmp_path):
     assert loaded is not None
     assert loaded.status == JobStatus.COMPLETED
     assert repo.read_summary(loaded) == fixture_text
-
-
-def test_weekly_fingerprint_includes_body_sha256_and_is_sensitive(monkeypatch, tmp_path):
-    """Fingerprint includes sha256 of the full summary body (see weekly.repo.fingerprint)."""
-    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
-    monkeypatch.setattr(summary_storage.settings, "summary_storage_dir", tmp_path / "summaries")
-    db.init_db()
-
-    fixture_text = _load_fixture_text()
-    job = repo.create_job("https://example.test/compat-a1-fp", JobOptions(email_enabled=False))
-    saved = summary_storage.save(job.id, fixture_text)
-    repo.set_summary_path(job.id, saved)
-    repo.update_status(job.id, JobStatus.COMPLETED)
-    loaded = repo.get_job(job.id)
-    assert loaded is not None
-
-    first = weekly_repo.fingerprint([loaded])
-    second = weekly_repo.fingerprint([loaded])
-    assert first == second
-    assert len(first) == 64
-
-    # One-character body change must invalidate the weekly cache fingerprint.
-    mutated = fixture_text[:-2] + "X" + fixture_text[-1:]  # keep trailing newline
-    assert mutated != fixture_text
-    saved.write_text(mutated, encoding="utf-8")
-    after = weekly_repo.fingerprint([loaded])
-    assert after != first
 
 
 def test_serialize_job_detail_vs_lite(monkeypatch, tmp_path):

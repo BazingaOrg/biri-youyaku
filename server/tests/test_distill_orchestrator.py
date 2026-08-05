@@ -280,7 +280,7 @@ async def test_prepare_transcripts_fan_out_respects_concurrency_limit(monkeypatc
     """`_do_prepare_transcripts` 用 settings.distill_transcript_concurrency 做 fan-out
     上限；用一个记录高水位的假 _obtain_transcript 验证从未超过配置的并发数。"""
     _setup(monkeypatch, tmp_path)
-    monkeypatch.setattr(orchestrator.settings, "distill_transcript_concurrency", 2)
+    monkeypatch.setattr(orchestrator, "DISTILL_TRANSCRIPT_CONCURRENCY", 2)
 
     run = distill_repo.create_run(1, video_limit=5, dir_path=str(tmp_path))
     videos = [

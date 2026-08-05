@@ -4,6 +4,30 @@ from pathlib import Path
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# ---------------------------------------------------------------------------
+# 维护/调优常量：单用户场景没有调这些的需求，不进 .env；fork 时改这里即可。
+# ---------------------------------------------------------------------------
+LLM_TIMEOUT_SECONDS = 300
+LLM_MAX_RETRIES = 2
+# None / 空 = 走代码内默认温度（见 modules/llm/client.resolve_temperature）
+LLM_TEMPERATURE: float | None = None
+LLM_CHUNK_TOKEN_THRESHOLD = 30000
+# 段级总结并发上限，>1 时长视频分段总结走 asyncio.gather。
+LLM_SEGMENT_CONCURRENCY = 3
+# Auto: clear audio files/paths after N days; job row stays.
+AUDIO_RETENTION_DAYS = 7
+# Auto job-row purge only for FAILED/CANCELED with no summary_path.
+JOB_RETENTION_DAYS = 180
+ORPHAN_FILE_RETENTION_DAYS = 3
+STALE_RUNNING_FAIL_HOURS = 4
+DB_VACUUM_INTERVAL_DAYS = 30
+WAL_CHECKPOINT_INTERVAL_HOURS = 24
+CLEANUP_INTERVAL_SECONDS = 3600
+# 蒸馏 _do_prepare_transcripts 阶段并发获取/转写视频的上限。
+DISTILL_TRANSCRIPT_CONCURRENCY = 3
+# 软删除的文档经过多少天后被 cleanup_loop 永久清除。
+KNOWLEDGE_SOFT_DELETE_DAYS = 30
+
 
 class Settings(BaseSettings):
     # 注：uvicorn 的监听 host/port 由启动命令 `--host / --port` 决定，
@@ -31,13 +55,6 @@ class Settings(BaseSettings):
     # DeepSeek 最新基础款（替代已弃用的 deepseek-chat/deepseek-reasoner）。
     # 旗舰 deepseek-v4-pro 也可换用，但贵 3 倍、并发上限低，本场景不必。
     llm_model: str = "deepseek-v4-flash"
-    llm_timeout_seconds: int = Field(default=300, gt=0)
-    llm_max_retries: int = 2
-    # None / 空字符串 = 走代码内默认温度（见 modules/llm/client.resolve_temperature）
-    llm_temperature: float | None = None
-    llm_chunk_token_threshold: int = 30000
-    # 段级总结并发上限，>1 时长视频分段总结走 asyncio.gather。
-    llm_segment_concurrency: int = 3
     # DeepSeek 思考模式开关（仅 deepseek-v4-* 系列有效，其他厂商忽略）。
     # 默认 False：
     #   1. 流式输出体验更好（思考模式下 reasoning_content 不在 content 流，用户要等很久）；
@@ -47,7 +64,6 @@ class Settings(BaseSettings):
     llm_thinking_enabled: bool = False
 
     summary_language: str = "中文简体"
-    weekly_summary_timezone: str = "Asia/Shanghai"
 
     # 邮件默认关闭：fork 的人开箱即用不会因为没配 webhook 而 fail；
     # email_default_recipient 默认空：避免「忘了改收件人 → 发到陌生人邮箱」。
@@ -61,7 +77,6 @@ class Settings(BaseSettings):
     # 公网部署务必设为 bilibili.com,b23.tv 或你信任的域名。
     job_url_allowed_hosts: str = "bilibili.com,b23.tv"
     # 视频时长上限（秒）。默认 4 小时；公网可按机器能力收紧。
-    # Override with MAX_VIDEO_DURATION_SECONDS in .env.
     max_video_duration_seconds: int = 14400
     # 在飞任务总数上限（PENDING + 各 RUNNING 阶段总和）。即便单 IP 在限流内灌任务，
     # 也不会让 PENDING 队列无限堆积。超出 → 503 让前端友好提示「忙不过来」。
@@ -85,34 +100,16 @@ class Settings(BaseSettings):
     knowledge_storage_dir: Path = Path("data/knowledge")
     # Rollback switch: when False, register/reconcile no-op (artifacts already written stay).
     knowledge_register_enabled: bool = True
-    # B: opt-in knowledge chat (default OFF — query never leaves without explicit enable).
-    knowledge_chat_enabled: bool = False
-    # B: FTS summary search (available whenever register is on; independent kill switch).
+    # FTS summary search (available whenever register is on; independent kill switch).
     knowledge_search_enabled: bool = True
     # C: raw transcript FTS index (default on; layered retrieve uses it when present).
     knowledge_transcript_index_enabled: bool = True
-    # D: soft-deleted documents auto-purged after this many days (cleanup_loop).
-    knowledge_soft_delete_days: int = Field(default=30, ge=0)
     # D: local consistent backups (sqlite .backup + knowledge artifacts + manifest).
     knowledge_backup_dir: Path = Path("data/backups")
     db_path: Path = Path("data/biri_youyaku.db")
 
-    # Auto: clear audio files/paths after N days; job row stays.
-    audio_retention_days: int = Field(default=7, ge=0)
-    # Auto job-row purge only for FAILED/CANCELED with no summary_path.
-    # COMPLETED (and any job with summary) is retained until explicit user delete.
-    job_retention_days: int = Field(default=180, ge=0)
     max_concurrent_jobs: int = Field(default=2, gt=0)
     max_concurrent_summaries: int = Field(default=2, gt=0)
-    # 蒸馏 _do_prepare_transcripts 阶段并发获取/转写视频的上限。
-    distill_transcript_concurrency: int = Field(default=3, gt=0)
-
-    # P3 新增：清理 / 维护策略
-    orphan_file_retention_days: int = Field(default=3, ge=0)
-    stale_running_fail_hours: int = 4
-    db_vacuum_interval_days: int = 30
-    wal_checkpoint_interval_hours: int = 24
-    cleanup_interval_seconds: int = 3600
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
@@ -135,14 +132,6 @@ class Settings(BaseSettings):
             for item in self.job_url_allowed_hosts.split(",")
             if item.strip()
         ]
-
-    @field_validator("llm_temperature", mode="before")
-    @classmethod
-    def empty_temperature_as_none(cls, value: object):
-        # .env 里 `LLM_TEMPERATURE=` 会进成 ""，不能当 float 解析。
-        if value is None or value == "":
-            return None
-        return value
 
     @field_validator(
         "audio_storage_dir",

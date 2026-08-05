@@ -57,14 +57,9 @@ def test_job_options_from_overrides_keeps_defaults_for_unset_fields():
 @pytest.mark.parametrize(
     ("field", "value", "error_type"),
     [
-        ("llm_timeout_seconds", 0, "greater_than"),
         ("max_inflight_jobs", 0, "greater_than"),
         ("max_concurrent_jobs", 0, "greater_than"),
         ("max_concurrent_summaries", -1, "greater_than"),
-        ("distill_transcript_concurrency", 0, "greater_than"),
-        ("audio_retention_days", -1, "greater_than_equal"),
-        ("job_retention_days", -1, "greater_than_equal"),
-        ("orphan_file_retention_days", -1, "greater_than_equal"),
     ],
 )
 def test_settings_rejects_invalid_runtime_limits(field, value, error_type):

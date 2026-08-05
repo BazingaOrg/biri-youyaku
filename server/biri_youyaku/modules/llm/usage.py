@@ -204,8 +204,12 @@ def record_balance_snapshot(
         return
 
 
+# 用量按周聚合使用的时区（周成本展示，与周总结功能无关）。
+WEEKLY_SUMMARY_TIMEZONE = "Asia/Shanghai"
+
+
 def _weekly_zone() -> ZoneInfo:
-    return ZoneInfo(getattr(settings, "weekly_summary_timezone", "Asia/Shanghai"))
+    return ZoneInfo(WEEKLY_SUMMARY_TIMEZONE)
 
 
 def week_start_for_timestamp(timestamp_ms: int, *, zone: ZoneInfo | None = None) -> str:

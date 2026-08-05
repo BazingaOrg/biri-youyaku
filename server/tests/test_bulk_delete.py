@@ -5,7 +5,6 @@ from biri_youyaku import db
 from biri_youyaku.jobs import cleanup, repo
 from biri_youyaku.jobs.model import JobOptions, JobStatus
 from biri_youyaku.routes import jobs as jobs_route
-from biri_youyaku.weekly import repo as weekly_summary_repo
 
 
 def _create_finished_job(
@@ -94,7 +93,6 @@ async def test_bulk_delete_preview_and_execute_delete_all_matching_files(monkeyp
     )
     assert preview["by_status"] == {"CANCELED": 0, "COMPLETED": 1, "FAILED": 1}
     assert {item["id"] for item in preview["sample"]} == {first.id, second.id}
-    assert preview["affected_weekly_summaries"] == 0
 
     result = await jobs_route.execute_bulk_delete(
         jobs_route.BulkDeleteExecutePayload(preview_token=preview["preview_token"])
@@ -103,7 +101,6 @@ async def test_bulk_delete_preview_and_execute_delete_all_matching_files(monkeyp
     assert result == {
         "ok": True,
         "deleted_count": 2,
-        "affected_weekly_summaries": 0,
         "cleanup_pending_count": 0,
         "cleanup_failures": [],
         "cleanup_retry": None,
@@ -143,30 +140,6 @@ async def test_bulk_delete_execute_rejects_status_change_inside_delete_scope(mon
         jobs_route.BulkDeleteFilterPayload(author="Alice")
     )
     repo.update_status(job.id, JobStatus.FAILED)
-
-    with pytest.raises(HTTPException) as exc_info:
-        await jobs_route.execute_bulk_delete(
-            jobs_route.BulkDeleteExecutePayload(preview_token=preview["preview_token"])
-        )
-
-    assert exc_info.value.status_code == 409
-    assert repo.get_job(job.id) is not None
-
-
-@pytest.mark.asyncio
-async def test_bulk_delete_execute_rejects_changed_weekly_summary_scope(monkeypatch, tmp_path):
-    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
-    db.init_db()
-    job = _create_finished_job(title="First", author="Alice", tags=["知识"])
-    preview = await jobs_route.preview_bulk_delete(
-        jobs_route.BulkDeleteFilterPayload(author="Alice")
-    )
-    weekly_summary_repo.begin_generation("2026-07-27", fingerprint_value="source-change")
-    with db.connect() as connection:
-        connection.execute(
-            "INSERT INTO weekly_summary_sources (week_start, job_id) VALUES (?, ?)",
-            ("2026-07-27", job.id),
-        )
 
     with pytest.raises(HTTPException) as exc_info:
         await jobs_route.execute_bulk_delete(

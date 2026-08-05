@@ -1,9 +1,9 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
-import {ChevronLeft, ChevronRight, Filter, MoreHorizontal, Plus, RotateCw, Search, Trash2} from 'lucide-react'
+import {ChevronLeft, ChevronRight, MoreHorizontal, Plus, RotateCw, Search, Trash2} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
 import {
-  ApiError, executeBulkDelete, previewBulkDelete, deleteJob, getHistoryFacets, getWeeklySummaryStatuses, listJobs, resummarizeJob,
-  type BulkDeletePreview, type BulkDeleteQuery, type HistoryFacet, type Job, type JobOptionOverrides,
+  ApiError, executeBulkDelete, previewBulkDelete, deleteJob, listJobs, resummarizeJob,
+  type BulkDeletePreview, type BulkDeleteQuery, type Job, type JobOptionOverrides,
 } from '../lib/api'
 import {writeActive} from '../lib/activeJob'
 import {formatDate, formatDuration, formatStatus} from '../lib/format'
@@ -13,11 +13,8 @@ import {BackButton} from '../components/BackButton'
 import {Skeleton} from '../components/Skeleton'
 import {useToast} from '../components/ToastProvider'
 import {ConfirmDialog} from '../components/ConfirmDialog'
-import {WeekNavigator} from '../components/WeekNavigator'
-import {WeeklySummaryCard, type WeeklySummaryStatus} from '../components/WeeklySummaryCard'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
 import {IconTooltip} from './history/IconTooltip'
-import {SearchableSelect} from './history/SearchableSelect'
 import {UsageStrip} from './history/UsageStrip'
 
 const PAGE_SIZE = 60
@@ -49,14 +46,6 @@ function weekLabel(weekStart: number) {
   return `${formatter.format(start)}—${formatter.format(end)}`
 }
 
-function weekStartDate(weekStart: number) {
-  const date = new Date(weekStart)
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
 function dayLabel(ms: number) {
   const date = new Date(ms)
   const today = new Date()
@@ -72,8 +61,6 @@ interface WeekGroup {weekStart: number; jobs: Job[]}
 
 interface HistoryRestoreSnapshot {
   query: string
-  author: string | null
-  tag: string | null
   selectedWeek: number | null
   loadedPages: number
   nextCursor: string | null
@@ -90,8 +77,6 @@ function readHistoryRestore(): HistoryRestoreSnapshot | null {
     if (typeof value.query !== 'string' || typeof value.loadedPages !== 'number') return null
     return {
       query: value.query,
-      author: typeof value.author === 'string' ? value.author : null,
-      tag: typeof value.tag === 'string' ? value.tag : null,
       selectedWeek: typeof value.selectedWeek === 'number' ? value.selectedWeek : null,
       loadedPages: Math.max(1, value.loadedPages),
       nextCursor: typeof value.nextCursor === 'string' ? value.nextCursor : null,
@@ -112,10 +97,6 @@ export function HistoryPage() {
   const [loadError, setLoadError] = useState<'initial' | 'partial' | null>(null)
   const [query, setQuery] = useState(() => restoreSnapshot?.query ?? '')
   const [debouncedQuery, setDebouncedQuery] = useState(() => restoreSnapshot?.query ?? '')
-  const [selectedAuthor, setSelectedAuthor] = useState<string | null>(() => restoreSnapshot?.author ?? null)
-  const [selectedTag, setSelectedTag] = useState<string | null>(() => restoreSnapshot?.tag ?? null)
-  const [authorStats, setAuthorStats] = useState<HistoryFacet[]>([])
-  const [tagStats, setTagStats] = useState<HistoryFacet[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [selectedWeek, setSelectedWeek] = useState<number | null>(() => {
@@ -123,9 +104,6 @@ export function HistoryPage() {
     if (restoreSnapshot?.anchorWeek != null) return restoreSnapshot.anchorWeek
     return null
   })
-  /** week_start YYYY-MM-DD → 周总结状态，供周柱底点标注 */
-  const [weekSummaryStatuses, setWeekSummaryStatuses] = useState<Partial<Record<string, WeeklySummaryStatus>>>({})
-  const [filterPanelOpen, setFilterPanelOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [deletePreview, setDeletePreview] = useState<BulkDeletePreview | null>(null)
   // 弹窗只使用发起预览时的筛选快照；用户随后改筛选不会误导确认文案。
@@ -152,23 +130,7 @@ export function HistoryPage() {
 
   const historyFilters = useMemo(() => ({
     query: debouncedQuery.trim() || undefined,
-    author: selectedAuthor ?? undefined,
-    tag: selectedTag ?? undefined,
-  }), [debouncedQuery, selectedAuthor, selectedTag])
-
-  const loadFacets = useCallback(async () => {
-    try {
-      const facets = await getHistoryFacets()
-      setAuthorStats(facets.authors)
-      setTagStats(facets.tags)
-      return {authors: facets.authors, tags: facets.tags, ok: true as const}
-    } catch {
-      // Facets are a convenience control; do not hide history if they fail.
-      setAuthorStats([])
-      setTagStats([])
-      return {authors: [] as HistoryFacet[], tags: [] as HistoryFacet[], ok: false as const}
-    }
-  }, [])
+  }), [debouncedQuery])
 
   const loadFirstPage = useCallback(async () => {
     invalidateLoad()
@@ -187,7 +149,7 @@ export function HistoryPage() {
       ])
       if (!isCurrent()) return
       const restore = restoreSnapshotRef.current
-      const restoringPages = restore && restore.query === (historyFilters.query ?? '') && restore.author === (historyFilters.author ?? null) && restore.tag === (historyFilters.tag ?? null)
+      const restoringPages = restore && restore.query === (historyFilters.query ?? '')
         ? restore.loadedPages
         : 1
       let restoredJobs = response.jobs
@@ -246,8 +208,6 @@ export function HistoryPage() {
     return () => invalidateLoad()
   }, [invalidateLoad, loadFirstPage])
 
-  useEffect(() => { void loadFacets() }, [loadFacets])
-
   useEffect(() => {
     const pending = pendingDeletes.current
     return () => {
@@ -293,49 +253,6 @@ export function HistoryPage() {
     [weekGroups, selectedWeek],
   )
 
-  const weekStartKeys = useMemo(
-    () => weekGroups.map((group) => weekStartDate(group.weekStart)),
-    [weekGroups],
-  )
-  // Stable string key so identical week sets do not re-fetch statuses.
-  const weekStartKeysKey = weekStartKeys.join(',')
-
-  useEffect(() => {
-    if (!weekStartKeysKey) {
-      setWeekSummaryStatuses({})
-      return
-    }
-    const keys = weekStartKeysKey.split(',')
-    let cancelled = false
-    void getWeeklySummaryStatuses(keys)
-      .then((response) => {
-        if (!cancelled) setWeekSummaryStatuses(response.statuses)
-      })
-      .catch(() => {
-        // Status dots are secondary chrome; empty map keeps bars usable.
-        if (!cancelled) setWeekSummaryStatuses({})
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [weekStartKeysKey])
-
-  const handleWeekSummaryStatus = useCallback((weekKey: string, status: WeeklySummaryStatus | null) => {
-    setWeekSummaryStatuses((current) => {
-      if (status == null) {
-        // Keep last known status during card remount/week switch; batch map owns blanks.
-        return current
-      }
-      if (current[weekKey] === status) return current
-      return {...current, [weekKey]: status}
-    })
-  }, [])
-
-  const selectedWeekKey = selectedGroup ? weekStartDate(selectedGroup.weekStart) : null
-  const onSelectedWeekSummaryStatus = useCallback((status: WeeklySummaryStatus | null) => {
-    if (!selectedWeekKey) return
-    handleWeekSummaryStatus(selectedWeekKey, status)
-  }, [handleWeekSummaryStatus, selectedWeekKey])
   const selectedWeekIndex = useMemo(
     () => weekGroups.findIndex((group) => group.weekStart === selectedWeek),
     [weekGroups, selectedWeek],
@@ -387,13 +304,12 @@ export function HistoryPage() {
     pendingDeletes.current.delete(jobId)
     try {
       await deleteJob(jobId)
-      void loadFacets()
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) return
       restoreJob(entry.job)
       toast.error('删除失败', err instanceof Error ? err.message : '请重试')
     }
-  }, [loadFacets, restoreJob, toast])
+  }, [restoreJob, toast])
   const handleDelete = (jobId: string) => {
     const job = jobs.find((item) => item.id === jobId)
     if (!job) return
@@ -413,7 +329,7 @@ export function HistoryPage() {
     }}})
   }
 
-  const bulkFilters = useMemo(() => ({query: debouncedQuery.trim() || undefined, author: selectedAuthor ?? undefined, tag: selectedTag ?? undefined}), [debouncedQuery, selectedAuthor, selectedTag])
+  const bulkFilters = useMemo(() => ({query: debouncedQuery.trim() || undefined}), [debouncedQuery])
   const flushPendingDeletes = useCallback(async () => {
     const pendingIds = [...pendingDeletes.current.keys()]
     for (const jobId of pendingIds) {
@@ -443,24 +359,11 @@ export function HistoryPage() {
       const response = await executeBulkDelete(deletePreview.preview_token)
       setDeletePreview(null)
       setDeletePreviewFilters(null)
-      const facets = await loadFacets()
-      // Only clear orphan filters when facets loaded successfully; empty catch result must not wipe selection.
-      const authorOrphaned = Boolean(facets.ok && selectedAuthor && !facets.authors.some((item) => item.key === selectedAuthor))
-      const tagOrphaned = Boolean(facets.ok && selectedTag && !facets.tags.some((item) => item.key === selectedTag))
-      if (authorOrphaned) setSelectedAuthor(null)
-      if (tagOrphaned) setSelectedTag(null)
-      const clearedParts: string[] = []
-      if (authorOrphaned) clearedParts.push('UP 主')
-      if (tagOrphaned) clearedParts.push('标签')
       const detailBase = response.cleanup_pending_count
         ? `记录已删除，${response.cleanup_pending_count} 个文件待后台重试。`
         : `已删除 ${response.deleted_count} 条记录`
-      const detail = clearedParts.length
-        ? `${detailBase}；${clearedParts.join('、')}筛选已清除`
-        : detailBase
-      toast.success('已删除', detail)
-      // If filters were cleared, historyFilters effect will reload; otherwise reload now.
-      if (!authorOrphaned && !tagOrphaned) await loadFirstPage()
+      toast.success('已删除', detailBase)
+      await loadFirstPage()
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         try {
@@ -486,23 +389,19 @@ export function HistoryPage() {
     catch (err) { toast.error('重新总结失败', err instanceof Error ? err.message : '请重试') }
     finally { setResummarizing(false) }
   }
-  const hasFilters = Boolean(debouncedQuery.trim() || selectedAuthor || selectedTag)
-  const previewHasFilters = Boolean(deletePreviewFilters?.query || deletePreviewFilters?.author || deletePreviewFilters?.tag)
+  const hasFilters = Boolean(debouncedQuery.trim())
+  const previewHasFilters = Boolean(deletePreviewFilters?.query)
   const queryPending = query !== debouncedQuery
 
   const clearFilters = () => {
     setQuery('')
     setDebouncedQuery('')
-    setSelectedAuthor(null)
-    setSelectedTag(null)
   }
 
   const saveHistoryState = useCallback((anchorJobId: string | null = null, anchorWeek: number | null = null) => {
     try {
       window.sessionStorage.setItem(HISTORY_RESTORE_KEY, JSON.stringify({
         query: debouncedQuery,
-        author: selectedAuthor,
-        tag: selectedTag,
         selectedWeek: anchorWeek ?? selectedWeek,
         loadedPages: loadedPagesRef.current,
         nextCursor: nextCursorRef.current,
@@ -513,7 +412,7 @@ export function HistoryPage() {
     } catch {
       // Session storage is a convenience for back navigation; history remains usable without it.
     }
-  }, [debouncedQuery, selectedAuthor, selectedTag, selectedWeek])
+  }, [debouncedQuery, selectedWeek])
 
   const renderJob = (job: Job, index: number) => {
     const running = isRunning(job.status)
@@ -548,15 +447,11 @@ export function HistoryPage() {
     </header>
     <section className="min-w-0 px-4 sm:px-5">
       <div className="border-y border-line/70 py-3">
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:grid-cols-[minmax(12rem,1fr)_11rem_11rem_auto]">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
           <label className="relative block min-w-0"><Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜标题、UP 主、BVID 或标签" className="min-h-11 w-full rounded-2xl bg-lift py-2 pl-10 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30" /></label>
-          <div className="hidden sm:block"><SearchableSelect ariaLabel="UP 主" placeholder="全部 UP 主" items={authorStats} value={selectedAuthor} onChange={setSelectedAuthor} /></div>
-          <div className="hidden sm:block"><SearchableSelect ariaLabel="标签" placeholder="全部标签" items={tagStats} value={selectedTag} onChange={setSelectedTag} tag /></div>
-          <div className="relative flex gap-2"><button type="button" aria-label="筛选" onClick={() => setFilterPanelOpen(true)} className="grid h-11 w-11 place-items-center rounded-2xl bg-lift text-muted sm:hidden"><Filter size={16} /></button><button type="button" aria-label="更多操作" aria-expanded={moreOpen} onClick={() => setMoreOpen((value) => !value)} disabled={previewingDelete || jobs.length === 0 || queryPending} title={queryPending ? '请等待搜索条件更新后再删除' : undefined} className="grid h-11 w-11 place-items-center rounded-2xl bg-lift text-muted hover:bg-line/70 hover:text-ink disabled:opacity-40"><MoreHorizontal size={18} /></button>{moreOpen && <div className="absolute right-0 top-12 z-30 w-56 rounded-2xl border border-line bg-panel p-2 shadow-cardHover"><button type="button" onClick={() => void openDeletePreview()} className="flex min-h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-sm text-danger hover:bg-danger/10"><Trash2 size={15} />{hasFilters ? '删除筛选结果…' : '清理历史…'}</button></div>}</div>
+          <div className="relative flex gap-2"><button type="button" aria-label="更多操作" aria-expanded={moreOpen} onClick={() => setMoreOpen((value) => !value)} disabled={previewingDelete || jobs.length === 0 || queryPending} title={queryPending ? '请等待搜索条件更新后再删除' : undefined} className="grid h-11 w-11 place-items-center rounded-2xl bg-lift text-muted hover:bg-line/70 hover:text-ink disabled:opacity-40"><MoreHorizontal size={18} /></button>{moreOpen && <div className="absolute right-0 top-12 z-30 w-56 rounded-2xl border border-line bg-panel p-2 shadow-cardHover"><button type="button" onClick={() => void openDeletePreview()} className="flex min-h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-sm text-danger hover:bg-danger/10"><Trash2 size={15} />{hasFilters ? '删除筛选结果…' : '清理历史…'}</button></div>}</div>
         </div>
-        {(selectedAuthor || selectedTag) && <div className="mt-2 flex flex-wrap gap-2 sm:hidden">{selectedAuthor && <button type="button" onClick={() => setSelectedAuthor(null)} className="rounded-full bg-brandSoft px-3 py-1 text-xs text-brand">{selectedAuthor} ×</button>}{selectedTag && <button type="button" onClick={() => setSelectedTag(null)} className="rounded-full bg-brandSoft px-3 py-1 text-xs text-brand">#{selectedTag} ×</button>}</div>}
       </div>
-      {filterPanelOpen && <div className="grid gap-3 border-b border-line/60 py-3 sm:hidden"><SearchableSelect ariaLabel="UP 主" placeholder="全部 UP 主" items={authorStats} value={selectedAuthor} onChange={setSelectedAuthor} /><SearchableSelect ariaLabel="标签" placeholder="全部标签" items={tagStats} value={selectedTag} onChange={setSelectedTag} tag /><button type="button" onClick={() => setFilterPanelOpen(false)} className="min-h-10 rounded-xl bg-lift text-sm text-muted">完成</button></div>}
       <div className="py-3">
         {loading && <Skeleton count={6} />}
         {!loading && loadError === 'initial' && <div className="grid justify-items-center gap-3 border-b border-line/60 py-12 text-center"><p className="text-sm text-muted">加载失败，请检查网络后重试</p><button type="button" onClick={() => void loadFirstPage()} className="inline-flex min-h-10 items-center gap-2 rounded-2xl bg-lift px-4 text-sm text-muted"><RotateCw size={15} />重试</button></div>}
@@ -574,14 +469,6 @@ export function HistoryPage() {
             <ul className="rounded-2xl bg-lift/45 px-3">{searchJobs.map(renderJob)}</ul>
           ) : (
             <div className="grid gap-3">
-              {weekGroups.length > 0 && (
-                <WeekNavigator
-                  weeks={weekGroups.map((group) => ({weekStart: group.weekStart, count: group.jobs.length}))}
-                  selectedWeek={selectedWeek}
-                  onSelect={setSelectedWeek}
-                  summaryStatuses={weekSummaryStatuses}
-                />
-              )}
               {selectedGroup && (
                 <section id={`history-week-${selectedGroup.weekStart}`} className="overflow-hidden rounded-2xl border border-line/70 bg-lift/45">
                   <div className="flex min-h-12 items-center gap-2 px-3">
@@ -615,12 +502,6 @@ export function HistoryPage() {
                     </button>
                   </div>
                   <div className="border-t border-line/60 px-3 pb-1">
-                    <WeeklySummaryCard
-                      weekStart={selectedWeekKey!}
-                      compact
-                      onReferenceNavigate={(jobId) => saveHistoryState(jobId, selectedGroup.weekStart)}
-                      onStatusChange={onSelectedWeekSummaryStatus}
-                    />
                     {selectedByDay.map(([key, dayJobs]) => (
                       <div key={key}>
                         <h3 className="pt-3 text-xs font-medium text-muted">{dayLabel(dayJobs[0].completed_at ?? dayJobs[0].created_at)}</h3>
@@ -641,7 +522,7 @@ export function HistoryPage() {
       title={previewHasFilters
         ? `永久删除当前筛选结果中的 ${deletePreview?.matched_count ?? 0} 条记录？`
         : `永久删除全部 ${deletePreview?.matched_count ?? 0} 条历史记录？`}
-      description={deletePreview && <div className="grid gap-3"><div>{previewHasFilters && <><p>筛选范围</p>{deletePreviewFilters?.query && <p>搜索：“{deletePreviewFilters.query}”</p>}{deletePreviewFilters?.author && <p>UP 主：{deletePreviewFilters.author}</p>}{deletePreviewFilters?.tag && <p>标签：#{deletePreviewFilters.tag}</p>}</>}<p>数据库中共有：{deletePreview.by_status.COMPLETED ?? 0} 条已完成 · {deletePreview.by_status.FAILED ?? 0} 条失败 · {deletePreview.by_status.CANCELED ?? 0} 条已取消</p></div><div><p className="font-medium text-ink">包括：</p>{deletePreview.sample.map((job) => <p key={job.id} className="truncate">· {job.title || '未命名视频'}{job.author ? ` · ${job.author}` : ''}</p>)}{deletePreview.sample_truncated_count > 0 && <p>另有 {deletePreview.sample_truncated_count} 条</p>}</div><p>将删除数据库中全部符合条件的记录，不仅是当前已加载或显示在屏幕中的条目。</p><p>关联的总结、字幕和音频也会永久删除。{deletePreview.affected_weekly_summaries > 0 ? `其中 ${deletePreview.affected_weekly_summaries} 份周总结将失效并需要更新。` : ''}</p></div>}
+      description={deletePreview && <div className="grid gap-3"><div>{previewHasFilters && <><p>筛选范围</p>{deletePreviewFilters?.query && <p>搜索：“{deletePreviewFilters.query}”</p>}</>}<p>数据库中共有：{deletePreview.by_status.COMPLETED ?? 0} 条已完成 · {deletePreview.by_status.FAILED ?? 0} 条失败 · {deletePreview.by_status.CANCELED ?? 0} 条已取消</p></div><div><p className="font-medium text-ink">包括：</p>{deletePreview.sample.map((job) => <p key={job.id} className="truncate">· {job.title || '未命名视频'}{job.author ? ` · ${job.author}` : ''}</p>)}{deletePreview.sample_truncated_count > 0 && <p>另有 {deletePreview.sample_truncated_count} 条</p>}</div><p>将删除数据库中全部符合条件的记录，不仅是当前已加载或显示在屏幕中的条目。</p><p>关联的总结、字幕和音频也会永久删除。</p></div>}
       confirmLabel={`永久删除 ${deletePreview?.matched_count ?? 0} 条`}
       danger
       loading={clearing}

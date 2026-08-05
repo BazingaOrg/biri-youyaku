@@ -13,8 +13,8 @@ from biri_youyaku.jobs.model import JobOptions, JobStatus
 @pytest.mark.asyncio
 async def test_cleanup_removes_expired_audio_without_deleting_job(monkeypatch, tmp_path):
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
-    monkeypatch.setattr(cleanup.settings, "audio_retention_days", 1)
-    monkeypatch.setattr(cleanup.settings, "job_retention_days", 180)
+    monkeypatch.setattr(cleanup, "AUDIO_RETENTION_DAYS", 1)
+    monkeypatch.setattr(cleanup, "JOB_RETENTION_DAYS", 180)
     db.init_db()
     job = repo.create_job("https://www.bilibili.com/video/BV123", JobOptions())
     audio_path = tmp_path / f"{job.id}.wav"
@@ -47,8 +47,8 @@ def _age_job(job_id: str, days: int) -> None:
 
 def _patch_retention(monkeypatch, tmp_path, *, audio_days: int = 7, job_days: int = 1) -> None:
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
-    monkeypatch.setattr(cleanup.settings, "audio_retention_days", audio_days)
-    monkeypatch.setattr(cleanup.settings, "job_retention_days", job_days)
+    monkeypatch.setattr(cleanup, "AUDIO_RETENTION_DAYS", audio_days)
+    monkeypatch.setattr(cleanup, "JOB_RETENTION_DAYS", job_days)
 
 
 @pytest.mark.asyncio
@@ -148,7 +148,7 @@ async def test_cleanup_keeps_fresh_failed_within_retention(monkeypatch, tmp_path
 @pytest.mark.asyncio
 async def test_fail_stale_running_skips_active_task_and_uses_atomic_transition(monkeypatch, tmp_path):
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
-    monkeypatch.setattr(cleanup.settings, "stale_running_fail_hours", 1)
+    monkeypatch.setattr(cleanup, "STALE_RUNNING_FAIL_HOURS", 1)
     db.init_db()
     active = repo.create_job("https://www.bilibili.com/video/BV-active", JobOptions())
     stale = repo.create_job("https://www.bilibili.com/video/BV-stale", JobOptions())
@@ -174,7 +174,7 @@ def _age_dir(path, days):
 @pytest.mark.asyncio
 async def test_scan_orphans_removes_distill_dir_without_db_record(monkeypatch, tmp_path):
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
-    monkeypatch.setattr(cleanup.settings, "orphan_file_retention_days", 1)
+    monkeypatch.setattr(cleanup, "ORPHAN_FILE_RETENTION_DAYS", 1)
     distill_dir = tmp_path / "distill"
     monkeypatch.setattr(cleanup.settings, "distill_storage_dir", distill_dir)
     db.init_db()
@@ -193,7 +193,7 @@ async def test_scan_orphans_removes_distill_dir_without_db_record(monkeypatch, t
 @pytest.mark.asyncio
 async def test_scan_orphans_keeps_distill_dir_with_db_record(monkeypatch, tmp_path):
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
-    monkeypatch.setattr(cleanup.settings, "orphan_file_retention_days", 1)
+    monkeypatch.setattr(cleanup, "ORPHAN_FILE_RETENTION_DAYS", 1)
     distill_dir = tmp_path / "distill"
     monkeypatch.setattr(cleanup.settings, "distill_storage_dir", distill_dir)
     db.init_db()
@@ -213,7 +213,7 @@ async def test_scan_orphans_keeps_distill_dir_with_db_record(monkeypatch, tmp_pa
 @pytest.mark.asyncio
 async def test_scan_orphans_respects_retention_window_for_distill_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
-    monkeypatch.setattr(cleanup.settings, "orphan_file_retention_days", 3)
+    monkeypatch.setattr(cleanup, "ORPHAN_FILE_RETENTION_DAYS", 3)
     distill_dir = tmp_path / "distill"
     monkeypatch.setattr(cleanup.settings, "distill_storage_dir", distill_dir)
     db.init_db()

@@ -47,7 +47,6 @@ from biri_youyaku.modules.bilibili import meta as bili_meta
 from biri_youyaku.modules.email.webhook import send as send_email
 from biri_youyaku.llm_url import validate_llm_base_url
 from biri_youyaku.rate_limit import limiter
-from biri_youyaku.weekly import repo as weekly_summary_repo
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +144,6 @@ def _bulk_delete_candidate_hash(jobs: list[Job]) -> str:
 def _encode_bulk_delete_preview(
     filters: dict[str, str | None],
     jobs: list[Job],
-    affected_week_starts: list[str],
     *,
     expires_at: int,
 ) -> str:
@@ -153,7 +151,6 @@ def _encode_bulk_delete_preview(
         "expires_at": expires_at,
         "filters": filters,
         "candidate_hash": _bulk_delete_candidate_hash(jobs),
-        "affected_week_starts": affected_week_starts,
     }
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
         "utf-8"
@@ -185,11 +182,6 @@ def _decode_bulk_delete_preview(token: str) -> dict:
             payload["expires_at"], int
         ):
             raise ValueError
-        week_starts = payload["affected_week_starts"]
-        if not isinstance(week_starts, list) or week_starts != sorted(week_starts):
-            raise ValueError
-        if any(not isinstance(week_start, str) for week_start in week_starts):
-            raise ValueError
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         raise HTTPException(status_code=400, detail="删除预览无效，请重新预览") from None
     if payload["expires_at"] < repo.now_ms():
@@ -198,9 +190,6 @@ def _decode_bulk_delete_preview(token: str) -> dict:
 
 
 def _bulk_delete_preview_response(filters: dict[str, str | None], jobs: list[Job]) -> dict:
-    affected_week_starts = weekly_summary_repo.affected_week_starts_for_job_ids(
-        [job.id for job in jobs]
-    )
     expires_at = repo.now_ms() + _BULK_DELETE_PREVIEW_TTL_MS
     by_status = {
         status.value: 0
@@ -224,11 +213,8 @@ def _bulk_delete_preview_response(filters: dict[str, str | None], jobs: list[Job
         "by_status": by_status,
         "sample": sample,
         "sample_truncated_count": max(0, len(jobs) - len(sample)),
-        "affected_weekly_summaries": len(affected_week_starts),
         "expires_at": expires_at,
-        "preview_token": _encode_bulk_delete_preview(
-            filters, jobs, affected_week_starts, expires_at=expires_at
-        ),
+        "preview_token": _encode_bulk_delete_preview(filters, jobs, expires_at=expires_at),
     }
 
 
@@ -413,11 +399,6 @@ async def list_jobs(
     }
 
 
-@router.get("/jobs/facets")
-async def job_facets(search: str | None = Query(default=None, max_length=200)) -> dict:
-    return {"ok": True, **repo.list_job_facets(search=search.strip() or None if search else None)}
-
-
 @router.post("/jobs/bulk-delete/preview")
 async def preview_bulk_delete(payload: BulkDeleteFilterPayload) -> dict:
     filters = _normalize_bulk_delete_filters(payload)
@@ -437,17 +418,9 @@ async def execute_bulk_delete(payload: BulkDeleteExecutePayload) -> dict:
             connection.rollback()
             raise HTTPException(status_code=409, detail="删除范围已变化，请重新预览")
         job_ids = [job.id for job in jobs]
-        if weekly_summary_repo.affected_week_starts_for_job_ids(
-            job_ids, connection=connection
-        ) != preview["affected_week_starts"]:
-            connection.rollback()
-            raise HTTPException(status_code=409, detail="删除范围已变化，请重新预览")
         cleanup_targets = [
             target for job in jobs for target in collect_job_file_cleanup_targets(job)
         ]
-        affected_weekly_summaries = weekly_summary_repo.mark_stale_for_job_ids(
-            job_ids, connection=connection
-        )
         # A3: unlink knowledge job links inside the same transaction; never delete artifacts.
         from biri_youyaku.knowledge import unlink_jobs as knowledge_unlink_jobs
 
@@ -471,7 +444,6 @@ async def execute_bulk_delete(payload: BulkDeleteExecutePayload) -> dict:
     return {
         "ok": True,
         "deleted_count": deleted_count,
-        "affected_weekly_summaries": affected_weekly_summaries,
         "cleanup_pending_count": len(cleanup_failures),
         "cleanup_failures": [
             {
@@ -650,7 +622,6 @@ async def delete(job_id: str) -> dict:
     if job.status not in RETENTION_DELETE_JOB_STATUSES:
         raise HTTPException(status_code=409, detail="任务进行中，请先取消再删除")
 
-    weekly_summary_repo.mark_stale_for_job_ids([job.id])
     # A3: unlink knowledge job link; keep knowledge artifacts on disk/DB.
     try:
         from biri_youyaku.knowledge import unlink_job as knowledge_unlink_job

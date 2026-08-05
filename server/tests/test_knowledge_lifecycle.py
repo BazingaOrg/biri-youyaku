@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from biri_youyaku import db
 from biri_youyaku.config import settings
+from biri_youyaku.jobs import cleanup
 from biri_youyaku.jobs import repo as jobs_repo
 from biri_youyaku.jobs.model import JobOptions, JobStatus
 from biri_youyaku.jobs.repo import now_ms
@@ -33,11 +34,10 @@ def _setup(monkeypatch, tmp_path: Path) -> Path:
     monkeypatch.setattr(settings, "knowledge_storage_dir", knowledge_dir)
     monkeypatch.setattr(settings, "knowledge_register_enabled", True)
     monkeypatch.setattr(settings, "knowledge_search_enabled", True)
-    monkeypatch.setattr(settings, "knowledge_chat_enabled", False)
     monkeypatch.setattr(settings, "knowledge_transcript_index_enabled", True)
     monkeypatch.setattr(settings, "summary_storage_dir", tmp_path / "summaries")
     monkeypatch.setattr(settings, "knowledge_backup_dir", tmp_path / "backups")
-    monkeypatch.setattr(settings, "knowledge_soft_delete_days", 30)
+    monkeypatch.setattr(cleanup, "KNOWLEDGE_SOFT_DELETE_DAYS", 30)
     monkeypatch.setattr(settings, "api_token", "")
     db.init_db()
     return knowledge_dir

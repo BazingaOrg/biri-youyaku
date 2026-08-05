@@ -61,7 +61,6 @@ async def get_runtime_config() -> dict:
         "llm_configured": bool(settings.llm_api_key),
         "email_configured": email_configured,
         "bilibili_cookie_configured": bool(settings.bili_sessdata),
-        "knowledge_chat_enabled": bool(settings.knowledge_chat_enabled),
         "knowledge_search_enabled": bool(
             settings.knowledge_search_enabled and settings.knowledge_register_enabled
         ),

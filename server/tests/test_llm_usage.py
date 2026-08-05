@@ -182,7 +182,7 @@ def test_balance_snapshot_is_stored_as_micros(monkeypatch, tmp_path):
 
 def test_weekly_costs_use_shanghai_monday_boundary(monkeypatch, tmp_path):
     _init_db(monkeypatch, tmp_path)
-    monkeypatch.setattr(usage.settings, "weekly_summary_timezone", "Asia/Shanghai")
+    monkeypatch.setattr(usage, "WEEKLY_SUMMARY_TIMEZONE", "Asia/Shanghai")
     # 2026-07-26 15:59 UTC is Sunday 23:59 in Shanghai; one minute later is Monday.
     before_boundary = int(datetime(2026, 7, 26, 15, 59, tzinfo=timezone.utc).timestamp() * 1000)
     after_boundary = int(datetime(2026, 7, 26, 16, 0, tzinfo=timezone.utc).timestamp() * 1000)

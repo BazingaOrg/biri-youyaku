@@ -1,4 +1,4 @@
-"""Knowledge registry + FTS summary/transcript search / opt-in chat / lifecycle.
+"""Knowledge registry + FTS summary/transcript search / lifecycle.
 
 Public surface:
 - try_register_job / register_from_job
@@ -6,7 +6,7 @@ Public surface:
 - unlink_job / unlink_jobs (via repo)
 - lifecycle soft_delete / restore / purge_permanent
 - backup create_backup
-- index / search / retrieve / chat modules (imported by routes)
+- index / search / retrieve modules (imported by routes)
 """
 
 from biri_youyaku.knowledge.reconcile import reconcile_once

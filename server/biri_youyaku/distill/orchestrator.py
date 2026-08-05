@@ -22,7 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from biri_youyaku.config import settings
+from biri_youyaku.config import DISTILL_TRANSCRIPT_CONCURRENCY
 from biri_youyaku.distill import assembler
 from biri_youyaku.distill import repo as distill_repo
 from biri_youyaku.distill.model import (
@@ -304,7 +304,7 @@ async def _do_prepare_transcripts(run_id: str) -> list[dict]:
             pending_indices.append(len(records))
         records.append(record)
 
-    semaphore = asyncio.Semaphore(settings.distill_transcript_concurrency)
+    semaphore = asyncio.Semaphore(DISTILL_TRANSCRIPT_CONCURRENCY)
 
     async def _obtain_one(video, record: dict) -> None:
         nonlocal transcribed

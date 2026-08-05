@@ -7,7 +7,14 @@ from collections.abc import Awaitable, Callable
 
 from openai import AsyncOpenAI
 
-from biri_youyaku.config import settings
+from biri_youyaku.config import (
+    LLM_CHUNK_TOKEN_THRESHOLD,
+    LLM_MAX_RETRIES,
+    LLM_SEGMENT_CONCURRENCY,
+    LLM_TEMPERATURE,
+    LLM_TIMEOUT_SECONDS,
+    settings,
+)
 from biri_youyaku.jobs.model import JobOptions
 from biri_youyaku.modules._http import openai_client
 from biri_youyaku.modules.bilibili.meta import VideoMeta
@@ -36,8 +43,8 @@ SegmentProgressCallback = Callable[[int, int], Awaitable[None]]
 
 
 def resolve_temperature() -> float:
-    if settings.llm_temperature is not None:
-        return settings.llm_temperature
+    if LLM_TEMPERATURE is not None:
+        return LLM_TEMPERATURE
     return 0.2
 
 
@@ -369,9 +376,9 @@ async def _summarize_chunked(
     on_segment: SegmentProgressCallback | None = None,
     usage_context: UsageContext | None = None,
 ) -> str:
-    segments = list(split_transcript(items, settings.llm_chunk_token_threshold))
+    segments = list(split_transcript(items, LLM_CHUNK_TOKEN_THRESHOLD))
     total = len(segments)
-    concurrency = max(1, int(settings.llm_segment_concurrency))
+    concurrency = max(1, int(LLM_SEGMENT_CONCURRENCY))
     semaphore = asyncio.Semaphore(concurrency)
     done_count = 0
 
@@ -476,8 +483,8 @@ async def summarize(
     client = openai_client(
         api_key=resolved_api_key,
         base_url=options.llm_base_url or settings.llm_base_url,
-        timeout=settings.llm_timeout_seconds,
-        max_retries=settings.llm_max_retries,
+        timeout=LLM_TIMEOUT_SECONDS,
+        max_retries=LLM_MAX_RETRIES,
     )
     model = options.llm_model or settings.llm_model
     usage_context = make_context(
@@ -518,7 +525,7 @@ async def summarize(
             usage_context=usage_context,
         )
 
-    if should_chunk(items, settings.llm_chunk_token_threshold):
+    if should_chunk(items, LLM_CHUNK_TOKEN_THRESHOLD):
         return await _summarize_chunked(
             client,
             items=items,
@@ -594,8 +601,8 @@ async def generate_tags(
     client = openai_client(
         api_key=resolved_api_key,
         base_url=options.llm_base_url or settings.llm_base_url,
-        timeout=settings.llm_timeout_seconds,
-        max_retries=settings.llm_max_retries,
+        timeout=LLM_TIMEOUT_SECONDS,
+        max_retries=LLM_MAX_RETRIES,
     )
     model = options.llm_model or settings.llm_model
     usage_context = make_context(
