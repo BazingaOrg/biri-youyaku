@@ -1,7 +1,9 @@
-import {Captions, Clock, Copy, FileDown, History, Mail, Music, Plus, RotateCw, Tag} from 'lucide-react'
-import type {Job} from '../../lib/api'
+import {useState} from 'react'
+import {Captions, Clock, Copy, FileDown, History, Music, Plus, RotateCw, Tag} from 'lucide-react'
+import {resendEmail, type Job} from '../../lib/api'
 import {formatStageTimings, formatTokenCount} from '../../lib/format'
 import {IconButton} from '../../components/IconButton'
+import {useToast} from '../../components/ToastProvider'
 import {MetaBar} from './MetaBar'
 import {SummaryTabs} from './SummaryTabs'
 
@@ -40,9 +42,7 @@ interface DoneViewProps {
   onCopy: () => void
   onDownloadMarkdown: () => void
   onDownloadSubtitle: () => void
-  onResendEmail: () => void
   onResummarize: () => void
-  emailBusy: boolean
   resummarizeBusy?: boolean
 }
 
@@ -54,11 +54,23 @@ export function DoneView({
   onCopy,
   onDownloadMarkdown,
   onDownloadSubtitle,
-  onResendEmail,
   onResummarize,
-  emailBusy,
   resummarizeBusy = false,
 }: DoneViewProps) {
+  // 邮件投递失败是低频事件：不占整行 banner，一行小字 + 内联重发即可。
+  const [resending, setResending] = useState(false)
+  const toast = useToast()
+  const resend = async () => {
+    setResending(true)
+    try {
+      await resendEmail(job.id)
+      toast.success('已重发邮件', undefined, {taskName: job.title || undefined})
+    } catch (err) {
+      toast.error('重发失败', err instanceof Error ? err.message : '请重试', {taskName: job.title || undefined})
+    } finally {
+      setResending(false)
+    }
+  }
   return (
     <div className="grid min-w-0 gap-4 py-4">
       <div className="flex flex-wrap items-center justify-center gap-2">
@@ -94,18 +106,18 @@ export function DoneView({
       <JobStats job={job} />
       <TagChips tags={job.tags} />
       {job.email_error && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
-          <p className="break-words leading-6">总结已完成，邮件未送达：{job.email_error}</p>
+        <p className="px-1 text-xs text-warning">
+          邮件未送达（{job.email_error}）
+          {' · '}
           <button
             type="button"
-            onClick={onResendEmail}
-            disabled={emailBusy}
-            className="inline-flex items-center gap-1 rounded-xl border border-warning/30 px-2 py-1 text-xs text-warning transition hover:bg-warning/20 disabled:opacity-60"
+            onClick={() => void resend()}
+            disabled={resending}
+            className="underline underline-offset-2 transition hover:text-warning/80 disabled:opacity-50"
           >
-            {emailBusy ? <RotateCw size={12} className="animate-spin" /> : <Mail size={12} />}
-            重发邮件
+            {resending ? '重发中…' : '重发'}
           </button>
-        </div>
+        </p>
       )}
       <SummaryTabs job={job} />
     </div>

@@ -8,7 +8,6 @@ import {
   getConfigDefaults,
   getJob,
   resummarizeJob,
-  resendEmail,
   retryJob,
 } from '../lib/api'
 import type {ConfigDefaults, Job, JobOptionOverrides} from '../lib/api'
@@ -43,7 +42,6 @@ export function Workspace({jobId}: WorkspaceProps) {
   const {job, setJob, error, refresh} = useJob(jobId)
   const [actionBusy, setActionBusy] = useState(false)
   const [cancelPending, setCancelPending] = useState(false)
-  const [emailBusy, setEmailBusy] = useState(false)
   const [duplicateJob, setDuplicateJob] = useState<{url: string; jobId: string} | null>(null)
   const [duplicateBusy, setDuplicateBusy] = useState(false)
   const [resummaryConfirmOpen, setResummaryConfirmOpen] = useState(false)
@@ -252,21 +250,6 @@ export function Workspace({jobId}: WorkspaceProps) {
     }
   }
 
-  const resendCurrentEmail = async () => {
-    if (!jobId) return
-    setEmailBusy(true)
-    const taskName = job?.title || undefined
-    try {
-      await resendEmail(jobId)
-      await refresh()
-      toast.success('已重发邮件', undefined, {taskName})
-    } catch (err) {
-      toast.error('重发失败', err instanceof Error ? err.message : '请重试', {taskName})
-    } finally {
-      setEmailBusy(false)
-    }
-  }
-
   const retry = async () => {
     if (!jobId) return
     setActionBusy(true)
@@ -403,9 +386,7 @@ export function Workspace({jobId}: WorkspaceProps) {
           onCopy={copySummary}
           onDownloadMarkdown={downloadMarkdown}
           onDownloadSubtitle={downloadSubtitle}
-          onResendEmail={resendCurrentEmail}
           onResummarize={() => setResummaryConfirmOpen(true)}
-          emailBusy={emailBusy}
           resummarizeBusy={actionBusy}
         />
         <ConfirmDialog
