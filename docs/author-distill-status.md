@@ -20,7 +20,7 @@
 3. 断点续跑（`recover_unfinished_runs`）整条 pipeline 重跑，靠每一步自身的幂等性
    （文件是否存在 / 转写是否可复用）跳过已完成的部分；`manifest.json` 只在
    assembling 步骤由 assembler.py 整体重写，不是运行时续跑依据。
-4. 转写补齐 fan-out 受 `settings.distill_transcript_concurrency` 限制；
+4. 转写补齐 fan-out 受 `DISTILL_TRANSCRIPT_CONCURRENCY` 常量限制；
    观点提取按 `asyncio.Semaphore(2)` 并发，单视频失败不影响其他视频。
 5. bvid 去重两查询（`find_completed_by_bvid` / `summary_status_for_bvids`）默认排除
    distill job——它们 COMPLETED 但没有总结，否则会污染普通去重与 UP 页「已总结」

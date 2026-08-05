@@ -289,6 +289,9 @@ def maintenance_connection() -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     with connect() as connection:
         connection.executescript(SCHEMA)
+        # 2026-08 减法：周总结功能已删除，老库清理孤儿表（代码不再读写）。
+        connection.execute("DROP TABLE IF EXISTS weekly_summary_sources")
+        connection.execute("DROP TABLE IF EXISTS weekly_summaries")
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(jobs)").fetchall()}
         migrations = {
             "mid": "ALTER TABLE jobs ADD COLUMN mid INTEGER",

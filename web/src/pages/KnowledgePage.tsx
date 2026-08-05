@@ -1,6 +1,5 @@
 import {useCallback, useEffect, useState, type FormEvent} from 'react'
 import {ChevronDown, ChevronUp, Search} from 'lucide-react'
-import {useLocation} from 'wouter'
 import ReactMarkdown from 'react-markdown'
 import {
   getKnowledgeStatus,
@@ -80,7 +79,6 @@ function HitCard({hit}: {hit: KnowledgeSearchHit}) {
 }
 
 export function KnowledgePage() {
-  const [, navigate] = useLocation()
   const runtime = useRuntimeConfig()
   const [status, setStatus] = useState<KnowledgeStatus | null>(null)
   const [query, setQuery] = useState('')

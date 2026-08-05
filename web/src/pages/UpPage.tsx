@@ -1,4 +1,3 @@
-import {useLocation} from 'wouter'
 import {UpList} from './up/UpList'
 import {BackButton} from '../components/BackButton'
 

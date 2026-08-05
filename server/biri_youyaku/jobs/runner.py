@@ -560,7 +560,7 @@ async def _do_summarize(job_id: str, stage: _RunStage) -> None:
     _raise_if_canceled(job_id)
 
     # 主题标签：限时 60s 的额外一次 LLM 调用，超时/失败都返回 [] 不阻断完成，
-    # 也不让它把「总结完成 → 发邮件」拖到 llm_timeout_seconds × retries 那么久。
+    # 也不让它把「总结完成 → 发邮件」拖到 LLM_TIMEOUT_SECONDS × retries 那么久。
     tags = await _safe_generate_tags(job_id, fresh_job, summary_md)
     if tags:
         repo.set_tags(job_id, tags)
