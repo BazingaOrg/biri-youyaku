@@ -8,10 +8,11 @@ import re
 import secrets
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sse_starlette.sse import EventSourceResponse
 
 from biri_youyaku.auth import require_token
@@ -71,6 +72,22 @@ class CreateJobPayload(BaseModel):
     options: JobOptionsPayload = Field(default_factory=JobOptionsPayload)
     dedupe: bool = True
 
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        parsed = urlparse(value)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError("仅支持 http/https 链接")
+        allowed = settings.job_url_allowed_host_list
+        if allowed:  # empty list → allow any (local dev only)
+            host = (parsed.hostname or "").lower()
+            if not any(host == suffix or host.endswith("." + suffix) for suffix in allowed):
+                raise ValueError(
+                    f"不允许的链接域名（{host}）。仅支持：{', '.join(allowed)}。"
+                    "自建部署可将 JOB_URL_ALLOWED_HOSTS 设为空。"
+                )
+        return value
+
 
 class ResumeJobPayload(BaseModel):
     options: JobOptionsPayload = Field(default_factory=JobOptionsPayload)
@@ -95,7 +112,20 @@ class BulkDeleteExecutePayload(BaseModel):
 
 
 _BULK_DELETE_PREVIEW_TTL_MS = 5 * 60 * 1000
-_bulk_delete_signing_secret = secrets.token_bytes(32)
+
+
+def _get_bulk_delete_signing_secret() -> bytes:
+    """Derive a stable signing secret from config so preview tokens survive restarts
+    and work across multiple uvicorn workers.  Falls back to a per-process random
+    secret when no fingerprint secret is configured (single-worker dev)."""
+    seed = settings.usage_fingerprint_secret or ""
+    if seed:
+        return hashlib.pbkdf2_hmac("sha256", seed.encode(), b"bulk-delete", 100_000, dklen=32)
+    # Back-compat: per-process random (preview tokens die on restart; single-worker only).
+    # Cache on first call so it's stable within a process lifetime.
+    if not hasattr(_get_bulk_delete_signing_secret, "_fallback"):
+        _get_bulk_delete_signing_secret._fallback = secrets.token_bytes(32)  # type: ignore[attr-defined]
+    return _get_bulk_delete_signing_secret._fallback  # type: ignore[attr-defined]
 
 
 def _normalize_bulk_delete_filters(payload: BulkDeleteFilterPayload) -> dict[str, str | None]:
@@ -128,7 +158,7 @@ def _encode_bulk_delete_preview(
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
         "utf-8"
     )
-    signature = hmac.new(_bulk_delete_signing_secret, raw, hashlib.sha256).digest()
+    signature = hmac.new(_get_bulk_delete_signing_secret(), raw, hashlib.sha256).digest()
     return f"{base64.urlsafe_b64encode(raw).decode().rstrip('=')}.{base64.urlsafe_b64encode(signature).decode().rstrip('=')}"
 
 
@@ -141,7 +171,7 @@ def _decode_bulk_delete_preview(token: str) -> dict:
         )
     except (ValueError, UnicodeEncodeError):
         raise HTTPException(status_code=400, detail="删除预览无效，请重新预览") from None
-    expected = hmac.new(_bulk_delete_signing_secret, raw, hashlib.sha256).digest()
+    expected = hmac.new(_get_bulk_delete_signing_secret(), raw, hashlib.sha256).digest()
     if not hmac.compare_digest(signature, expected):
         raise HTTPException(status_code=400, detail="删除预览无效，请重新预览")
     try:
@@ -498,7 +528,9 @@ async def stream_job(job_id: str):
 
             while True:
                 try:
-                    message = await asyncio.wait_for(subscriber.pop(), timeout=25)
+                    # Timeout must be longer than the server ping interval (25 s)
+                    # so the keepalive always arrives before the client gives up.
+                    message = await asyncio.wait_for(subscriber.pop(), timeout=30)
                 except asyncio.TimeoutError:
                     yield {"comment": "keepalive"}
                     continue

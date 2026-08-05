@@ -48,14 +48,18 @@ def upsert_document(
     mid: int | None,
     source_url: str | None,
 ) -> str:
-    """Find or create document by (provider, bvid, cid); refresh metadata."""
+    """Insert or refresh a knowledge document by (provider, bvid, cid).
+
+    Uses ``INSERT … ON CONFLICT … DO UPDATE`` so two concurrent register calls
+    for the same video don't race on the UNIQUE constraint and surface a
+    spurious reconcile failure.
+    """
     timestamp = now_ms()
     existing = find_document_id(
         provider=provider, external_bvid=external_bvid, external_cid=external_cid
     )
     if existing is not None:
         with connect() as connection:
-            # Re-registering reactivates soft-deleted documents (Phase D).
             connection.execute(
                 """
                 UPDATE knowledge_documents
@@ -81,6 +85,14 @@ def upsert_document(
               source_url, created_at, updated_at, deleted_at, delete_reason
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+            ON CONFLICT(provider, external_bvid, external_cid) DO UPDATE SET
+              title = COALESCE(excluded.title, knowledge_documents.title),
+              author = COALESCE(excluded.author, knowledge_documents.author),
+              mid = COALESCE(excluded.mid, knowledge_documents.mid),
+              source_url = COALESCE(excluded.source_url, knowledge_documents.source_url),
+              updated_at = excluded.updated_at,
+              deleted_at = NULL,
+              delete_reason = NULL
             """,
             (
                 document_id,
@@ -95,6 +107,14 @@ def upsert_document(
                 timestamp,
             ),
         )
+        # If a concurrent upsert beat us, return the winner's id so the caller
+        # always gets a valid document_id.
+        row = connection.execute(
+            "SELECT id FROM knowledge_documents WHERE provider = ? AND external_bvid = ? AND external_cid = ?",
+            (provider, external_bvid, external_cid),
+        ).fetchone()
+        if row is not None:
+            return row["id"]
     return document_id
 
 

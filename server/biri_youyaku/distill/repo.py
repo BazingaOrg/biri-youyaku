@@ -157,12 +157,20 @@ def set_up_name(run_id: str, up_name: str) -> None:
 
 
 def update_counters(run_id: str, **updates: Any) -> dict[str, Any]:
-    """局部更新 counters JSON 里的几个 key，返回更新后的完整 counters。"""
-    run = get_run(run_id)
-    if run is None:
-        raise RuntimeError(f"Distill run {run_id} not found")
-    counters = {**run.counters, **updates}
+    """Atomically merge *updates* into the counters JSON column.
+
+    Wraps the read-modify-write in a transaction so concurrent phase tasks
+    (``_obtain_one`` / ``_extract_one``) cannot lose counter increments or
+    overwrite each other's ``failed_bvids``.
+    """
     with connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT counters_json FROM distill_runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        if row is None:
+            raise RuntimeError(f"Distill run {run_id} not found")
+        counters = {**json.loads(row["counters_json"] or "{}"), **updates}
         connection.execute(
             "UPDATE distill_runs SET counters_json = ?, updated_at = ? WHERE id = ?",
             (json.dumps(counters, ensure_ascii=False), now_ms(), run_id),
@@ -171,17 +179,23 @@ def update_counters(run_id: str, **updates: Any) -> dict[str, Any]:
 
 
 def add_failed_bvid(run_id: str, bvid: str) -> dict[str, Any]:
-    run = get_run(run_id)
-    if run is None:
-        raise RuntimeError(f"Distill run {run_id} not found")
-    failed = list(run.counters.get("failed_bvids") or [])
-    if bvid not in failed:
-        failed.append(bvid)
-    return update_counters(
-        run_id,
-        failed_bvids=failed,
-        videos_failed=len(failed),
-    )
+    with connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT counters_json FROM distill_runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        if row is None:
+            raise RuntimeError(f"Distill run {run_id} not found")
+        counters = json.loads(row["counters_json"] or "{}")
+        failed = list(counters.get("failed_bvids") or [])
+        if bvid not in failed:
+            failed.append(bvid)
+        counters = {**counters, "failed_bvids": failed, "videos_failed": len(failed)}
+        connection.execute(
+            "UPDATE distill_runs SET counters_json = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(counters, ensure_ascii=False), now_ms(), run_id),
+        )
+    return counters
 
 
 def list_runs_by_mid(mid: int) -> list[DistillRun]:

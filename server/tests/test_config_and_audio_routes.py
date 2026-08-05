@@ -158,6 +158,8 @@ async def test_create_job_can_bypass_dedupe(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_create_job_normalizes_untrusted_url_with_bvid(monkeypatch):
+    # Allow localhost URLs for this test (the SSRF guard rejects them by default).
+    monkeypatch.setattr(jobs_route.settings, "job_url_allowed_hosts", "127.0.0.1")
     created = Job(
         id="job-new",
         url="https://www.bilibili.com/video/BV1xx?p=2",

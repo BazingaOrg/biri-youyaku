@@ -644,18 +644,36 @@ def add_stage_timing(job_id: str, stage: str, started_at: int, ended_at: int) ->
 
 
 def add_token_usage(job_id: str, usage: dict[str, Any]) -> None:
+    """Atomically increment token counters using json_set + json_extract arithmetic.
+
+    Avoids a SELECT→UPDATE read-modify-write race that would silently lose tokens
+    when concurrent segment-summary tasks (``_summarize_chunked``) call this for the
+    same job.
+    """
+    input_delta = int(usage.get("input_tokens") or 0)
+    output_delta = int(usage.get("output_tokens") or 0)
+    total_delta = int(usage.get("total_tokens") or 0)
+    cost_estimate = usage.get("cost_estimate")
     with connect() as connection:
-        row = connection.execute(
-            "SELECT token_usage_json FROM jobs WHERE id = ?", (job_id,)
-        ).fetchone()
-        current = json.loads(row["token_usage_json"]) if row and row["token_usage_json"] else {}
-        next_usage = dict(current)
-        for key in ("input_tokens", "output_tokens", "total_tokens"):
-            next_usage[key] = int(next_usage.get(key) or 0) + int(usage.get(key) or 0)
-        next_usage["cost_estimate"] = usage.get("cost_estimate")
+        # COALESCE + arithmetic in a single UPDATE so concurrent callers don't
+        # clobber each other's increments.
         connection.execute(
-            "UPDATE jobs SET token_usage_json = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(next_usage, ensure_ascii=False), now_ms(), job_id),
+            """
+            UPDATE jobs
+            SET token_usage_json = json_set(
+                    COALESCE(token_usage_json, '{}'),
+                    '$.input_tokens',
+                        COALESCE(json_extract(token_usage_json, '$.input_tokens'), 0) + ?,
+                    '$.output_tokens',
+                        COALESCE(json_extract(token_usage_json, '$.output_tokens'), 0) + ?,
+                    '$.total_tokens',
+                        COALESCE(json_extract(token_usage_json, '$.total_tokens'), 0) + ?,
+                    '$.cost_estimate', json(?)
+                ),
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (input_delta, output_delta, total_delta, json.dumps(cost_estimate), now_ms(), job_id),
         )
 
 

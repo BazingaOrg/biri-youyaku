@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     email_default_recipient: str = ""
     email_subject_template: str = "[Biri-Youyaku] {{title}}"
 
+    # 任务 URL 允许的 host 后缀列表（逗号分隔）。留空 = 允许任意 host（仅安全内网环境）。
+    # 公网部署务必设为 bilibili.com,b23.tv 或你信任的域名。
+    job_url_allowed_hosts: str = "bilibili.com,b23.tv"
     # 视频时长上限（秒）。默认 4 小时；公网可按机器能力收紧。
     # Override with MAX_VIDEO_DURATION_SECONDS in .env.
     max_video_duration_seconds: int = 14400
@@ -122,6 +125,14 @@ class Settings(BaseSettings):
         return [
             item.strip().lower()
             for item in self.llm_base_url_allowed_hosts.split(",")
+            if item.strip()
+        ]
+
+    @property
+    def job_url_allowed_host_list(self) -> list[str]:
+        return [
+            item.strip().lower()
+            for item in self.job_url_allowed_hosts.split(",")
             if item.strip()
         ]
 
