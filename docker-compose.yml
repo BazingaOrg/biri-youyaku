@@ -29,6 +29,9 @@ services:
         #   - Remote host: set VITE_API_BASE_URL to the public API origin and rebuild.
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:17821}
         # Baked into frontend JS from API_TOKEN (weak secret). Empty = no auth (local only).
+        # IMPORTANT: ${API_TOKEN} comes from the shell/compose environment,
+        # NOT from server/.env.  Export it before running `docker compose build`:
+        #   export API_TOKEN=$(openssl rand -hex 32)
         VITE_API_TOKEN: ${API_TOKEN:-}
     ports:
       - "5173:80"

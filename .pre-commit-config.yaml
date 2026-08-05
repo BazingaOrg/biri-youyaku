@@ -14,7 +14,8 @@ repos:
         args: ["--fix=lf"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.9
+    # Aligned with pyproject.toml ruff cap (<0.5 → 0.4.10). Bump both together.
+    rev: v0.4.10
     hooks:
       - id: ruff-format
         files: ^server/

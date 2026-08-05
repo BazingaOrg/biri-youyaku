@@ -12,8 +12,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 装 uv（编译期）
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+# 装 uv（编译期）— pin 版本保证可复现构建
+ARG UV_VERSION=0.6.14
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh -s -- --version ${UV_VERSION} && \
     mv /root/.local/bin/uv /usr/local/bin/uv
 
 WORKDIR /app

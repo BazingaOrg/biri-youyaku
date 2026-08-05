@@ -75,7 +75,8 @@ A common public setup:
 Backend `server/.env`:
 
 ```env
-API_TOKEN=$(openssl rand -hex 32)
+# Generate with: openssl rand -hex 32
+API_TOKEN=<your-random-hex-token>
 APP_CORS_ORIGINS=https://your-frontend-domain.example.com
 ```
 
