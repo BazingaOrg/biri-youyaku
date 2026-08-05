@@ -4,6 +4,7 @@ import {Search} from 'lucide-react'
 import type {Job} from '../../lib/api'
 import {parseHeadings} from '../../lib/markdown'
 import {formatDuration} from '../../lib/format'
+import {PROSE} from '../../lib/prose'
 import {PageLoading} from '../../components/Spinner'
 import {smoothScrollTo} from '../../lib/scroll'
 
@@ -11,9 +12,6 @@ import {smoothScrollTo} from '../../lib/scroll'
 const MindmapView = lazy(() => import('./MindmapView').then((m) => ({default: m.MindmapView})))
 
 type Tab = 'notes' | 'mindmap' | 'transcript'
-
-export const PROSE =
-  'prose prose-sm max-w-none break-words text-ink dark:prose-invert prose-headings:tracking-[-0.012em] prose-a:text-brand [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto [&_code]:break-all'
 
 export function SummaryTabs({job}: {job: Job}) {
   const summary = job.summary ?? ''

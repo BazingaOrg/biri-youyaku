@@ -7,7 +7,7 @@ import {Spinner} from '../../components/Spinner'
 import {Skeleton} from '../../components/Skeleton'
 import {DistillPanel} from '../../components/DistillPanel'
 import {useToast} from '../../components/ToastProvider'
-import {BackButton} from '../UpPage'
+import {BackButton} from '../../components/BackButton'
 import {DistillButton} from './DistillButton'
 import {VideoRow} from './VideoRow'
 

@@ -1,7 +1,6 @@
 import {useEffect, useRef, useState} from 'react'
 import type {ReactNode} from 'react'
-
-const POP_OUT_FALLBACK_MS = 200 // pop-out 150ms + 50ms 余量；改动画时长时同步改这里
+import {POP_OUT_FALLBACK_MS} from '../lib/animation'
 
 interface ConfirmDialogProps {
   open: boolean

@@ -1,8 +1,7 @@
 import {createContext, useContext, useMemo, useState} from 'react'
 import type {ReactNode} from 'react'
 import {CheckCircle2, Copy, Info, Undo2, X, XCircle} from 'lucide-react'
-
-const POP_OUT_FALLBACK_MS = 200 // pop-out 150ms + 50ms 余量；改动画时长时同步改这里
+import {POP_OUT_FALLBACK_MS} from '../lib/animation'
 
 type ToastType = 'success' | 'error' | 'info'
 
@@ -97,7 +96,7 @@ export function ToastProvider({children}: {children: ReactNode}) {
             onClick={clearOlder}
             className="self-center rounded-full border border-line bg-panel/80 px-3 py-1 text-xs text-muted shadow-card backdrop-blur transition hover:bg-panel"
           >
-            清掉更早的 {hiddenCount} 条
+            清除更早的 {hiddenCount} 条
           </button>
         )}
         {visible.map((toast) => {

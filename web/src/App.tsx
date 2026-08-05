@@ -1,6 +1,7 @@
 import {lazy, Suspense} from 'react'
 import {Route, Switch} from 'wouter'
 import {AppShell} from './components/AppShell'
+import {ErrorBoundary} from './components/ErrorBoundary'
 import {Workspace} from './pages/Workspace'
 import {ToastProvider} from './components/ToastProvider'
 import {PageLoading} from './components/Spinner'
@@ -14,9 +15,10 @@ const KnowledgePage = lazy(() =>
 export default function App() {
   // 主题三档（系统/白天/黑夜）由 AppShell 右下工具区的 ThemeToggle 管理。
   return (
-    <ToastProvider>
-      <AppShell>
-        <Switch>
+    <ErrorBoundary>
+      <ToastProvider>
+        <AppShell>
+          <Switch>
           <Route path="/history">
             <Suspense fallback={<PageLoading />}>
               <HistoryPage />
@@ -40,8 +42,9 @@ export default function App() {
           <Route>
             <Workspace jobId={null} />
           </Route>
-        </Switch>
-      </AppShell>
-    </ToastProvider>
+          </Switch>
+        </AppShell>
+      </ToastProvider>
+    </ErrorBoundary>
   )
 }

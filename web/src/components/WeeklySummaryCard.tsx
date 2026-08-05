@@ -8,11 +8,8 @@ import {
   getWeeklySummary,
   type WeeklySummary,
 } from '../lib/api'
+import {PROSE} from '../lib/prose'
 import {ConfirmDialog} from './ConfirmDialog'
-
-// ReactMarkdown escapes raw HTML by default; keep the same prose treatment as
-// the existing summary notes without importing the whole workspace page here.
-const MARKDOWN_PROSE = 'prose prose-sm max-w-none break-words text-ink dark:prose-invert prose-headings:tracking-[-0.012em] prose-a:text-brand [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto [&_code]:break-all'
 
 function formatWeek(weekStart: string) {
   const [year, month, day] = weekStart.split('-').map(Number)
@@ -163,7 +160,7 @@ export function WeeklySummaryCard({
           <div className="mt-3 h-10 animate-pulse rounded-xl bg-lift" />
         ) : hasContent ? (
           <>
-            <div className={`mt-3 text-sm ${MARKDOWN_PROSE} ${compact && !expanded ? 'line-clamp-4' : ''}`}>
+            <div className={`mt-3 text-sm ${PROSE} ${compact && !expanded ? 'line-clamp-4' : ''}`}>
               <ReactMarkdown
                 components={{
                   // Model-authored Markdown is display-only. Navigation is restricted to

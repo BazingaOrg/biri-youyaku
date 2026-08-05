@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import type {Job, JobStatus} from '../../lib/api'
 import type {StepDef, StepState} from '../../components/StepCarousel'
 import {formatDuration} from '../../lib/format'
+import {PROSE} from '../../lib/prose'
 
 /** status → 步骤索引（识别 / 字幕 / 总结 / 邮件）。终态映射到 0 让失败卡片继续在 0 上展示。 */
 export function statusToStepIndex(status: JobStatus): number {
@@ -143,7 +144,7 @@ function renderSummary(job: Job) {
   if (job.summary) {
     // 不再自带 max-h/overflow：由外层固定高度的步骤盒统一滚动，避免内层滚动条撑不满盒子。
     return (
-      <div className="prose prose-sm max-w-none break-words text-ink dark:prose-invert prose-a:text-brand [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto [&_code]:break-all">
+      <div className={PROSE}>
         <ReactMarkdown>{job.summary}</ReactMarkdown>
       </div>
     )

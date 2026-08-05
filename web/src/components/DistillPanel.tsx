@@ -14,7 +14,7 @@ import {
 import {useDistillStream} from '../hooks/useDistillStream'
 import {useToast} from './ToastProvider'
 import {ConfirmDialog} from './ConfirmDialog'
-import {PROSE} from '../pages/workspace/SummaryTabs'
+import {PROSE} from '../lib/prose'
 
 const STAGE_LABELS: Record<DistillRunStatus, string> = {
   PENDING: '排队中',
