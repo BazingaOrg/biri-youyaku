@@ -32,7 +32,6 @@ export function StepCarousel({steps, currentIndex, followKey}: StepCarouselProps
   const [manualLock, setManualLock] = useState(false)
   const lastCurrentRef = useRef(safeCurrent)
 
-  // 每个步骤滚动盒的 ref + 「用户是否贴着底部」的意图标记。
   const boxRefs = useRef<Array<HTMLDivElement | null>>([])
   const pinnedRef = useRef(true)
   const onBoxScroll = (el: HTMLDivElement) => {

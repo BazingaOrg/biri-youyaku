@@ -17,9 +17,9 @@ Paste a Bilibili video link and get a readable Markdown summary, a mind map, and
 - **Multi-view summary**: Markdown notes (with a table of contents) / mind map (export SVG·PNG) / topic tags / transcript (click a timestamp to jump back into the video).
 - **Any LLM**: any OpenAI-compatible endpoint (DeepSeek by default; OpenAI / Gemini / local ollama all work).
 - **Browse by uploader**: list an uploader's whole catalog, see which are summarized, one-click the rest.
-- **Uploader corpus distillation**: scrape an uploader's video transcripts, extract viewpoints with LLM, and compile them into a persona corpus (e.g. for roleplay).
-- **Personal knowledge base**: register completed summaries; local FTS search; optional chat (off by default); soft-delete / restore / purge.
-- **History balance & weekly digests**: the history page currently shows API balance and weekly summaries (no standalone `/stats` route).
+- **Uploader corpus distillation** (experimental, hidden by default): scrape an uploader's video transcripts, extract viewpoints with LLM, and compile them into a persona corpus; set `VITE_DISTILL_ENABLED=true` in `web/.env` and rebuild to show the entry on the uploader page.
+- **Personal knowledge base**: completed summaries are registered automatically; local FTS search over summaries and transcripts.
+- **History balance & weekly costs**: the history page currently shows API balance and weekly cost aggregates (no standalone `/stats` route).
 - **Dedup to save tokens**: re-pasting an already-summarized video reuses the old result.
 - **Per-job fixes**: resummarize (reuse existing transcript), force re-transcription (ignore existing transcript/subtitles and redo ASR), resend email for a failed job.
 - **Audio download**: download the audio file used for transcription.
@@ -37,7 +37,7 @@ bash scripts/dev.sh                  # starts both servers (auto-copies .env, in
 Open <http://127.0.0.1:5173> and paste a Bilibili link.
 
 > Windows: `powershell -ExecutionPolicy Bypass -File scripts\dev.ps1`
-> Docker: `docker compose up --build` (hot-reload via `docker compose -f docker-compose.dev.yml up --build`). Default server image **does not install ASR extras** (funasr/torch); for no-subtitle videos edit Dockerfile to `uv sync --extra asr`.
+> Docker: `docker compose up --build`. Default server image **does not install ASR extras** (funasr/torch); for no-subtitle videos edit Dockerfile to `uv sync --extra asr`. For dev hot-reload use `scripts/dev.sh` directly.
 
 <details>
 <summary>Run the two servers manually</summary>
@@ -136,14 +136,13 @@ flowchart LR
     distill --> llm
     llm -->|streamed chunks| api
     api --> db[(SQLite)]
-    api --> knowledge[knowledge<br/>FTS / soft-delete]
-    api --> weekly[weekly digests]
-    api --> stats[history<br/>balance/weekly digests]
+    api --> knowledge[knowledge<br/>FTS search]
+    api --> stats[history<br/>balance / weekly costs]
     api -. optional .-> mail[Cloudflare Worker → Resend]
 ```
 
 > All data stays local (`server/data/`); nothing is reported to third parties besides the LLM endpoint and Bilibili. No telemetry.
-> Weekly timezone, knowledge backup, and related knobs: [`CONFIG.md`](CONFIG.md).
+> Knowledge backup and related knobs: [`CONFIG.md`](CONFIG.md).
 
 ## 📦 Deploy & docs
 

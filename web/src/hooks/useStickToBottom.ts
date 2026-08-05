@@ -15,7 +15,6 @@ export function useStickToBottom(active: boolean, deps: unknown[]) {
   const awayFromBottomRef = useRef(true)
   const [showJump, setShowJump] = useState(false)
 
-  // 基于当前 viewport 判断是否「足够靠近底部」（容差 64px）
   const computeNearBottom = () => {
     if (typeof window === 'undefined') return true
     const doc = document.documentElement
@@ -28,7 +27,6 @@ export function useStickToBottom(active: boolean, deps: unknown[]) {
       setShowJump(false)
       return
     }
-    // 进入 active 时立刻同步一次真实位置；用户已经在底部才会开启「自动跟随」
     awayFromBottomRef.current = !computeNearBottom()
     setShowJump(awayFromBottomRef.current)
     const onScroll = () => {
@@ -42,7 +40,6 @@ export function useStickToBottom(active: boolean, deps: unknown[]) {
 
   useEffect(() => {
     if (!active || awayFromBottomRef.current) return
-    // 用户处于底部时才自动跟随新内容
     window.scrollTo({top: document.documentElement.scrollHeight, behavior: 'auto'})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, ...deps])

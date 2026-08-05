@@ -6,7 +6,6 @@ interface AppShellProps {
   children: ReactNode
 }
 
-// 极简外壳：无顶栏、品牌名、导航；右下角为全局工具区（主题 + 回到顶部）。
 export function AppShell({children}: AppShellProps) {
   return (
     <div className="min-h-screen text-ink">
