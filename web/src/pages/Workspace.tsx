@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useRef, useState} from 'react'
-import {ChevronDown, History, Plus} from 'lucide-react'
+import {ChevronDown, History, Plus, RotateCw} from 'lucide-react'
 import {useLocation} from 'wouter'
 import {
   cancelJob,
@@ -368,6 +368,7 @@ export function Workspace({jobId}: WorkspaceProps) {
       <div className="grid gap-3 py-8 text-center">
         <p className="text-sm text-danger">{error}</p>
         <div className="flex flex-wrap items-center justify-center gap-2">
+          <IconButton icon={<RotateCw size={18} />} label="重试" onClick={() => { void refresh() }} />
           <IconButton icon={<Plus size={18} />} label="新建" onClick={goNew} />
           <IconButton icon={<History size={18} />} label="历史" onClick={openHistory} />
         </div>
@@ -379,13 +380,13 @@ export function Workspace({jobId}: WorkspaceProps) {
     return <PageLoading label="加载任务…" />
   }
 
-  // 流式总结时的跳到底浮标
+  // 流式总结时的跳到底浮标。放在 AppShell 工具区上方，避免同位置重叠。
   const jumpFloater = showJump ? (
     <button
       type="button"
       onClick={jumpToBottom}
       aria-label="跳到底部"
-      className="fixed bottom-5 right-20 z-30 grid h-11 w-11 place-items-center rounded-full border border-line bg-panel text-muted shadow-card transition hover:text-brand sm:right-24"
+      className="fixed bottom-20 right-5 z-30 grid h-11 w-11 place-items-center rounded-full border border-line bg-panel text-muted shadow-card transition hover:text-brand sm:bottom-24 sm:right-6"
     >
       <ChevronDown size={20} />
     </button>

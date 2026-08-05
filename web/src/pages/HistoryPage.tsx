@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
-import {ArrowLeft, ChevronLeft, ChevronRight, Filter, MoreHorizontal, Plus, RotateCw, Search, Trash2} from 'lucide-react'
+import {ChevronLeft, ChevronRight, Filter, MoreHorizontal, Plus, RotateCw, Search, Trash2} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
 import {
   ApiError, executeBulkDelete, previewBulkDelete, deleteJob, getHistoryFacets, getWeeklySummaryStatuses, listJobs, resummarizeJob,
@@ -9,6 +9,7 @@ import {writeActive} from '../lib/activeJob'
 import {formatDate, formatDuration, formatStatus} from '../lib/format'
 import {isRunning} from '../lib/jobStatus'
 import {AuthorLink} from '../components/AuthorLink'
+import {BackButton} from '../components/BackButton'
 import {Skeleton} from '../components/Skeleton'
 import {useToast} from '../components/ToastProvider'
 import {ConfirmDialog} from '../components/ConfirmDialog'
@@ -397,7 +398,9 @@ export function HistoryPage() {
     const job = jobs.find((item) => item.id === jobId)
     if (!job) return
     if (isRunning(job.status)) {
-      void deleteJob(jobId).catch((err) => toast.error('删除失败', err instanceof Error ? err.message : '请先取消再删除'))
+      // Running jobs should be cancelled first; delete will fail if the runner
+      // still holds the row, so show a toast and keep the row visible.
+      toast.error('无法删除', '请先取消进行中的任务再删除')
       return
     }
     setJobs((current) => current.filter((item) => item.id !== jobId))
@@ -529,7 +532,7 @@ export function HistoryPage() {
 
   return <div className="grid min-h-[calc(100dvh-3rem)] animate-fade-in-up content-start gap-5 sm:min-h-[calc(100dvh-5rem)]">
     <header className="grid gap-4 px-4 sm:px-5">
-      <button type="button" onClick={() => window.history.length > 1 ? window.history.back() : navigate('/')} className="inline-flex min-h-10 w-fit items-center gap-2 rounded-2xl bg-lift px-3 text-sm text-muted transition-[transform,background-color,color] hover:bg-line/70 hover:text-ink active:scale-95"><ArrowLeft size={16} />返回</button>
+      <BackButton />
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-[-0.012em] text-ink sm:text-3xl">历史</h1>

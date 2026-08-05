@@ -1,6 +1,5 @@
 import {useCallback, useEffect, useRef, useState, type FormEvent} from 'react'
 import {
-  ArrowLeft,
   ChevronDown,
   ChevronUp,
   MessageCircle,
@@ -24,7 +23,9 @@ import {
   type KnowledgeStatus,
 } from '../lib/api'
 import {openKnowledgeChatStream} from '../lib/sse'
+import {PROSE} from '../lib/prose'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
+import {BackButton} from '../components/BackButton'
 import {ConfirmDialog} from '../components/ConfirmDialog'
 import {Spinner} from '../components/Spinner'
 
@@ -46,10 +47,13 @@ function locatorLabel(hit: KnowledgeSearchHit): string {
 
 function HitCard({hit}: {hit: KnowledgeSearchHit}) {
   const full = (hit.chunk_text || hit.snippet || '').trim()
-  const preview = (hit.snippet || full).trim()
-  const needsExpand = full.length > preview.length || full.length > 160
+  const snippet = (hit.snippet || '').trim()
+  // Only show expand when the backend sent a truncated snippet that differs from
+  // the full chunk_text.  If there is no snippet (preview === full), the toggle
+  // would flip between two identical strings.
+  const needsExpand = Boolean(snippet) && full.length > snippet.length
   const [open, setOpen] = useState(false)
-  const body = open ? full : preview
+  const body = open ? full : (snippet || full)
   const label = locatorLabel(hit)
   const isTranscript = hit.source_level === 'transcript'
   const asrRisk = isTranscript && hit.subtitle_source === 'asr'
@@ -75,7 +79,7 @@ function HitCard({hit}: {hit: KnowledgeSearchHit}) {
           {label}
         </span>
         {asrRisk && (
-          <span className="text-xs text-warning">ASR，可能有识别误差</span>
+          <span className="text-xs text-warning">ASR 转写，可能存在识别误差</span>
         )}
       </div>
       <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-ink/90">{body}</p>
@@ -360,14 +364,7 @@ export function KnowledgePage() {
   return (
     <div className="grid min-h-[calc(100dvh-3rem)] min-w-0 animate-fade-in-up content-start gap-5 sm:min-h-[calc(100dvh-5rem)]">
       <header className="grid gap-4 px-4 sm:px-5">
-        <button
-          type="button"
-          onClick={() => (window.history.length > 1 ? window.history.back() : navigate('/'))}
-          className="inline-flex min-h-10 w-fit items-center gap-2 rounded-2xl bg-lift px-3 text-sm text-muted transition-[transform,background-color,color] hover:bg-line/70 hover:text-ink active:scale-95"
-        >
-          <ArrowLeft size={16} />
-          返回
-        </button>
+        <BackButton />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold tracking-[-0.012em] text-ink sm:text-3xl">知识库</h1>
@@ -489,15 +486,30 @@ export function KnowledgePage() {
               {activeMode === 'ask' && (
                 <>
                   {chatPhase && (
-                    <p className="mb-3 text-sm text-muted">
-                      {chatPhase === 'searching' && '正在检索总结与转写…'}
-                      {chatPhase === 'generating' && '正在生成回答…'}
-                      {chatPhase === 'refuse' && '证据不足'}
-                    </p>
+                    <div className="mb-3 flex flex-wrap items-center gap-3">
+                      <p className="text-sm text-muted">
+                        {chatPhase === 'searching' && '正在检索总结与转写…'}
+                        {chatPhase === 'generating' && '正在生成回答…'}
+                        {chatPhase === 'refuse' && '证据不足'}
+                      </p>
+                      {chatBusy && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            streamRef.current?.close()
+                            setChatBusy(false)
+                            setChatPhase(null)
+                          }}
+                          className="inline-flex min-h-8 items-center gap-1.5 rounded-xl bg-lift px-3 text-xs text-muted transition hover:bg-line/70 hover:text-ink"
+                        >
+                          停止
+                        </button>
+                      )}
+                    </div>
                   )}
                   {chatError && <p className="mb-3 text-sm text-danger">{chatError}</p>}
                   {chatAnswer && (
-                    <div className="mb-3 rounded-2xl border border-line/70 bg-panel p-4 text-sm leading-6 text-ink shadow-card">
+                    <div className={`mb-3 rounded-2xl border border-line/70 bg-panel p-4 shadow-card ${PROSE}`}>
                       <ReactMarkdown
                         components={{
                           a: ({children}) => <span>{children}</span>,
