@@ -2,7 +2,7 @@
 # macOS LaunchAgent helper for the biri-youyaku API (host-native uv, no --reload).
 #
 # Usage:
-#   bash scripts/mac-service.sh install|uninstall|start|stop|restart|status|logs|help
+#   bash scripts/mac-service.sh install|uninstall|start|stop|restart|status [--verbose]|logs|help
 #
 # Production on an always-on Mac Mini with frequent MLX ASR: keep the API under
 # launchd so Ghostty/dev terminal need not stay open. Use scripts/dev.sh only
@@ -188,11 +188,6 @@ write_plist() {
     -e "s|__HOME__|${HOME}|g" \
     "${TEMPLATE}" > "${PLIST_DST}"
 
-  info "wrote ${PLIST_DST}"
-  info "uv=${uv_path}"
-  info "WorkingDirectory=${SERVER_DIR}"
-  info "PATH=${svc_path}"
-  info "logs=${LOG_DIR}"
   check_ffmpeg
   check_asr_extra
 }
@@ -315,9 +310,12 @@ cmd_restart() {
 }
 
 cmd_status() {
-  echo "label:  ${LABEL}"
-  echo "domain: ${DOMAIN}"
-  echo "plist:  ${PLIST_DST}"
+  local verbose="${1:-}"
+  if [ -n "${verbose}" ] && [ "${verbose}" != "--verbose" ]; then
+    die "unknown status option: ${verbose}"
+  fi
+
+  echo "service: ${LABEL}"
   if [ -f "${PLIST_DST}" ]; then
     echo "plist:  present"
   else
@@ -325,12 +323,20 @@ cmd_status() {
   fi
 
   if service_loaded; then
-    echo "launchd: loaded"
-    launchctl print "${DOMAIN}/${LABEL}" 2>/dev/null | head -n 40 || \
-      launchctl list | grep -F "${LABEL}" || true
+    local service_details state pid
+    service_details="$(launchctl print "${DOMAIN}/${LABEL}" 2>/dev/null || true)"
+    state="$(awk '/state = / { print $3; exit }' <<<"${service_details}")"
+    pid="$(awk '/pid = / { print $3; exit }' <<<"${service_details}")"
+    echo "state:   ${state:-loaded}"
+    if [ -n "${pid}" ]; then
+      echo "pid:     ${pid}"
+    fi
+    if [ "${verbose}" = "--verbose" ]; then
+      echo
+      printf '%s\n' "${service_details}"
+    fi
   else
-    echo "launchd: not loaded"
-    launchctl list 2>/dev/null | grep -F "${LABEL}" || true
+    echo "state:   not loaded"
   fi
 
   if port_conflict_exists >/dev/null 2>&1; then
@@ -349,6 +355,7 @@ cmd_status() {
   else
     echo "healthz: curl not available"
   fi
+  echo "logs:    ${LOG_DIR}"
 }
 
 cmd_logs() {
@@ -373,7 +380,7 @@ Commands:
   start       Kickstart (bootstrap if needed)
   stop        Bootout service
   restart     launchctl kickstart -k
-  status      launchctl print/list + healthz curl
+  status      Concise service state + healthz (add --verbose for launchctl details)
   logs        tail -f ${LOG_DIR}/api.{out,err}.log
   help        This message
 
@@ -392,7 +399,7 @@ main() {
     start)     cmd_start ;;
     stop)      cmd_stop ;;
     restart)   cmd_restart ;;
-    status)    cmd_status ;;
+    status)    cmd_status "${2:-}" ;;
     logs)      cmd_logs ;;
     help|-h|--help) cmd_help ;;
     *)
