@@ -184,8 +184,8 @@ export function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={loading || confirmDisabled}
-            className={`inline-flex min-h-10 items-center rounded-xl px-4 text-sm font-medium text-white shadow-card transition-[transform,filter] hover:brightness-105 active:scale-95 disabled:opacity-50 ${
-              danger ? 'bg-danger' : 'bg-brand'
+            className={`inline-flex min-h-10 items-center rounded-xl px-4 text-sm font-medium shadow-card transition-[transform,filter] hover:brightness-105 active:scale-95 disabled:opacity-50 ${
+              danger ? 'bg-dangerSolid text-onDanger' : 'bg-brandSolid text-onBrand'
             }`}
           >
             {loading ? '处理中…' : confirmLabel}

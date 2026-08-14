@@ -231,7 +231,7 @@ export function UpList({mid}: {mid: number}) {
                 type="button"
                 onClick={() => setFilter(key)}
                 className={`min-h-9 whitespace-nowrap rounded-xl px-3 transition-[background-color,color] ${
-                  filter === key ? 'bg-brand text-white shadow-card' : 'text-muted hover:text-ink'
+                  filter === key ? 'bg-brandSolid text-onBrand shadow-card' : 'text-muted hover:text-ink'
                 }`}
               >
                 {label}
@@ -254,7 +254,7 @@ export function UpList({mid}: {mid: number}) {
                 type="button"
                 onClick={() => setOrder(key)}
                 className={`min-h-8 rounded-xl px-3 transition-[background-color,color] ${
-                  order === key ? 'bg-brand text-white shadow-card' : 'text-muted hover:text-ink'
+                  order === key ? 'bg-brandSolid text-onBrand shadow-card' : 'text-muted hover:text-ink'
                 }`}
               >
                 {label}

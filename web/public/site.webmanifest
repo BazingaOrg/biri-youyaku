@@ -3,8 +3,8 @@
   "short_name": "biri-youyaku",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#FEFCF7",
-  "theme_color": "#E26A8D",
+  "background_color": "#FBF7F2",
+  "theme_color": "#B33F66",
   "icons": [
     {
       "src": "/icon-192.png",

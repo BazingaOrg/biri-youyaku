@@ -439,7 +439,7 @@ export function HistoryPage() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <IconTooltip label="新建">
-            <Link href="/" aria-label="新建" className="grid h-11 w-11 place-items-center rounded-2xl bg-brand text-white shadow-card"><Plus size={18} /></Link>
+            <Link href="/" aria-label="新建" className="grid h-11 w-11 place-items-center rounded-2xl bg-brandSolid text-onBrand shadow-card"><Plus size={18} /></Link>
           </IconTooltip>
         </div>
       </div>
@@ -455,7 +455,7 @@ export function HistoryPage() {
       <div className="py-3">
         {loading && <Skeleton count={6} />}
         {!loading && loadError === 'initial' && <div className="grid justify-items-center gap-3 border-b border-line/60 py-12 text-center"><p className="text-sm text-muted">加载失败，请检查网络后重试</p><button type="button" onClick={() => void loadFirstPage()} className="inline-flex min-h-10 items-center gap-2 rounded-2xl bg-lift px-4 text-sm text-muted"><RotateCw size={15} />重试</button></div>}
-        {!loading && loadError !== 'initial' && jobs.length === 0 && !hasFilters && <div className="grid justify-items-center gap-3 border-b border-line/60 py-12 text-center"><p className="text-sm text-muted">还没有任务记录</p><Link href="/" className="inline-flex min-h-10 items-center gap-2 rounded-2xl bg-brand px-4 text-sm font-medium text-white shadow-card"><Plus size={15} />新建一个</Link></div>}
+        {!loading && loadError !== 'initial' && jobs.length === 0 && !hasFilters && <div className="grid justify-items-center gap-3 border-b border-line/60 py-12 text-center"><p className="text-sm text-muted">还没有任务记录</p><Link href="/" className="inline-flex min-h-10 items-center gap-2 rounded-2xl bg-brandSolid px-4 text-sm font-medium text-onBrand shadow-card"><Plus size={15} />新建一个</Link></div>}
         {!loading && loadError !== 'initial' && jobs.length === 0 && hasFilters && (
           <div className="grid justify-items-center gap-3 border-b border-line/60 py-12 text-center">
             <p className="text-sm text-muted">没有匹配的记录</p>

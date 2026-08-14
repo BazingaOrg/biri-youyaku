@@ -1,9 +1,8 @@
 import type {ReactNode} from 'react'
-import ReactMarkdown from 'react-markdown'
 import type {Job, JobStatus} from '../../lib/api'
 import type {StepDef, StepState} from '../../components/StepCarousel'
+import {LazyMarkdown} from '../../components/LazyMarkdown'
 import {formatDuration} from '../../lib/format'
-import {PROSE} from '../../lib/prose'
 
 /** status → 步骤索引（识别 / 字幕 / 总结 / 邮件）。终态映射到 0 让失败卡片继续在 0 上展示。 */
 export function statusToStepIndex(status: JobStatus): number {
@@ -142,12 +141,7 @@ function renderSubtitle(job: Job) {
 
 function renderSummary(job: Job) {
   if (job.summary) {
-    // 不再自带 max-h/overflow：由外层固定高度的步骤盒统一滚动，避免内层滚动条撑不满盒子。
-    return (
-      <div className={PROSE}>
-        <ReactMarkdown>{job.summary}</ReactMarkdown>
-      </div>
-    )
+    return <LazyMarkdown markdown={job.summary} />
   }
   if (job.status === 'SUMMARIZING') {
     if (job.queued) return <p>排队中…（等总结槽位）</p>

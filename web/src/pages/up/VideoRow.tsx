@@ -81,7 +81,7 @@ export function VideoRow({
             onClick={onSummarize}
             disabled={busy}
             title={failed ? '上次未完成，重新总结' : undefined}
-            className="inline-flex min-h-9 items-center gap-1 rounded-xl bg-brand px-3 text-xs font-medium text-white shadow-card transition hover:brightness-105 active:scale-95 disabled:opacity-50"
+            className="inline-flex min-h-9 items-center gap-1 rounded-xl bg-brandSolid px-3 text-xs font-medium text-onBrand shadow-card transition hover:brightness-105 active:scale-95 disabled:opacity-50"
           >
             {busy ? <RotateCw size={13} className="animate-spin" /> : <Sparkles size={14} />}
             {failed ? '重试' : '总结'}

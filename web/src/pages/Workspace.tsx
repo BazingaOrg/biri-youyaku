@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useRef, useState} from 'react'
+import {lazy, Suspense, useCallback, useEffect, useRef, useState} from 'react'
 import {ChevronDown, History, Plus, RotateCw} from 'lucide-react'
 import {useLocation} from 'wouter'
 import {
@@ -26,7 +26,10 @@ import {IconButton} from '../components/IconButton'
 import {PageLoading} from '../components/Spinner'
 import {IdleView} from './workspace/IdleView'
 import {RunningView} from './workspace/RunningView'
-import {DoneView} from './workspace/DoneView'
+
+const DoneView = lazy(() =>
+  import('./workspace/DoneView').then((module) => ({default: module.DoneView})),
+)
 
 interface WorkspaceProps {
   jobId: string | null
@@ -378,17 +381,19 @@ export function Workspace({jobId}: WorkspaceProps) {
   if (job.status === 'COMPLETED') {
     return (
       <>
-        <DoneView
-          job={job}
-          onNew={goNew}
-          onOpenHistory={openHistory}
-          onDownloadAudio={downloadAudio}
-          onCopy={copySummary}
-          onDownloadMarkdown={downloadMarkdown}
-          onDownloadSubtitle={downloadSubtitle}
-          onResummarize={() => setResummaryConfirmOpen(true)}
-          resummarizeBusy={actionBusy}
-        />
+        <Suspense fallback={<PageLoading label="加载总结…" />}>
+          <DoneView
+            job={job}
+            onNew={goNew}
+            onOpenHistory={openHistory}
+            onDownloadAudio={downloadAudio}
+            onCopy={copySummary}
+            onDownloadMarkdown={downloadMarkdown}
+            onDownloadSubtitle={downloadSubtitle}
+            onResummarize={() => setResummaryConfirmOpen(true)}
+            resummarizeBusy={actionBusy}
+          />
+        </Suspense>
         <ConfirmDialog
           open={resummaryConfirmOpen}
           title="重新总结这个视频？"

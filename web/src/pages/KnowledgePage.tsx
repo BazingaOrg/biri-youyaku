@@ -191,7 +191,7 @@ export function KnowledgePage() {
                 <button
                   type="submit"
                   disabled={searching || !query.trim()}
-                  className="inline-flex min-h-11 min-w-[5.5rem] items-center justify-center gap-2 rounded-2xl bg-brand px-4 text-sm font-medium text-white shadow-card disabled:opacity-40"
+                  className="inline-flex min-h-11 min-w-[5.5rem] items-center justify-center gap-2 rounded-2xl bg-brandSolid px-4 text-sm font-medium text-onBrand shadow-card disabled:opacity-40"
                 >
                   {searching ? <Spinner size={14} /> : <Search size={15} />}
                   搜索

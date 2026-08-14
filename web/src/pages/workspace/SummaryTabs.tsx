@@ -33,7 +33,7 @@ export function SummaryTabs({job}: {job: Job}) {
             type="button"
             onClick={() => setTab(key)}
             className={`min-h-9 rounded-xl px-4 transition-[background-color,color] ${
-              tab === key ? 'bg-brand text-white shadow-card' : 'text-muted hover:text-ink'
+              tab === key ? 'bg-brandSolid text-onBrand shadow-card' : 'text-muted hover:text-ink'
             }`}
           >
             {label}

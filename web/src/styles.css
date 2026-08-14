@@ -7,16 +7,35 @@
    system 模式下 JS 解析 prefers-color-scheme 后同样落到 data-theme。 */
 :root {
   --color-bg: #fbf7f2;
+  --color-bg-rgb: 251 247 242;
   --color-bg-elevated: #ffffff;
+  --color-bg-elevated-rgb: 255 255 255;
   --color-bg-sunken: #f2ece4;
+  --color-bg-sunken-rgb: 242 236 228;
   --color-fg: #2b2a33;
-  --color-fg-muted: #8a8593;
+  --color-fg-rgb: 43 42 51;
+  --color-fg-muted: #746e7b;
+  --color-fg-muted-rgb: 116 110 123;
   --color-border: #ece3d6;
-  --color-brand: #e26a8d;
+  --color-border-rgb: 236 227 214;
+  --color-brand: #b33f66;
+  --color-brand-rgb: 179 63 102;
+  --color-brand-solid: #b33f66;
+  --color-brand-solid-rgb: 179 63 102;
+  --color-on-brand: #ffffff;
+  --color-on-brand-rgb: 255 255 255;
   --color-brand-soft: #fbe7ee;
+  --color-brand-soft-rgb: 251 231 238;
   --color-success: #5b8c6a;
+  --color-success-rgb: 91 140 106;
   --color-warning: #c98a3f;
+  --color-warning-rgb: 201 138 63;
   --color-danger: #c0533f;
+  --color-danger-rgb: 192 83 63;
+  --color-danger-solid: #ad4336;
+  --color-danger-solid-rgb: 173 67 54;
+  --color-on-danger: #ffffff;
+  --color-on-danger-rgb: 255 255 255;
   --shadow-card: 0 1px 2px rgba(43, 42, 51, 0.04), 0 8px 24px rgba(43, 42, 51, 0.06);
   --shadow-card-hover: 0 2px 4px rgba(43, 42, 51, 0.05), 0 14px 32px rgba(43, 42, 51, 0.08);
   color: theme('colors.ink');
@@ -27,16 +46,35 @@
 
 :root[data-theme='dark'] {
     --color-bg: #15131a;
+    --color-bg-rgb: 21 19 26;
     --color-bg-elevated: #1e1b23;
+    --color-bg-elevated-rgb: 30 27 35;
     --color-bg-sunken: #0f0d12;
+    --color-bg-sunken-rgb: 15 13 18;
     --color-fg: #ede7db;
+    --color-fg-rgb: 237 231 219;
     --color-fg-muted: #9b95a4;
+    --color-fg-muted-rgb: 155 149 164;
     --color-border: #2a2630;
+    --color-border-rgb: 42 38 48;
     --color-brand: #f29cb4;
+    --color-brand-rgb: 242 156 180;
+    --color-brand-solid: #a94164;
+    --color-brand-solid-rgb: 169 65 100;
+    --color-on-brand: #ffffff;
+    --color-on-brand-rgb: 255 255 255;
     --color-brand-soft: #3a1f2a;
+    --color-brand-soft-rgb: 58 31 42;
     --color-success: #8fbf9f;
+    --color-success-rgb: 143 191 159;
     --color-warning: #e2b074;
+    --color-warning-rgb: 226 176 116;
     --color-danger: #e08573;
+    --color-danger-rgb: 224 133 115;
+    --color-danger-solid: #9f4137;
+    --color-danger-solid-rgb: 159 65 55;
+    --color-on-danger: #ffffff;
+    --color-on-danger-rgb: 255 255 255;
     --shadow-card: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 8px 24px rgba(0, 0, 0, 0.4);
     --shadow-card-hover: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 14px 32px rgba(0, 0, 0, 0.46);
     color-scheme: dark;
@@ -109,8 +147,6 @@ body {
       radial-gradient(circle at 1px 1px, rgba(237, 231, 219, 0.045) 1px, transparent 0);
 }
 
-/* 主题切换的落幕/升幕动画：关掉默认交叉淡化，由 ThemeToggle 里的 JS
-   对 ::view-transition-new(root) 做 clip-path 动画。 */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none;

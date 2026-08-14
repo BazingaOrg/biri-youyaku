@@ -39,7 +39,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="inline-flex min-h-10 items-center gap-2 rounded-2xl bg-brand px-4 text-sm font-medium text-white shadow-card transition hover:brightness-105 active:scale-95"
+            className="inline-flex min-h-10 items-center gap-2 rounded-2xl bg-brandSolid px-4 text-sm font-medium text-onBrand shadow-card transition hover:brightness-105 active:scale-95"
           >
             <RotateCw size={15} />
             刷新页面

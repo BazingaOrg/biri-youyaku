@@ -21,7 +21,7 @@ const VARIANT_CLASS: Record<Variant, string> = {
   ghost:
     'bg-lift text-muted hover:bg-line/70 hover:text-ink active:scale-95 disabled:opacity-40',
   primary:
-    'bg-brand text-white hover:brightness-105 active:scale-95 disabled:opacity-50',
+    'bg-brandSolid text-onBrand hover:brightness-105 active:scale-95 disabled:opacity-50',
   danger:
     'bg-danger/10 text-danger hover:bg-danger/15 active:scale-95 disabled:opacity-40',
 }

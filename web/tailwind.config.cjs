@@ -5,17 +5,21 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        canvas: 'var(--color-bg)',
-        ink: 'var(--color-fg)',
-        muted: 'var(--color-fg-muted)',
-        line: 'var(--color-border)',
-        panel: 'var(--color-bg-elevated)',
-        lift: 'var(--color-bg-sunken)',
-        brand: 'var(--color-brand)',
-        brandSoft: 'var(--color-brand-soft)',
-        success: 'var(--color-success)',
-        warning: 'var(--color-warning)',
-        danger: 'var(--color-danger)',
+        canvas: 'rgb(var(--color-bg-rgb) / <alpha-value>)',
+        ink: 'rgb(var(--color-fg-rgb) / <alpha-value>)',
+        muted: 'rgb(var(--color-fg-muted-rgb) / <alpha-value>)',
+        line: 'rgb(var(--color-border-rgb) / <alpha-value>)',
+        panel: 'rgb(var(--color-bg-elevated-rgb) / <alpha-value>)',
+        lift: 'rgb(var(--color-bg-sunken-rgb) / <alpha-value>)',
+        brand: 'rgb(var(--color-brand-rgb) / <alpha-value>)',
+        brandSolid: 'rgb(var(--color-brand-solid-rgb) / <alpha-value>)',
+        onBrand: 'rgb(var(--color-on-brand-rgb) / <alpha-value>)',
+        brandSoft: 'rgb(var(--color-brand-soft-rgb) / <alpha-value>)',
+        success: 'rgb(var(--color-success-rgb) / <alpha-value>)',
+        warning: 'rgb(var(--color-warning-rgb) / <alpha-value>)',
+        danger: 'rgb(var(--color-danger-rgb) / <alpha-value>)',
+        dangerSolid: 'rgb(var(--color-danger-solid-rgb) / <alpha-value>)',
+        onDanger: 'rgb(var(--color-on-danger-rgb) / <alpha-value>)',
       },
       fontFamily: {
         sans: [

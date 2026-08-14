@@ -81,11 +81,11 @@ export function StepCarousel({steps, currentIndex, followKey}: StepCarouselProps
                   <div className="flex items-center gap-3">
                     <span className={`grid h-7 w-7 place-items-center rounded-full ${
                       step.state === 'done'
-                        ? 'bg-brand text-white'
+                        ? 'bg-brandSolid text-onBrand'
                         : step.state === 'active'
-                          ? 'bg-brand text-white'
+                          ? 'bg-brandSolid text-onBrand'
                           : step.state === 'failed'
-                            ? 'bg-danger text-white'
+                            ? 'bg-dangerSolid text-onDanger'
                             : 'bg-panel text-muted'
                     }`}>
                       <StateIcon state={step.state} />

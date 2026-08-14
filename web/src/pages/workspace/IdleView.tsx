@@ -1,6 +1,5 @@
 import {useState} from 'react'
 import {BookOpen, History, RotateCw, Sparkles} from 'lucide-react'
-import {IconButton} from '../../components/IconButton'
 import {UrlInput} from '../../components/UrlInput'
 import {isValidBiliUrl, sanitizeBiliInput} from '../../lib/biliUrl'
 
@@ -39,37 +38,59 @@ export function IdleView({onSubmit, onOpenHistory, onOpenKnowledge}: IdleViewPro
 
   return (
     <div className="grid min-h-[70vh] place-items-center">
-      <div className="grid w-full max-w-xl gap-5">
-        <p className="text-center text-sm leading-6 text-muted sm:text-base">
-          粘贴 B 站链接，自动总结
-        </p>
-        <UrlInput
-          value={url}
-          loading={busy}
-          error={error}
-          onChange={(next) => {
-            setUrl(next)
-            setError(null)
-          }}
-          onSubmit={submit}
-        />
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <IconButton
-            icon={busy ? <RotateCw size={20} className="animate-spin" /> : <Sparkles size={22} />}
-            label={busy ? '处理中…' : '开始总结'}
+      <div className="grid w-full max-w-xl gap-7">
+        <header className="grid justify-items-center gap-3 text-center">
+          <img src="/icon.svg" alt="" aria-hidden className="h-14 w-14" />
+          <div>
+            <h1 className="text-2xl font-semibold tracking-[-0.02em] text-ink sm:text-3xl">
+              biri-youyaku
+            </h1>
+            <p className="mt-1 text-sm leading-6 text-muted sm:text-base">
+              粘贴 B 站链接，生成笔记、脑图与可跳转字幕
+            </p>
+          </div>
+        </header>
+
+        <div className="grid gap-3">
+          <UrlInput
+            value={url}
+            loading={busy}
+            error={error}
+            onChange={(next) => {
+              setUrl(next)
+              setError(null)
+            }}
+            onSubmit={submit}
+          />
+          <button
+            type="button"
             onClick={() => void submit()}
             disabled={busy || url.trim().length === 0}
-            variant="primary"
-            size="lg"
-          />
-          <IconButton icon={<History size={20} />} label="历史" onClick={onOpenHistory} size="lg" />
-          <IconButton
-            icon={<BookOpen size={20} />}
-            label="知识库"
-            onClick={onOpenKnowledge}
-            size="lg"
-          />
+            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-brandSolid px-5 text-sm font-medium text-onBrand shadow-card transition-[transform,filter] duration-150 ease-out hover:brightness-105 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy ? <RotateCw size={18} className="animate-spin" /> : <Sparkles size={18} />}
+            {busy ? '正在创建总结…' : '开始总结'}
+          </button>
         </div>
+
+        <nav aria-label="快捷入口" className="flex flex-wrap items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenHistory}
+            className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-lift px-4 text-sm text-muted transition-[transform,background-color,color] duration-150 ease-out hover:bg-line/70 hover:text-ink active:scale-[0.97]"
+          >
+            <History size={17} />
+            历史记录
+          </button>
+          <button
+            type="button"
+            onClick={onOpenKnowledge}
+            className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-lift px-4 text-sm text-muted transition-[transform,background-color,color] duration-150 ease-out hover:bg-line/70 hover:text-ink active:scale-[0.97]"
+          >
+            <BookOpen size={17} />
+            知识库
+          </button>
+        </nav>
       </div>
     </div>
   )

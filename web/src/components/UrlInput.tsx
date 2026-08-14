@@ -44,6 +44,7 @@ export function UrlInput({value, loading, error, actions, onChange, onSubmit}: U
   return (
     <>
       <div className="relative">
+        <label htmlFor="bili-url" className="sr-only">B 站视频链接</label>
         <input
           id="bili-url"
           value={value}
@@ -60,7 +61,7 @@ export function UrlInput({value, loading, error, actions, onChange, onSubmit}: U
               <X size={17} />
             </button>
           )}
-          <button type="button" aria-label="粘贴链接" onClick={paste} className="grid h-10 w-10 place-items-center rounded-xl text-muted transition hover:bg-lift active:scale-95">
+          <button type="button" aria-label="粘贴链接" onClick={paste} disabled={loading} className="grid h-10 w-10 place-items-center rounded-xl text-muted transition-[transform,background-color,color] duration-150 ease-out hover:bg-lift active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40">
             <Clipboard size={17} />
           </button>
         </div>

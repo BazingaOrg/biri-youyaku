@@ -253,7 +253,7 @@ function RestartButton({restarting, onClick}: {restarting: boolean; onClick: () 
       type="button"
       onClick={onClick}
       disabled={restarting}
-      className="inline-flex min-h-9 w-fit items-center gap-1 rounded-xl bg-brand px-3 text-xs font-medium text-white shadow-card transition hover:brightness-105 active:scale-95 disabled:opacity-50"
+      className="inline-flex min-h-9 w-fit items-center gap-1 rounded-xl bg-brandSolid px-3 text-xs font-medium text-onBrand shadow-card transition hover:brightness-105 active:scale-95 disabled:opacity-50"
     >
       <RotateCw size={13} className={restarting ? 'animate-spin' : undefined} />
       重新开始
