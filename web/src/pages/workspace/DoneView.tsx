@@ -105,7 +105,7 @@ export function DoneView({
           className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brandSolid px-3.5 text-sm font-medium text-onBrand shadow-card transition-[transform,filter] duration-150 ease-out hover:brightness-105 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Copy size={16} />
-          复制笔记
+          复制总结全文
         </button>
         <button
           type="button"

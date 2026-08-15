@@ -152,15 +152,15 @@ export function ConfirmDialog({
         onAnimationEnd={() => {
           if (closing) endClosing()
         }}
-        className={`${closing ? 'animate-pop-out' : 'animate-pop'} relative w-full max-w-sm rounded-2xl border border-line bg-panel/95 p-5 shadow-cardHover backdrop-blur-md`}
+        className={`${closing ? 'animate-pop-out' : 'animate-pop'} relative flex max-h-[calc(100dvh-2rem)] w-full max-w-sm flex-col overflow-hidden rounded-2xl border border-line bg-panel/95 shadow-cardHover backdrop-blur-md`}
       >
-        <h2 id="confirm-dialog-title" className="text-base font-semibold text-ink">
-          {title}
-        </h2>
+        <div className="shrink-0 px-5 pt-5">
+          <h2 id="confirm-dialog-title" className="text-base font-semibold text-ink">{title}</h2>
+        </div>
         {/* div 而非 p：调用方偶尔需要塞输入框等块级元素（如蒸馏确认层的数量输入），
             p 标签会被浏览器强制截断成非法嵌套。 */}
-        {description && <div className="mt-2 text-sm leading-6 text-muted">{description}</div>}
-        <div className="mt-5 flex flex-wrap justify-end gap-2">
+        {description && <div className="min-h-0 overflow-y-auto px-5 pt-2 text-sm leading-6 text-muted">{description}</div>}
+        <div className="mt-4 flex shrink-0 flex-wrap justify-end gap-2 border-t border-line/70 px-5 py-4">
           <button
             type="button"
             ref={cancelButtonRef}

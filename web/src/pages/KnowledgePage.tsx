@@ -137,7 +137,7 @@ export function KnowledgePage() {
     void runSearch(q)
   }
 
-  const subtitle = '在 AI 总结与转写片段中检索；列表默认显示摘录，可展开全文。'
+  const subtitle = '搜索当前有效的 AI 总结；需要精确事实时，也会补充字幕原文。'
 
   return (
     <div className="grid min-h-[calc(100dvh-3rem)] min-w-0 animate-fade-in-up content-start gap-5 sm:min-h-[calc(100dvh-5rem)]">
@@ -162,6 +162,9 @@ export function KnowledgePage() {
               )}
             </p>
           )}
+          <p className="mt-3 max-w-2xl text-xs leading-5 text-muted/90">
+            连续文字按完整词组匹配；用空格分隔的多个词需同时出现。结果先按相关度查找总结，数字、引语、时间或命令类查询会进一步检索字幕，并补充相邻片段。
+          </p>
         </div>
       </header>
 

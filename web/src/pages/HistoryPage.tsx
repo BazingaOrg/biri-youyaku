@@ -419,8 +419,8 @@ export function HistoryPage() {
     return <li id={`history-job-${job.id}`} key={job.id} style={{animationDelay: `${Math.min(index, 6) * 40}ms`}} className="group/item grid animate-fade-in-up grid-cols-[minmax(0,1fr)_auto] items-start gap-2 border-b border-line/60 py-2 opacity-0 [animation-fill-mode:forwards] last:border-0">
       <div className="min-w-0">
         <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id, jobWeekStart(job))} className="block transition-[transform] active:scale-[0.99]"><p className="truncate text-sm font-medium text-ink">{job.title || job.url}</p></Link>
-        <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted"><AuthorLink job={job} /><span className="shrink-0">· {formatDuration(job.duration)}</span></p>
-        <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id, jobWeekStart(job))} className="mt-2 flex flex-wrap items-center gap-2 text-xs"><span className={`rounded-full px-2 py-0.5 ${job.status === 'COMPLETED' ? 'bg-brandSoft text-brand' : job.status === 'FAILED' ? 'bg-danger/15 text-danger' : running ? 'bg-warning/15 text-warning' : 'bg-panel text-muted'}`}>{formatStatus(job.status)}</span><span className="text-muted">{formatDate(job.completed_at ?? job.created_at)}</span></Link>
+        <p className="mt-1 flex min-w-0 items-center gap-1 text-[13px] text-muted"><AuthorLink job={job} /><span className="shrink-0">· {formatDuration(job.duration)}</span></p>
+        <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id, jobWeekStart(job))} className="mt-2 flex flex-wrap items-center gap-2 text-xs"><span className={`rounded-full px-2 py-0.5 font-medium ${job.status === 'COMPLETED' ? 'bg-brandSoft text-brand' : job.status === 'FAILED' ? 'bg-danger/15 text-danger' : running ? 'bg-warning/15 text-warning' : 'bg-panel text-muted'}`}>{formatStatus(job.status)}</span><span className="tabular-nums text-muted/90">{formatDate(job.completed_at ?? job.created_at)}</span></Link>
       </div>
       <div className="flex shrink-0 gap-1 sm:opacity-0 sm:group-hover/item:opacity-100 sm:focus-within:opacity-100">
         {!running && <IconTooltip label="重新总结"><button type="button" aria-label="重新总结" onClick={() => setResummaryTarget(job)} className="grid h-11 w-11 place-items-center rounded-xl text-muted transition-[transform,background-color,color] hover:bg-lift hover:text-brand active:scale-95"><RotateCw size={16} /></button></IconTooltip>}
@@ -449,7 +449,7 @@ export function HistoryPage() {
       <div className="border-y border-line/70 py-3">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
           <label className="relative block min-w-0"><Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜标题、UP 主、BVID 或标签" className="min-h-11 w-full rounded-2xl bg-lift py-2 pl-10 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30" /></label>
-          <div className="relative flex gap-2"><button type="button" aria-label="更多操作" aria-expanded={moreOpen} onClick={() => setMoreOpen((value) => !value)} disabled={previewingDelete || jobs.length === 0 || queryPending} title={queryPending ? '请等待搜索条件更新后再删除' : undefined} className="grid h-11 w-11 place-items-center rounded-2xl bg-lift text-muted hover:bg-line/70 hover:text-ink disabled:opacity-40"><MoreHorizontal size={18} /></button>{moreOpen && <div className="absolute right-0 top-12 z-30 w-56 rounded-2xl border border-line bg-panel p-2 shadow-cardHover"><button type="button" onClick={() => void openDeletePreview()} className="flex min-h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-sm text-danger hover:bg-danger/10"><Trash2 size={15} />{hasFilters ? '删除筛选结果…' : '清理历史…'}</button></div>}</div>
+          <div className="relative flex gap-2"><button type="button" aria-label="更多操作" aria-expanded={moreOpen} onClick={() => setMoreOpen((value) => !value)} disabled={previewingDelete || jobs.length === 0 || queryPending} title={queryPending ? '请等待搜索条件更新后再删除' : undefined} className="grid h-11 w-11 place-items-center rounded-2xl bg-lift text-muted hover:bg-line/70 hover:text-ink disabled:opacity-40"><MoreHorizontal size={18} /></button>{moreOpen && <div className="absolute right-0 top-12 z-30 w-56 rounded-2xl border border-line bg-panel p-2 shadow-cardHover"><button type="button" onClick={() => void openDeletePreview()} className="flex min-h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-sm text-ink transition-colors hover:bg-lift"><Trash2 size={15} className="text-danger" />{hasFilters ? '删除筛选结果' : '清理历史'}</button></div>}</div>
         </div>
       </div>
       <div className="py-3">
@@ -504,7 +504,7 @@ export function HistoryPage() {
                   <div className="border-t border-line/60 px-3 pb-1">
                     {selectedByDay.map(([key, dayJobs]) => (
                       <div key={key}>
-                        <h3 className="pt-3 text-xs font-medium text-muted">{dayLabel(dayJobs[0].completed_at ?? dayJobs[0].created_at)}</h3>
+                        <h3 className="border-b border-line/50 pb-2 pt-4 text-sm font-semibold text-ink/80">{dayLabel(dayJobs[0].completed_at ?? dayJobs[0].created_at)}</h3>
                         <ul>{dayJobs.map(renderJob)}</ul>
                       </div>
                     ))}

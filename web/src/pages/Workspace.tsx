@@ -288,7 +288,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     const taskName = job.title || undefined
     try {
       await navigator.clipboard.writeText(job.summary)
-      toast.success('已复制', undefined, {taskName})
+      toast.success('总结全文已复制', undefined, {taskName})
     } catch {
       toast.error('复制失败', '请手动选中复制', {taskName})
     }
