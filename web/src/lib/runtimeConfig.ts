@@ -18,7 +18,10 @@ let cached: Promise<RuntimeConfig> | null = null
 
 export function loadRuntimeConfig(): Promise<RuntimeConfig> {
   if (cached) return cached
-  cached = getRuntimeConfig().catch(() => FALLBACK)
+  cached = getRuntimeConfig().catch(() => {
+    cached = null
+    return FALLBACK
+  })
   return cached
 }
 
@@ -26,4 +29,3 @@ export function loadRuntimeConfig(): Promise<RuntimeConfig> {
 export function clearRuntimeConfigCache(): void {
   cached = null
 }
-

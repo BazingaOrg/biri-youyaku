@@ -126,11 +126,21 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const requestInit = {
     ...init,
     headers,
     credentials: init.credentials ?? 'include',
-  })
+  }
+  const url = `${API_BASE_URL}${path}`
+  let response: Response
+  try {
+    response = await fetch(url, requestInit)
+  } catch (error) {
+    const method = init.method?.toUpperCase() ?? 'GET'
+    if (!(error instanceof TypeError) || method !== 'GET' || init.signal?.aborted) throw error
+    await new Promise((resolve) => window.setTimeout(resolve, 500))
+    response = await fetch(url, requestInit)
+  }
   if (!response.ok) {
     // 429 走友好提示：服务器（或 CF）限流，不是用户姿势错
     if (response.status === 429) {
