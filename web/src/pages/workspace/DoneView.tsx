@@ -1,37 +1,9 @@
 import {type ReactNode, useRef, useState} from 'react'
-import {Captions, Clock, Copy, FileDown, History, MoreHorizontal, Music, Plus, RotateCw, Tag} from 'lucide-react'
+import {Captions, Copy, FileDown, History, MoreHorizontal, Music, Plus, RotateCw} from 'lucide-react'
 import {resendEmail, type Job} from '../../lib/api'
-import {formatStageTimings, formatTokenCount} from '../../lib/format'
 import {useToast} from '../../components/ToastProvider'
 import {MetaBar} from './MetaBar'
 import {SummaryTabs} from './SummaryTabs'
-
-function JobStats({job}: {job: Job}) {
-  const timings = formatStageTimings(job.stage_timings)
-  const tokens = formatTokenCount(job.token_usage)
-  const parts = [timings, tokens].filter(Boolean)
-  if (parts.length === 0) return null
-  return (
-    <div className="inline-flex max-w-full items-center gap-1.5 overflow-hidden px-1 text-xs text-muted">
-      <Clock size={12} className="shrink-0" />
-      <span className="min-w-0 whitespace-nowrap">{parts.join(' · ')}</span>
-    </div>
-  )
-}
-
-function TagChips({tags}: {tags?: string[]}) {
-  if (!tags || tags.length === 0) return null
-  return (
-    <div className="flex flex-wrap items-center gap-1.5 px-1">
-      <Tag size={12} className="shrink-0 text-muted" />
-      {tags.map((tag) => (
-        <span key={tag} className="rounded-full bg-brandSoft px-2 py-0.5 text-xs text-brand">
-          {tag}
-        </span>
-      ))}
-    </div>
-  )
-}
 
 interface DoneViewProps {
   job: Job
@@ -157,8 +129,6 @@ export function DoneView({
         </details>
       </div>
       <MetaBar job={job} />
-      <JobStats job={job} />
-      <TagChips tags={job.tags} />
       {job.email_error && (
         <p className="px-1 text-xs text-warning">
           邮件未送达（{job.email_error}）

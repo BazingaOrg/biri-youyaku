@@ -11,9 +11,8 @@ interface State {
 }
 
 /**
- * Top-level error boundary that catches render crashes from ReactMarkdown,
- * mind-elixir, or any descendant component and shows a friendly fallback
- * instead of a blank white page.
+ * Top-level error boundary that catches render crashes from descendant
+ * components and shows a friendly fallback instead of a blank white page.
  */
 export class ErrorBoundary extends Component<Props, State> {
   state: State = {error: null}

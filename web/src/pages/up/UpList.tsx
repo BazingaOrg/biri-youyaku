@@ -163,7 +163,7 @@ export function UpList({mid}: {mid: number}) {
         ...o,
         [video.bvid]: {status: res.deduped ? 'COMPLETED' : 'PENDING', job_id: res.job_id},
       }))
-      toast.success(res.deduped ? '这条之前总结过，已复用' : '已开始总结', undefined, {taskName: video.title})
+      toast.success(res.deduped ? '这条之前总结过，已复用' : '已开始总结', undefined, {taskName: video.title, dedupeKey: res.job_id})
     } catch (err) {
       toast.error('总结失败', err instanceof Error ? err.message : '请稍后再试', {taskName: video.title})
     } finally {

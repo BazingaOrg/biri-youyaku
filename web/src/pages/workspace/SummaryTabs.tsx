@@ -1,27 +1,18 @@
-import {lazy, Suspense, useEffect, useMemo, useRef, useState} from 'react'
+import {useMemo, useState} from 'react'
 import ReactMarkdown from 'react-markdown'
 import {Search} from 'lucide-react'
 import type {Job} from '../../lib/api'
-import {parseHeadings} from '../../lib/markdown'
 import {formatDuration} from '../../lib/format'
 import {PROSE} from '../../lib/prose'
-import {PageLoading} from '../../components/Spinner'
-import {smoothScrollTo} from '../../lib/scroll'
 
-// 懒加载：mind-elixir 体积不小，只有点开「脑图」tab 才拉它的 chunk + CSS。
-const MindmapView = lazy(() => import('./MindmapView').then((m) => ({default: m.MindmapView})))
-
-type Tab = 'notes' | 'mindmap' | 'transcript'
+type Tab = 'notes' | 'transcript'
 
 export function SummaryTabs({job}: {job: Job}) {
   const summary = job.summary ?? ''
   const hasTranscript = (job.transcript?.length ?? 0) > 0
   const [tab, setTab] = useState<Tab>('notes')
 
-  const tabs: Array<[Tab, string]> = [
-    ['notes', '笔记'],
-    ['mindmap', '脑图'],
-  ]
+  const tabs: Array<[Tab, string]> = [['notes', '笔记']]
   if (hasTranscript) tabs.push(['transcript', '字幕原文'])
 
   return (
@@ -44,88 +35,16 @@ export function SummaryTabs({job}: {job: Job}) {
       <div key={tab}>
         {tab === 'notes' &&
           (summary ? <NotesView markdown={summary} /> : <p className="text-sm text-muted">没有总结内容</p>)}
-        {tab === 'mindmap' &&
-          (summary ? (
-            <Suspense fallback={<PageLoading label="加载脑图…" />}>
-              <MindmapView markdown={summary} title={job.title} />
-            </Suspense>
-          ) : (
-            <p className="text-sm text-muted">没有可生成脑图的内容</p>
-          ))}
         {tab === 'transcript' && hasTranscript && <TranscriptList job={job} />}
       </div>
     </section>
   )
 }
 
-/** 笔记 + 桌面端 TOC 侧边栏（滚动高亮 + 点击跳转，双向）。 */
 function NotesView({markdown}: {markdown: string}) {
-  const headings = useMemo(() => parseHeadings(markdown), [markdown])
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [activeIdx, setActiveIdx] = useState(0)
-
-  useEffect(() => {
-    const root = containerRef.current
-    if (!root) return
-    const els = Array.from(root.querySelectorAll('h2, h3')) as HTMLElement[]
-    els.forEach((el, i) => {
-      el.id = `sec-${i}`
-      el.style.scrollMarginTop = '16px'
-    })
-    if (els.length === 0) return
-    // 滚动高亮：观察每个标题是否穿过视口顶部附近的一条窄带，取当前穿过带内/上方最近的标题为激活项。
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue
-          const idx = els.indexOf(entry.target as HTMLElement)
-          if (idx !== -1) setActiveIdx(idx)
-        }
-      },
-      {rootMargin: '-96px 0px -80% 0px', threshold: 0},
-    )
-    els.forEach((el) => observer.observe(el))
-    return () => observer.disconnect()
-  }, [markdown])
-
-  const jumpTo = (i: number) => {
-    const el = document.getElementById(`sec-${i}`)
-    if (!el) return
-    const top = el.getBoundingClientRect().top + window.scrollY - 16
-    smoothScrollTo({top})
-  }
-
-  const showToc = headings.length >= 3
   return (
-    <div className={showToc ? 'lg:grid lg:grid-cols-[minmax(0,1fr)_11rem] lg:gap-6' : ''}>
-      <div ref={containerRef} className={`min-w-0 ${PROSE}`}>
-        <ReactMarkdown>{markdown}</ReactMarkdown>
-      </div>
-      {showToc && (
-        <nav aria-label="目录" className="hidden self-start lg:sticky lg:top-4 lg:block">
-          <p className="mb-2 px-2 text-xs font-medium text-muted">目录</p>
-          <ul className="grid gap-0.5 border-l border-line">
-            {headings.map((h, i) => (
-              <li key={i}>
-                <button
-                  type="button"
-                  onClick={() => jumpTo(i)}
-                  className={`-ml-px block w-full border-l-2 py-1 text-left text-xs transition-colors ${
-                    h.level === 3 ? 'pl-5' : 'pl-3'
-                  } ${
-                    activeIdx === i
-                      ? 'border-brand font-medium text-brand'
-                      : 'border-transparent text-muted hover:text-ink'
-                  }`}
-                  title={h.text}
-                >
-                  <span className="line-clamp-2">{h.text}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      )}
+    <div className={`min-w-0 ${PROSE}`}>
+      <ReactMarkdown>{markdown}</ReactMarkdown>
     </div>
   )
 }

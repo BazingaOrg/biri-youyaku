@@ -46,7 +46,7 @@ export function IdleView({onSubmit, onOpenHistory, onOpenKnowledge}: IdleViewPro
               biri-youyaku
             </h1>
             <p className="mt-1 text-sm leading-6 text-muted sm:text-base">
-              粘贴 B 站链接，生成笔记、脑图与可跳转字幕
+              粘贴 B 站链接，生成笔记与可跳转字幕
             </p>
           </div>
         </header>

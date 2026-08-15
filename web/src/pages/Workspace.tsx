@@ -185,7 +185,7 @@ export function Workspace({jobId}: WorkspaceProps) {
       return
     }
     writeActive({jobId: response.job_id, url})
-    toast.success('已开始总结')
+    toast.success('已开始总结', undefined, {dedupeKey: response.job_id})
     navigate(`/jobs/${response.job_id}`)
   }
 
@@ -204,7 +204,7 @@ export function Workspace({jobId}: WorkspaceProps) {
       const response = await resummarizeJob(sourceJobId, newSummaryOptions())
       writeActive({jobId: response.job_id, url})
       setDuplicateJob(null)
-      toast.success('已开始重新总结')
+      toast.success('已开始重新总结', undefined, {dedupeKey: response.job_id})
       navigate(`/jobs/${response.job_id}`)
     } catch (err) {
       toast.error('重新总结失败', err instanceof Error ? err.message : '请重试')
@@ -221,7 +221,7 @@ export function Workspace({jobId}: WorkspaceProps) {
       const response = await resummarizeJob(job.id, newSummaryOptions())
       writeActive({jobId: response.job_id, url: job.url})
       setResummaryConfirmOpen(false)
-      toast.success('已开始重新总结', undefined, {taskName})
+      toast.success('已开始重新总结', undefined, {taskName, dedupeKey: response.job_id})
       navigate(`/jobs/${response.job_id}`)
     } catch (err) {
       toast.error('重新总结失败', err instanceof Error ? err.message : '请重试', {taskName})

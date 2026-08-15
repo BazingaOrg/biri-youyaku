@@ -1,5 +1,5 @@
-import {useCallback, useEffect, useState, type FormEvent} from 'react'
-import {ChevronDown, ChevronUp, Search} from 'lucide-react'
+import {useCallback, useEffect, useMemo, useState, type FormEvent} from 'react'
+import {ChevronDown, ChevronUp, ExternalLink, Search} from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import {
   getKnowledgeStatus,
@@ -12,44 +12,46 @@ import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
 import {BackButton} from '../components/BackButton'
 import {Spinner} from '../components/Spinner'
 
+function formatTimestamp(sec: number) {
+  const total = Math.max(0, Math.floor(sec))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
 function locatorLabel(hit: KnowledgeSearchHit): string {
   if (hit.locator) return hit.locator
   if (hit.source_level === 'transcript' && hit.start_sec != null && hit.end_sec != null) {
-    const fmt = (sec: number) => {
-      const total = Math.max(0, Math.floor(sec))
-      const m = Math.floor(total / 60)
-      const s = total % 60
-      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-    }
-    return `转写：${fmt(hit.start_sec)}–${fmt(hit.end_sec)}`
+    return `转写：${formatTimestamp(hit.start_sec)}–${formatTimestamp(hit.end_sec)}`
   }
   return hit.heading_path || 'AI 总结'
 }
 
-function HitCard({hit}: {hit: KnowledgeSearchHit}) {
+function sourceUrl(hit: KnowledgeSearchHit) {
+  if (!hit.source_url) return null
+  if (hit.source_level !== 'transcript' || hit.start_sec == null) return hit.source_url
+  try {
+    const url = new URL(hit.source_url)
+    url.searchParams.set('t', String(Math.floor(hit.start_sec)))
+    return url.toString()
+  } catch {
+    return hit.source_url
+  }
+}
+
+function HitSnippet({hit}: {hit: KnowledgeSearchHit}) {
   const full = (hit.chunk_text || hit.snippet || '').trim()
   const snippet = (hit.snippet || '').trim()
-  // Only show expand when the backend sent a truncated snippet that differs from
-  // the full chunk_text.  If there is no snippet (preview === full), the toggle
-  // would flip between two identical strings.
   const needsExpand = Boolean(snippet) && full.length > snippet.length
   const [open, setOpen] = useState(false)
   const body = open ? full : (snippet || full)
   const label = locatorLabel(hit)
   const isTranscript = hit.source_level === 'transcript'
-  const asrRisk = isTranscript && hit.subtitle_source === 'asr'
+  const videoUrl = sourceUrl(hit)
 
   return (
-    <li className="rounded-2xl border border-line/70 bg-panel p-4 shadow-card">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-ink">{hit.title || '无标题'}</p>
-        <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
-          {hit.author && <span className="truncate">{hit.author}</span>}
-          {hit.author && hit.bvid && <span>·</span>}
-          {hit.bvid && <span className="font-mono">{hit.bvid}</span>}
-        </p>
-      </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
+    <div className="py-3 first:pt-0 last:pb-0">
+      <div className="flex flex-wrap items-center gap-2">
         <span
           className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
             isTranscript
@@ -59,9 +61,6 @@ function HitCard({hit}: {hit: KnowledgeSearchHit}) {
         >
           {label}
         </span>
-        {asrRisk && (
-          <span className="text-xs text-warning">ASR 转写，可能存在识别误差</span>
-        )}
       </div>
       <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-ink/90">{body}</p>
       {needsExpand && (
@@ -74,6 +73,32 @@ function HitCard({hit}: {hit: KnowledgeSearchHit}) {
           {open ? '收起' : '展开全文'}
         </button>
       )}
+      {videoUrl && (
+        <a
+          href={videoUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-xl px-2 text-sm text-muted transition hover:bg-lift hover:text-ink"
+        >
+          {isTranscript && hit.start_sec != null ? `打开视频 ${formatTimestamp(hit.start_sec)}` : '打开视频'}
+          <ExternalLink size={14} />
+        </a>
+      )}
+    </div>
+  )
+}
+
+function HitCard({hits}: {hits: KnowledgeSearchHit[]}) {
+  const first = hits[0]
+  return (
+    <li className="rounded-2xl border border-line/70 bg-panel p-4 shadow-card">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-ink">{first.title || '无标题'}</p>
+        {first.author && <p className="mt-1 truncate text-xs text-muted">{first.author}</p>}
+      </div>
+      <div className="mt-3 divide-y divide-line/60">
+        {hits.map((hit) => <HitSnippet key={hit.chunk_id} hit={hit} />)}
+      </div>
     </li>
   )
 }
@@ -87,6 +112,11 @@ export function KnowledgePage() {
   const [hits, setHits] = useState<KnowledgeSearchHit[]>([])
   const [searchError, setSearchError] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState(false)
+  const groupedHits = useMemo(() => {
+    const groups = new Map<string, KnowledgeSearchHit[]>()
+    for (const hit of hits) groups.set(hit.document_id, [...(groups.get(hit.document_id) ?? []), hit])
+    return [...groups.values()]
+  }, [hits])
 
   const searchEnabled = Boolean(
     status != null
@@ -137,34 +167,13 @@ export function KnowledgePage() {
     void runSearch(q)
   }
 
-  const subtitle = '搜索当前有效的 AI 总结；需要精确事实时，也会补充字幕原文。'
-
   return (
     <div className="grid min-h-[calc(100dvh-3rem)] min-w-0 animate-fade-in-up content-start gap-5 sm:min-h-[calc(100dvh-5rem)]">
       <header className="grid gap-4 px-4 sm:px-5">
         <BackButton />
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-[-0.012em] text-ink sm:text-3xl">知识库</h1>
-            <span className="rounded-full bg-brandSoft px-2.5 py-0.5 text-xs text-brand">总结 + 转写</span>
-          </div>
-          <p className="mt-1 text-sm text-muted">{subtitle}</p>
-          {status && (
-            <p className="mt-2 text-sm text-muted">
-              已登记 {status.documents} 篇
-              <span className="text-muted/50"> · </span>
-              索引 {status.chunks} 块
-              {!status.search_enabled && (
-                <>
-                  <span className="text-muted/50"> · </span>
-                  <span className="text-warning">检索未启用</span>
-                </>
-              )}
-            </p>
-          )}
-          <p className="mt-3 max-w-2xl text-xs leading-5 text-muted/90">
-            连续文字按完整词组匹配；用空格分隔的多个词需同时出现。结果先按相关度查找总结，数字、引语、时间或命令类查询会进一步检索字幕，并补充相邻片段。
-          </p>
+          <h1 className="text-2xl font-semibold tracking-[-0.012em] text-ink sm:text-3xl">知识库</h1>
+          <p className="mt-1 text-sm text-muted">搜索看过的视频笔记与字幕。</p>
         </div>
       </header>
 
@@ -186,7 +195,7 @@ export function KnowledgePage() {
                   <input
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="搜总结或转写里的关键词、数字、术语…"
+                    placeholder="搜索笔记或字幕…"
                     disabled={searching}
                     className="min-h-11 w-full rounded-2xl bg-lift py-2 pl-10 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30 disabled:opacity-60"
                   />
@@ -212,14 +221,14 @@ export function KnowledgePage() {
               )}
               {!searching && hits.length > 0 && (
                 <ul className="grid gap-3">
-                  {hits.map((hit) => (
-                    <HitCard key={hit.chunk_id} hit={hit} />
+                  {groupedHits.map((group) => (
+                    <HitCard key={group[0].document_id} hits={group} />
                   ))}
                 </ul>
               )}
               {!searching && !hasSearched && !searchError && (
                 <p className="py-10 text-center text-sm text-muted">
-                  输入关键词，在 AI 总结与转写片段中查找
+                  输入关键词，找回笔记和字幕中的内容
                 </p>
               )}
             </div>

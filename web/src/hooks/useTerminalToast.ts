@@ -47,11 +47,11 @@ export function useTerminalToast(job: Job | null, jobId: string | null) {
         : job.email_error
           ? '总结已生成，邮件未送达'
           : '已发送到邮箱'
-      toast.success('总结完成', detail, {taskName})
+      toast.success('总结完成', detail, {taskName, dedupeKey: jobId})
     }
     if (job.status === 'FAILED' && job.error_message) {
       const fe = friendlyError(job.error_code, job.error_message, job.error_stage)
-      toast.error(fe.title, fe.message, {taskName})
+      toast.error(fe.title, fe.message, {taskName, dedupeKey: jobId})
     }
     // CANCELED 不弹 toast：按钮即时反馈已经在 cancel() 里以 info 形式发过
   }, [job, jobId, toast])

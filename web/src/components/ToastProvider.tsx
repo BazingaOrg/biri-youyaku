@@ -12,6 +12,7 @@ interface ToastAction {
 
 interface Toast {
   id: number
+  dedupeKey?: string
   type: ToastType
   title: string
   message?: string
@@ -22,12 +23,9 @@ interface Toast {
 
 interface ToastOptions {
   autoClose?: boolean
-  // 绑定到具体任务的提示（如「总结完成」「下载音频」），传入后会作为副标题展示，
-  // 过长以省略号截断。不传则只显示 title / message。
+  dedupeKey?: string
   taskName?: string
-  // 行内动作按钮（如删除后的「撤销」）。传入即视为限时提示，到点自动关闭。
   action?: ToastAction
-  // 自定义自动关闭时长（毫秒）。autoClose / action 任一存在时生效。
   durationMs?: number
 }
 
@@ -58,10 +56,15 @@ export function ToastProvider({children}: {children: ReactNode}) {
   }
   const push = (type: ToastType, title: string, message?: string, options?: ToastOptions) => {
     const id = Date.now() + Math.random()
-    setToasts((current) => [...current, {id, type, title, message, taskName: options?.taskName, action: options?.action}])
-    // 提示默认常驻，等用户主动关闭；autoClose 或带 action（如撤销）时走定时关闭。
-    if (options?.autoClose === true || options?.action) {
-      const duration = options?.durationMs ?? (type === 'success' ? 6000 : 4000)
+    const nextToast = {id, type, title, message, dedupeKey: options?.dedupeKey, taskName: options?.taskName, action: options?.action}
+    setToasts((current) => [
+      ...current.filter((toast) => !options?.dedupeKey || toast.dedupeKey !== options.dedupeKey),
+      nextToast,
+    ])
+    const shouldAutoClose = options?.autoClose ?? (options?.action != null || type !== 'error')
+    if (shouldAutoClose) {
+      const defaultDuration = options?.action ? (type === 'success' ? 6000 : 4000) : (type === 'success' ? 6000 : 5500)
+      const duration = options?.durationMs ?? defaultDuration
       window.setTimeout(() => startClose(id), duration)
     }
   }
@@ -71,32 +74,31 @@ export function ToastProvider({children}: {children: ReactNode}) {
     info: (title, message, options) => push('info', title, message, options),
   }), [])
 
-  // 可见上限 3 条；超出的折叠（取最新 3 条，旧的合并成「+N 条更早」角标）
   const VISIBLE_LIMIT = 3
   const visible = toasts.slice(-VISIBLE_LIMIT)
-  const hiddenCount = toasts.length - visible.length
-  const clearOlder = () => setToasts((current) => current.slice(-VISIBLE_LIMIT))
+  const clearAll = () => {
+    const ids = new Set(toasts.map((toast) => toast.id))
+    setToasts((current) => current.map((toast) => ids.has(toast.id) ? {...toast, closing: true} : toast))
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => !ids.has(toast.id)))
+    }, POP_OUT_FALLBACK_MS)
+  }
 
   return (
     <ToastContext.Provider value={value}>
       {children}
-      {/*
-        移动端 bottom-center，桌面端右上角：
-        - 手机：贴底，拇指能直接关；不挡顶部主内容
-        - 桌面：维持原 top-right
-        毛玻璃 + 半透明 bg-panel/80 + backdrop-blur，叠在内容上也能透视
-      */}
       <div
         data-toast-stack
         className="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex flex-col gap-2 sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-4 sm:w-[calc(100vw-2rem)] sm:max-w-sm sm:gap-3 [&>*]:pointer-events-auto"
       >
-        {hiddenCount > 0 && (
+        {toasts.length > 1 && (
           <button
             type="button"
-            onClick={clearOlder}
+            onClick={clearAll}
+            aria-label={`全部清除 ${toasts.length} 条通知`}
             className="self-center rounded-full border border-line bg-panel/80 px-3 py-1 text-xs text-muted shadow-card backdrop-blur transition hover:bg-panel"
           >
-            清除更早的 {hiddenCount} 条
+            全部清除（{toasts.length}）
           </button>
         )}
         {visible.map((toast) => {
@@ -114,16 +116,11 @@ export function ToastProvider({children}: {children: ReactNode}) {
               className={`${toast.closing ? 'animate-pop-out' : 'animate-pop'} overflow-hidden rounded-2xl border bg-panel/85 p-4 shadow-card backdrop-blur-md ${
               toast.type === 'error' ? 'border-danger/40' : toast.type === 'success' ? 'border-success/40' : 'border-line'
             }`}>
-              {/*
-                items-start + icon/按钮分别配 mt-0.5 / -mt-1：
-                让 20px 图标的视觉中线对齐 title 首行文字中线，关闭按钮也不再"漂"在右上方。
-              */}
               <div className="flex items-start gap-3">
                 <Icon size={20} className={`mt-0.5 shrink-0 ${toast.type === 'error' ? 'text-danger' : toast.type === 'success' ? 'text-success' : 'text-brand'}`} />
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold leading-6 text-ink">{toast.title}</p>
                   {toast.taskName && (
-                    // 任务名做副标题：单行截断，hover 时 title attribute 给出完整名
                     <p className="mt-0.5 truncate text-xs leading-5 text-muted/80" title={toast.taskName}>
                       {toast.taskName}
                     </p>

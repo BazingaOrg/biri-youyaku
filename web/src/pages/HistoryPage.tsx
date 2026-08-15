@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
-import {ChevronLeft, ChevronRight, MoreHorizontal, Plus, RotateCw, Search, Trash2} from 'lucide-react'
+import {MoreHorizontal, Plus, RotateCw, Search, Trash2} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
 import {
   ApiError, executeBulkDelete, previewBulkDelete, deleteJob, listJobs, resummarizeJob,
@@ -15,7 +15,6 @@ import {useToast} from '../components/ToastProvider'
 import {ConfirmDialog} from '../components/ConfirmDialog'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
 import {IconTooltip} from './history/IconTooltip'
-import {UsageStrip} from './history/UsageStrip'
 
 const PAGE_SIZE = 60
 const UNDO_WINDOW_MS = 5000
@@ -61,12 +60,10 @@ interface WeekGroup {weekStart: number; jobs: Job[]}
 
 interface HistoryRestoreSnapshot {
   query: string
-  selectedWeek: number | null
   loadedPages: number
   nextCursor: string | null
   scrollY: number
   anchorJobId: string | null
-  anchorWeek: number | null
 }
 
 function readHistoryRestore(): HistoryRestoreSnapshot | null {
@@ -77,12 +74,10 @@ function readHistoryRestore(): HistoryRestoreSnapshot | null {
     if (typeof value.query !== 'string' || typeof value.loadedPages !== 'number') return null
     return {
       query: value.query,
-      selectedWeek: typeof value.selectedWeek === 'number' ? value.selectedWeek : null,
       loadedPages: Math.max(1, value.loadedPages),
       nextCursor: typeof value.nextCursor === 'string' ? value.nextCursor : null,
       scrollY: typeof value.scrollY === 'number' ? value.scrollY : 0,
       anchorJobId: typeof value.anchorJobId === 'string' ? value.anchorJobId : null,
-      anchorWeek: typeof value.anchorWeek === 'number' ? value.anchorWeek : null,
     }
   } catch {
     return null
@@ -99,11 +94,6 @@ export function HistoryPage() {
   const [debouncedQuery, setDebouncedQuery] = useState(() => restoreSnapshot?.query ?? '')
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [selectedWeek, setSelectedWeek] = useState<number | null>(() => {
-    if (restoreSnapshot?.selectedWeek != null) return restoreSnapshot.selectedWeek
-    if (restoreSnapshot?.anchorWeek != null) return restoreSnapshot.anchorWeek
-    return null
-  })
   const [moreOpen, setMoreOpen] = useState(false)
   const [deletePreview, setDeletePreview] = useState<BulkDeletePreview | null>(null)
   // 弹窗只使用发起预览时的筛选快照；用户随后改筛选不会误导确认文案。
@@ -238,36 +228,6 @@ export function HistoryPage() {
   const searchJobs = useMemo(() => jobs.filter((job) => !isRunning(job.status)), [jobs])
 
   useEffect(() => {
-    if (weekGroups.length === 0) {
-      setSelectedWeek(null)
-      return
-    }
-    setSelectedWeek((current) => {
-      if (current != null && weekGroups.some((group) => group.weekStart === current)) return current
-      return weekGroups[0].weekStart
-    })
-  }, [weekGroups])
-
-  const selectedGroup = useMemo(
-    () => weekGroups.find((group) => group.weekStart === selectedWeek) ?? null,
-    [weekGroups, selectedWeek],
-  )
-
-  const selectedWeekIndex = useMemo(
-    () => weekGroups.findIndex((group) => group.weekStart === selectedWeek),
-    [weekGroups, selectedWeek],
-  )
-  const selectedByDay = useMemo(() => {
-    if (!selectedGroup) return [] as Array<[string, Job[]]>
-    const byDay = new Map<string, Job[]>()
-    for (const job of selectedGroup.jobs) {
-      const key = dayKey(job.completed_at ?? job.created_at)
-      byDay.set(key, [...(byDay.get(key) ?? []), job])
-    }
-    return [...byDay.entries()]
-  }, [selectedGroup])
-
-  useEffect(() => {
     const restore = restoreSnapshotRef.current
     if (!restore || loading || restoredScrollRef.current) return
     restoredScrollRef.current = true
@@ -385,7 +345,7 @@ export function HistoryPage() {
   const handleResummarize = async () => {
     if (!resummaryTarget) return
     setResummarizing(true)
-    try { const response = await resummarizeJob(resummaryTarget.id, newSummaryOptions()); writeActive({jobId: response.job_id, url: resummaryTarget.url}); setResummaryTarget(null); toast.success('已开始重新总结'); navigate(`/jobs/${response.job_id}`) }
+    try { const response = await resummarizeJob(resummaryTarget.id, newSummaryOptions()); writeActive({jobId: response.job_id, url: resummaryTarget.url}); setResummaryTarget(null); toast.success('已开始重新总结', undefined, {dedupeKey: response.job_id}); navigate(`/jobs/${response.job_id}`) }
     catch (err) { toast.error('重新总结失败', err instanceof Error ? err.message : '请重试') }
     finally { setResummarizing(false) }
   }
@@ -398,34 +358,37 @@ export function HistoryPage() {
     setDebouncedQuery('')
   }
 
-  const saveHistoryState = useCallback((anchorJobId: string | null = null, anchorWeek: number | null = null) => {
+  const saveHistoryState = useCallback((anchorJobId: string | null = null) => {
     try {
       window.sessionStorage.setItem(HISTORY_RESTORE_KEY, JSON.stringify({
         query: debouncedQuery,
-        selectedWeek: anchorWeek ?? selectedWeek,
         loadedPages: loadedPagesRef.current,
         nextCursor: nextCursorRef.current,
         scrollY: window.scrollY,
         anchorJobId,
-        anchorWeek,
       } satisfies HistoryRestoreSnapshot))
     } catch {
       // Session storage is a convenience for back navigation; history remains usable without it.
     }
-  }, [debouncedQuery, selectedWeek])
+  }, [debouncedQuery])
 
   const renderJob = (job: Job, index: number) => {
     const running = isRunning(job.status)
     return <li id={`history-job-${job.id}`} key={job.id} style={{animationDelay: `${Math.min(index, 6) * 40}ms`}} className="group/item grid animate-fade-in-up grid-cols-[minmax(0,1fr)_auto] items-start gap-2 border-b border-line/60 py-2 opacity-0 [animation-fill-mode:forwards] last:border-0">
       <div className="min-w-0">
-        <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id, jobWeekStart(job))} className="block transition-[transform] active:scale-[0.99]"><p className="truncate text-sm font-medium text-ink">{job.title || job.url}</p></Link>
+        <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id)} className="block transition-[transform] active:scale-[0.99]"><p className="truncate text-sm font-medium text-ink">{job.title || job.url}</p></Link>
         <p className="mt-1 flex min-w-0 items-center gap-1 text-[13px] text-muted"><AuthorLink job={job} /><span className="shrink-0">· {formatDuration(job.duration)}</span></p>
-        <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id, jobWeekStart(job))} className="mt-2 flex flex-wrap items-center gap-2 text-xs"><span className={`rounded-full px-2 py-0.5 font-medium ${job.status === 'COMPLETED' ? 'bg-brandSoft text-brand' : job.status === 'FAILED' ? 'bg-danger/15 text-danger' : running ? 'bg-warning/15 text-warning' : 'bg-panel text-muted'}`}>{formatStatus(job.status)}</span><span className="tabular-nums text-muted/90">{formatDate(job.completed_at ?? job.created_at)}</span></Link>
+        <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id)} className="mt-2 flex flex-wrap items-center gap-2 text-xs">{job.status !== 'COMPLETED' && <span className={`rounded-full px-2 py-0.5 font-medium ${job.status === 'FAILED' ? 'bg-danger/15 text-danger' : running ? 'bg-warning/15 text-warning' : 'bg-panel text-muted'}`}>{formatStatus(job.status)}</span>}<span className="tabular-nums text-muted/90">{formatDate(job.completed_at ?? job.created_at)}</span></Link>
       </div>
-      <div className="flex shrink-0 gap-1 sm:opacity-0 sm:group-hover/item:opacity-100 sm:focus-within:opacity-100">
-        {!running && <IconTooltip label="重新总结"><button type="button" aria-label="重新总结" onClick={() => setResummaryTarget(job)} className="grid h-11 w-11 place-items-center rounded-xl text-muted transition-[transform,background-color,color] hover:bg-lift hover:text-brand active:scale-95"><RotateCw size={16} /></button></IconTooltip>}
-        <IconTooltip label="删除"><button type="button" aria-label="删除" onClick={() => handleDelete(job.id)} className="grid h-11 w-11 place-items-center rounded-xl text-muted transition-[transform,background-color,color] hover:bg-lift hover:text-danger active:scale-95"><Trash2 size={16} /></button></IconTooltip>
-      </div>
+      <details className="group/actions relative shrink-0">
+        <summary aria-label="任务操作" className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-xl text-muted transition-[transform,background-color,color] hover:bg-lift hover:text-ink active:scale-95 [&::-webkit-details-marker]:hidden">
+          <MoreHorizontal size={18} />
+        </summary>
+        <div className="absolute right-0 top-11 z-20 grid w-36 gap-1 rounded-2xl border border-line bg-panel p-1.5 shadow-cardHover">
+          {!running && <button type="button" onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); setResummaryTarget(job) }} className="flex min-h-10 items-center gap-2 rounded-xl px-3 text-left text-sm text-muted transition-colors hover:bg-lift hover:text-brand"><RotateCw size={15} />重新总结</button>}
+          <button type="button" onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); handleDelete(job.id) }} className="flex min-h-10 items-center gap-2 rounded-xl px-3 text-left text-sm text-muted transition-colors hover:bg-lift hover:text-danger"><Trash2 size={15} />删除</button>
+        </div>
+      </details>
     </li>
   }
 
@@ -435,7 +398,7 @@ export function HistoryPage() {
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-[-0.012em] text-ink sm:text-3xl">历史</h1>
-          <p className="mt-1 text-sm text-muted">按周查看任务，搜索、筛选或清理记录。</p>
+          <p className="mt-1 text-sm text-muted">查看最近的总结，或搜索过去的内容。</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <IconTooltip label="新建">
@@ -443,12 +406,11 @@ export function HistoryPage() {
           </IconTooltip>
         </div>
       </div>
-      <UsageStrip />
     </header>
     <section className="min-w-0 px-4 sm:px-5">
       <div className="border-y border-line/70 py-3">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-          <label className="relative block min-w-0"><Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜标题、UP 主、BVID 或标签" className="min-h-11 w-full rounded-2xl bg-lift py-2 pl-10 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30" /></label>
+          <label className="relative block min-w-0"><Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜标题、UP 主或 BVID" className="min-h-11 w-full rounded-2xl bg-lift py-2 pl-10 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30" /></label>
           <div className="relative flex gap-2"><button type="button" aria-label="更多操作" aria-expanded={moreOpen} onClick={() => setMoreOpen((value) => !value)} disabled={previewingDelete || jobs.length === 0 || queryPending} title={queryPending ? '请等待搜索条件更新后再删除' : undefined} className="grid h-11 w-11 place-items-center rounded-2xl bg-lift text-muted hover:bg-line/70 hover:text-ink disabled:opacity-40"><MoreHorizontal size={18} /></button>{moreOpen && <div className="absolute right-0 top-12 z-30 w-56 rounded-2xl border border-line bg-panel p-2 shadow-cardHover"><button type="button" onClick={() => void openDeletePreview()} className="flex min-h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-sm text-ink transition-colors hover:bg-lift"><Trash2 size={15} className="text-danger" />{hasFilters ? '删除筛选结果' : '清理历史'}</button></div>}</div>
         </div>
       </div>
@@ -469,48 +431,29 @@ export function HistoryPage() {
             <ul className="rounded-2xl bg-lift/45 px-3">{searchJobs.map(renderJob)}</ul>
           ) : (
             <div className="grid gap-3">
-              {selectedGroup && (
-                <section id={`history-week-${selectedGroup.weekStart}`} className="overflow-hidden rounded-2xl border border-line/70 bg-lift/45">
-                  <div className="flex min-h-12 items-center gap-2 px-3">
-                    <button
-                      type="button"
-                      aria-label="上一周"
-                      disabled={selectedWeekIndex < 0 || selectedWeekIndex >= weekGroups.length - 1}
-                      onClick={() => {
-                        if (selectedWeekIndex < 0 || selectedWeekIndex >= weekGroups.length - 1) return
-                        setSelectedWeek(weekGroups[selectedWeekIndex + 1].weekStart)
-                      }}
-                      className="grid h-9 w-9 place-items-center rounded-xl text-muted transition-[transform,background-color,color] hover:bg-line/70 hover:text-ink active:scale-95 disabled:opacity-30"
-                    >
-                      <ChevronLeft size={16} />
-                    </button>
-                    <div className="min-w-0 flex-1 text-center">
-                      <span className="text-sm font-medium text-ink">{weekLabel(selectedGroup.weekStart)}</span>
-                      <span className="ml-2 text-xs text-muted">{selectedGroup.jobs.length} 条</span>
+              {weekGroups.map((group) => {
+                const byDay = new Map<string, Job[]>()
+                for (const job of group.jobs) {
+                  const key = dayKey(job.completed_at ?? job.created_at)
+                  byDay.set(key, [...(byDay.get(key) ?? []), job])
+                }
+                return (
+                  <section key={group.weekStart} className="overflow-hidden rounded-2xl border border-line/70 bg-lift/45">
+                    <div className="flex min-h-12 items-center px-3">
+                      <span className="text-sm font-medium text-ink">{weekLabel(group.weekStart)}</span>
+                      <span className="ml-2 text-xs text-muted">{group.jobs.length} 条</span>
                     </div>
-                    <button
-                      type="button"
-                      aria-label="下一周"
-                      disabled={selectedWeekIndex <= 0}
-                      onClick={() => {
-                        if (selectedWeekIndex <= 0) return
-                        setSelectedWeek(weekGroups[selectedWeekIndex - 1].weekStart)
-                      }}
-                      className="grid h-9 w-9 place-items-center rounded-xl text-muted transition-[transform,background-color,color] hover:bg-line/70 hover:text-ink active:scale-95 disabled:opacity-30"
-                    >
-                      <ChevronRight size={16} />
-                    </button>
-                  </div>
-                  <div className="border-t border-line/60 px-3 pb-1">
-                    {selectedByDay.map(([key, dayJobs]) => (
-                      <div key={key}>
-                        <h3 className="border-b border-line/50 pb-2 pt-4 text-sm font-semibold text-ink/80">{dayLabel(dayJobs[0].completed_at ?? dayJobs[0].created_at)}</h3>
-                        <ul>{dayJobs.map(renderJob)}</ul>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
+                    <div className="border-t border-line/60 px-3 pb-1">
+                      {[...byDay.entries()].map(([key, dayJobs]) => (
+                        <div key={key}>
+                          <h3 className="border-b border-line/50 pb-2 pt-4 text-sm font-semibold text-ink/80">{dayLabel(dayJobs[0].completed_at ?? dayJobs[0].created_at)}</h3>
+                          <ul>{dayJobs.map(renderJob)}</ul>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )
+              })}
             </div>
           )}
           {hasMore && <div className="grid justify-items-center gap-2 pt-3"><button type="button" onClick={() => void loadMore()} disabled={loadingMore} className="min-h-10 rounded-xl bg-lift px-4 text-sm text-muted transition-[transform,background-color,color] hover:bg-line/70 hover:text-ink active:scale-95 disabled:opacity-50">{loadingMore ? '正在加载…' : searchMode ? '加载更多结果' : '查看更早记录'}</button><div ref={sentinelRef} aria-hidden className="h-3" /><p className="text-center text-xs text-muted">也可继续向下滚动加载</p></div>}
@@ -522,7 +465,7 @@ export function HistoryPage() {
       title={previewHasFilters
         ? `永久删除当前筛选结果中的 ${deletePreview?.matched_count ?? 0} 条记录？`
         : `永久删除全部 ${deletePreview?.matched_count ?? 0} 条历史记录？`}
-      description={deletePreview && <div className="grid gap-3"><div>{previewHasFilters && <><p>筛选范围</p>{deletePreviewFilters?.query && <p>搜索：“{deletePreviewFilters.query}”</p>}</>}<p>数据库中共有：{deletePreview.by_status.COMPLETED ?? 0} 条已完成 · {deletePreview.by_status.FAILED ?? 0} 条失败 · {deletePreview.by_status.CANCELED ?? 0} 条已取消</p></div><div><p className="font-medium text-ink">包括：</p>{deletePreview.sample.map((job) => <p key={job.id} className="truncate">· {job.title || '未命名视频'}{job.author ? ` · ${job.author}` : ''}</p>)}{deletePreview.sample_truncated_count > 0 && <p>另有 {deletePreview.sample_truncated_count} 条</p>}</div><p>将删除数据库中全部符合条件的记录，不仅是当前已加载或显示在屏幕中的条目。</p><p>关联的总结、字幕和音频也会永久删除。</p></div>}
+      description={deletePreview && <div className="grid gap-3"><div>{previewHasFilters && <><p>筛选范围</p>{deletePreviewFilters?.query && <p>搜索：“{deletePreviewFilters.query}”</p>}</>}<p>数据库中共有：{deletePreview.by_status.COMPLETED ?? 0} 条已完成 · {deletePreview.by_status.FAILED ?? 0} 条失败 · {deletePreview.by_status.CANCELED ?? 0} 条已取消</p></div><div><p className="font-medium text-ink">包括：</p>{deletePreview.sample.map((job) => <p key={job.id} className="truncate">· {job.title || '未命名视频'}{job.author ? ` · ${job.author}` : ''}</p>)}{deletePreview.sample_truncated_count > 0 && <p>另有 {deletePreview.sample_truncated_count} 条</p>}</div><p>将删除数据库中全部符合条件的记录，不仅是当前已加载或显示在屏幕中的条目。</p><p>任务记录及关联文件会永久删除；知识库中的已有内容不会随之删除。</p></div>}
       confirmLabel={`永久删除 ${deletePreview?.matched_count ?? 0} 条`}
       danger
       loading={clearing}
