@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect x="32" y="32" width="448" height="448" rx="120" fill="#B33F66"/>
+  <rect width="512" height="512" fill="#B33F66"/>
   <path id="stream" d="M214 98c38-18 86-6 112 30 24 34 20 79-8 111-15 17-25 30-30 43-4 12-19 14-27 4-9-12-4-26 6-40 14-20 21-38 15-55-7-20-30-27-56-27-28 0-46-14-46-35 0-13 12-24 34-31Z" fill="#FBF7F2"/>
   <use href="#stream" transform="rotate(120 256 256)"/>
   <use href="#stream" transform="rotate(240 256 256)"/>
