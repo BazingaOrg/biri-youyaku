@@ -10,7 +10,7 @@ from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
 @pytest.mark.asyncio
 async def test_distill_task_type_stops_at_completed_without_summary(monkeypatch, tmp_path):
     """task_type="distill" 的 job 走到 TRANSCRIPT_READY 该直接收尾：复用 COMPLETED
-    终态（镜像 task_type=="audio" 的提前收尾写法），不总结、不生成标签、不发邮件。"""
+    终态（镜像 task_type=="audio" 的提前收尾写法），不总结、不发邮件。"""
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
     runner._registry.reset_for_tests()
     db.init_db()
@@ -44,7 +44,6 @@ async def test_distill_task_type_stops_at_completed_without_summary(monkeypatch,
     monkeypatch.setattr(runner, "fetch_meta", fake_fetch_meta)
     monkeypatch.setattr(runner, "fetch_platform_transcript", fake_fetch_platform_transcript)
     monkeypatch.setattr(runner, "summarize", fail_if_summarize_called)
-    monkeypatch.setattr(runner, "generate_tags", fail_if_summarize_called)
 
     runner.start_job(job.id)
     await runner._registry.tasks[job.id]
@@ -80,7 +79,6 @@ async def test_run_after_resume_also_short_circuits_distill_job(monkeypatch, tmp
 
     monkeypatch.setattr(runner.event_bus, "publish", fake_publish)
     monkeypatch.setattr(runner, "summarize", fail_if_summarize_called)
-    monkeypatch.setattr(runner, "generate_tags", fail_if_summarize_called)
 
     runner.resume_job(job.id)
     await runner._registry.tasks[job.id]

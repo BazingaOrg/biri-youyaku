@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-Paste a Bilibili video link and get a readable Markdown summary, a mind map, and a clickable transcript. Local-first, self-hosted, no telemetry.
+Paste a Bilibili video link and get readable Markdown notes and a clickable transcript. Local-first, self-hosted, no telemetry.
 
 <!-- Demo: drop a screenshot/GIF in assets/ then uncomment the line below
 ![demo](assets/demo.gif)
@@ -14,12 +14,11 @@ Paste a Bilibili video link and get a readable Markdown summary, a mind map, and
 ## ✨ Features
 
 - **Subtitles first**: use official subtitles when present, otherwise download audio and transcribe locally (ASR).
-- **Multi-view summary**: Markdown notes (with a table of contents) / mind map (export SVG·PNG) / topic tags / transcript (click a timestamp to jump back into the video).
+- **Focused reading**: Markdown notes and a transcript with timestamps that jump back into the video.
 - **Any LLM**: any OpenAI-compatible endpoint (DeepSeek by default; OpenAI / Gemini / local ollama all work).
 - **Browse by uploader**: list an uploader's whole catalog, see which are summarized, one-click the rest.
 - **Uploader corpus distillation** (experimental, hidden by default): scrape an uploader's video transcripts, extract viewpoints with LLM, and compile them into a persona corpus; set `VITE_DISTILL_ENABLED=true` in `web/.env` and rebuild to show the entry on the uploader page.
 - **Personal knowledge base**: completed summaries are registered automatically; local FTS search over summaries and transcripts.
-- **History balance & weekly costs**: the history page currently shows API balance and weekly cost aggregates (no standalone `/stats` route).
 - **Dedup to save tokens**: re-pasting an already-summarized video reuses the old result.
 - **Per-job fixes**: resummarize (reuse existing transcript), force re-transcription (ignore existing transcript/subtitles and redo ASR), resend email for a failed job.
 - **Audio download**: download the audio file used for transcription.
@@ -137,7 +136,6 @@ flowchart LR
     llm -->|streamed chunks| api
     api --> db[(SQLite)]
     api --> knowledge[knowledge<br/>FTS search]
-    api --> stats[history<br/>balance / weekly costs]
     api -. optional .-> mail[Cloudflare Worker → Resend]
 ```
 

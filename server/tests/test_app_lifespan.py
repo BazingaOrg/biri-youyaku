@@ -45,7 +45,6 @@ async def test_lifespan_shuts_down_distill_before_runner_maintenance_and_http(
     monkeypatch.setattr(app_module.runner, "shutdown", runner_shutdown)
     monkeypatch.setattr(app_module, "cleanup_loop", lambda: _until_cancelled(events, "maintenance"))
     monkeypatch.setattr(app_module, "_warmup_asr", lambda: _until_cancelled(events, "warmup"))
-    monkeypatch.setattr(app_module, "_backfill_tags", lambda: _until_cancelled(events, "tags"))
 
     async def close_http():
         events.append("http.close")
@@ -63,7 +62,7 @@ async def test_lifespan_shuts_down_distill_before_runner_maintenance_and_http(
         "distill.shutdown",
         "runner.shutdown",
     ]
-    assert {"maintenance", "warmup", "tags"}.issubset(events[7:])
+    assert {"maintenance", "warmup"}.issubset(events[7:])
     assert events[-1] == "http.close"
 
 
@@ -96,7 +95,6 @@ async def test_lifespan_closes_http_once_after_unfinished_job_completes(monkeypa
     monkeypatch.setattr(app_module.runner, "await_job_completion", await_completion)
     monkeypatch.setattr(app_module, "cleanup_loop", lambda: _until_cancelled([], "maintenance"))
     monkeypatch.setattr(app_module, "_warmup_asr", lambda: _until_cancelled([], "warmup"))
-    monkeypatch.setattr(app_module, "_backfill_tags", lambda: _until_cancelled([], "tags"))
 
     async def close_http():
         closed.append(True)
@@ -147,7 +145,6 @@ async def test_old_deferred_close_does_not_close_a_new_lifespan_client(monkeypat
     monkeypatch.setattr(app_module.runner, "await_job_completion", await_completion)
     monkeypatch.setattr(app_module, "cleanup_loop", lambda: _until_cancelled([], "maintenance"))
     monkeypatch.setattr(app_module, "_warmup_asr", lambda: _until_cancelled([], "warmup"))
-    monkeypatch.setattr(app_module, "_backfill_tags", lambda: _until_cancelled([], "tags"))
 
     async def close_http():
         closed.append(True)

@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-粘贴 B 站视频链接，自动生成可读的 Markdown 总结、思维导图与可跳转字幕。本地优先、自托管、无遥测。
+粘贴 B 站视频链接，自动生成可读的 Markdown 总结与可跳转字幕。本地优先、自托管、无遥测。
 
 <!-- 演示图：把截图/GIF 放到 assets/，再取消下面这行注释
 ![demo](assets/demo.gif)
@@ -14,12 +14,11 @@
 ## ✨ 特性
 
 - **字幕优先**：先取官方字幕，没有则下载音频本地转写（ASR）。
-- **多视图总结**：Markdown 笔记（带目录）/ 思维导图（可导出 SVG·PNG）/ 主题标签 / 字幕原文（点时间戳跳回视频）。
+- **多视图总结**：Markdown 笔记 / 字幕原文（点时间戳跳回视频）。
 - **任意 LLM**：任何 OpenAI 兼容接口（默认 DeepSeek，OpenAI / Gemini / 本地 ollama 等都行）。
 - **按 UP 主浏览**：列出某 UP 全部投稿、标记已/未总结、未总结一键补。
 - **UP 主蒸馏语料**（实验性，默认隐藏）：抓取某 UP 的投稿字幕，LLM 提取观点后编译成一份人设语料（corpus）；`web/.env` 设 `VITE_DISTILL_ENABLED=true` 后重建即可在 UP 页显示入口。
 - **个人知识库**：总结完成后自动登记；本地 FTS 检索总结与转写片段。
-- **历史页余额与周成本**：当前历史页展示 API 余额与按周费用（非独立 `/stats` 路由）。
 - **去重省钱**：同一视频已总结过就直接复用，不重复烧 token。
 - **单任务补救**：重新总结（复用已有字幕）、强制重新转写（忽略已有字幕/转写重新走 ASR）、失败任务重发邮件。
 - **音频下载**：转写用到的音频文件可直接下载。
@@ -137,7 +136,6 @@ flowchart LR
     llm -->|流式 chunk| api
     api --> db[(SQLite)]
     api --> knowledge[知识库<br/>FTS 搜索]
-    api --> stats[历史页<br/>余额 / 周成本]
     api -. 可选 .-> mail[Cloudflare Worker → Resend]
 ```
 

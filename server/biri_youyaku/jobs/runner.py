@@ -17,7 +17,6 @@ from biri_youyaku.jobs.pipeline import (
     download_audio,
     fetch_meta,
     fetch_platform_transcript,
-    generate_tags,
     send_email,
     summarize,
     transcribe_audio,
@@ -516,7 +515,7 @@ async def run_until_transcript(job_id: str) -> None:
         )
         if fresh_job.options.task_type == "distill":
             # 蒸馏用的 job（作者语料抓转写）只需要 transcript，到这里就该收尾——
-            # 不总结、不生成标签、不发邮件。复用 COMPLETED 而非新增终态，和上面
+            # 不总结、不发邮件。复用 COMPLETED 而非新增终态，和上面
             # task_type=="audio" 提前收尾的写法保持一致（最小改动）；distill
             # orchestrator 靠 job.transcript 非空 + status==COMPLETED 判定「转写可用」。
             await transition(job_id, JobStatus.COMPLETED)
@@ -528,7 +527,7 @@ async def run_until_transcript(job_id: str) -> None:
 
 
 async def _do_summarize(job_id: str, stage: _RunStage) -> None:
-    """TRANSCRIPT_READY → 总结 → 标签 → 邮件 → COMPLETED。run_until_transcript 自动续跑
+    """TRANSCRIPT_READY → 总结 → 邮件 → COMPLETED。run_until_transcript 自动续跑
     和 /resume 都走这里（共用同一份逻辑与外层 _job_lifecycle 的 stage 错误标记）。"""
     _raise_if_canceled(job_id)
     fresh_job = repo.get_job(job_id)
@@ -559,12 +558,6 @@ async def _do_summarize(job_id: str, stage: _RunStage) -> None:
         )
     _raise_if_canceled(job_id)
 
-    # 主题标签：限时 60s 的额外一次 LLM 调用，超时/失败都返回 [] 不阻断完成，
-    # 也不让它把「总结完成 → 发邮件」拖到 LLM_TIMEOUT_SECONDS × retries 那么久。
-    tags = await _safe_generate_tags(job_id, fresh_job, summary_md)
-    if tags:
-        repo.set_tags(job_id, tags)
-
     # 邮件失败（含 EMAILING 阶段 timeout = StageTimeoutError(RuntimeError)）一律
     # 不阻断 COMPLETED：summary 已经落盘，用户可手动 ↻ 重发。
     # - 与旧契约不同：之前任何邮件异常会把整个 job 置 FAILED。新契约把失败原因
@@ -591,7 +584,7 @@ async def _do_summarize(job_id: str, stage: _RunStage) -> None:
         JobStatus.COMPLETED,
         summary=summary_md,
         email_error=email_error,
-        tags=tags,
+        tags=fresh_job.tags,
     )
     # A3 knowledge registry: best-effort; never fail the job on register errors.
     try:
@@ -618,20 +611,6 @@ async def run_after_resume(job_id: str) -> None:
             clear_job_state(job_id)
             return
         await _do_summarize(job_id, stage)
-
-
-async def _safe_generate_tags(job_id: str, job, summary_md: str) -> list[str]:
-    """限时提炼标签：超时 / 失败都返回 []（非致命），取消则照常向上抛。"""
-    try:
-        return await asyncio.wait_for(
-            generate_tags(job, summary_md, llm_api_key=_registry.llm_api_keys.get(job_id)),
-            timeout=60,
-        )
-    except (asyncio.CancelledError, CanceledError):
-        raise
-    except Exception:
-        logger.warning("Job %s 标签生成超时/失败，跳过", job_id)
-        return []
 
 
 async def _record_token_usage(job_id: str, usage: dict) -> None:

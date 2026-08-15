@@ -20,10 +20,6 @@ async def _fake_summarize(job, video_meta, items, *, llm_api_key=None, on_chunk=
     return "summary"
 
 
-async def _fake_generate_tags(job, summary_md, *, llm_api_key=None):
-    return ["测试标签"]
-
-
 @pytest.mark.asyncio
 async def test_runner_auto_continues_transcript_to_completed(monkeypatch, tmp_path):
     """拿到字幕后服务端自动续跑总结，不依赖前端 /resume —— 单条 task 直达 COMPLETED。"""
@@ -64,7 +60,6 @@ async def test_runner_auto_continues_transcript_to_completed(monkeypatch, tmp_pa
     monkeypatch.setattr(runner, "fetch_meta", fake_fetch_meta)
     monkeypatch.setattr(runner, "fetch_platform_transcript", fake_fetch_platform_transcript)
     monkeypatch.setattr(runner, "summarize", fake_summarize)
-    monkeypatch.setattr(runner, "generate_tags", _fake_generate_tags)
 
     runner.start_job(job.id, llm_api_key="task-key")
     await runner._registry.tasks[job.id]
@@ -73,7 +68,7 @@ async def test_runner_auto_continues_transcript_to_completed(monkeypatch, tmp_pa
     assert completed is not None
     assert completed.status == JobStatus.COMPLETED  # 无需手动 resume
     assert repo.read_summary(completed) == "summary"
-    assert completed.tags == ["测试标签"]
+    assert completed.tags is None
     assert job.id not in runner._registry.tasks
 
 
@@ -99,7 +94,6 @@ async def test_resume_job_summarizes_transcript_ready(monkeypatch, tmp_path):
 
     monkeypatch.setattr(runner.event_bus, "publish", fake_publish)
     monkeypatch.setattr(runner, "summarize", fake_summarize)
-    monkeypatch.setattr(runner, "generate_tags", _fake_generate_tags)
 
     runner.resume_job(job.id, llm_api_key="task-key")
     await runner._registry.tasks[job.id]
