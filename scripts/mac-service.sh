@@ -193,11 +193,52 @@ write_plist() {
 }
 
 bootout_if_loaded() {
+  local service_pid=""
+  local tracked_pid
+  local tracked_pids=""
+  local tracked_alive
+  local stop_attempt
+
+  if service_loaded; then
+    service_pid="$(launchctl print "${DOMAIN}/${LABEL}" 2>/dev/null | awk '/pid = / { print $3; exit }' || true)"
+    if [[ "${service_pid}" =~ ^[0-9]+$ ]]; then
+      tracked_pids="$(collect_process_tree "${service_pid}")"
+    fi
+  fi
+
   if service_loaded || [ -f "${PLIST_DST}" ]; then
     launchctl bootout "${DOMAIN}/${LABEL}" 2>/dev/null || \
       launchctl bootout "${DOMAIN}" "${PLIST_DST}" 2>/dev/null || \
       launchctl unload "${PLIST_DST}" 2>/dev/null || true
   fi
+
+  for stop_attempt in {1..60}; do
+    tracked_alive=false
+    if [ -n "${tracked_pids}" ]; then
+      while IFS= read -r tracked_pid; do
+        if [[ "${tracked_pid}" =~ ^[0-9]+$ ]] && kill -0 "${tracked_pid}" 2>/dev/null; then
+          tracked_alive=true
+          break
+        fi
+      done <<<"${tracked_pids}"
+    fi
+    if ! service_loaded && [ -z "$(port_listener_pids)" ] && [ "${tracked_alive}" = false ]; then
+      return 0
+    fi
+    if [ "${stop_attempt}" -lt 60 ]; then
+      sleep 0.25
+    fi
+  done
+  die "service did not fully stop; check: $0 status --verbose"
+}
+
+collect_process_tree() {
+  local parent_pid="$1"
+  local child_pid
+  echo "${parent_pid}"
+  while IFS= read -r child_pid; do
+    [[ "${child_pid}" =~ ^[0-9]+$ ]] && collect_process_tree "${child_pid}"
+  done < <(pgrep -P "${parent_pid}" 2>/dev/null || true)
 }
 
 bootstrap_service() {
@@ -232,7 +273,6 @@ cmd_install() {
   bootout_if_loaded
   bootstrap_service
   launchctl enable "${DOMAIN}/${LABEL}" 2>/dev/null || true
-  kickstart_service
   if ! service_loaded; then
     die "install wrote plist but launchd job is not loaded; see ${LOG_DIR}"
   fi
@@ -273,7 +313,6 @@ cmd_start() {
   else
     bootstrap_service
     launchctl enable "${DOMAIN}/${LABEL}" 2>/dev/null || true
-    kickstart_service
   fi
   if ! service_loaded; then
     die "start failed: launchd job not loaded; see ${LOG_DIR}"
@@ -301,7 +340,6 @@ cmd_restart() {
   require_port_free_or_ours
   bootstrap_service
   launchctl enable "${DOMAIN}/${LABEL}" 2>/dev/null || true
-  kickstart_service
   if ! service_loaded; then
     die "restart failed: launchd job not loaded; see ${LOG_DIR}"
   fi
@@ -311,6 +349,8 @@ cmd_restart() {
 
 cmd_status() {
   local verbose="${1:-}"
+  local foreign
+  local listener_pids
   if [ -n "${verbose}" ] && [ "${verbose}" != "--verbose" ]; then
     die "unknown status option: ${verbose}"
   fi
@@ -339,13 +379,20 @@ cmd_status() {
     echo "state:   not loaded"
   fi
 
-  if port_conflict_exists >/dev/null 2>&1; then
+  listener_pids="$(port_listener_pids | tr '\n' ' ' | xargs 2>/dev/null || true)"
+  if [ -z "${listener_pids}" ]; then
+    if service_loaded; then
+      echo "port:    no listener (starting or unhealthy)"
+    else
+      echo "port:    free (API offline)"
+    fi
+  elif port_conflict_exists >/dev/null 2>&1; then
     foreign="$(port_conflict_exists || true)"
     if [ -n "${foreign}" ]; then
       echo "port:    FOREIGN listener PID ${foreign} on ${API_PORT}"
     fi
   else
-    echo "port:    free or owned by this service"
+    echo "port:    listening (owned by this service)"
   fi
 
   if command -v curl >/dev/null 2>&1; then
@@ -375,11 +422,11 @@ macOS LaunchAgent for biri-youyaku API (no --reload, host uv).
 Usage: bash scripts/mac-service.sh <command>
 
 Commands:
-  install     Write plist, bootstrap + kickstart under ${DOMAIN}
+  install     Write plist and bootstrap under ${DOMAIN}
   uninstall   Bootout and remove plist
-  start       Kickstart (bootstrap if needed)
+  start       Restart the loaded service, or bootstrap if needed
   stop        Bootout service
-  restart     launchctl kickstart -k
+  restart     Full bootout and bootstrap
   status      Concise service state + healthz (add --verbose for launchctl details)
   logs        tail -f ${LOG_DIR}/api.{out,err}.log
   help        This message
