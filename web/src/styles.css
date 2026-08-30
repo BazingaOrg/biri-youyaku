@@ -174,10 +174,6 @@ kbd {
   font-weight: 600;
 }
 
-.history-job:has(> details[open]) {
-  z-index: 20;
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

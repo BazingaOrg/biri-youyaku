@@ -2,12 +2,13 @@ import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import test from 'node:test'
 
-test('an open history action menu raises its animated row above later content', async () => {
-  const [pageSource, styles] = await Promise.all([
-    readFile(new URL('../src/pages/HistoryPage.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../src/styles.css', import.meta.url), 'utf8'),
-  ])
+test('history action menus are mutually exclusive and dismissible', async () => {
+  const pageSource = await readFile(new URL('../src/pages/HistoryPage.tsx', import.meta.url), 'utf8')
 
-  assert.match(pageSource, /className="history-job[^"\n]*relative/)
-  assert.match(styles, /\.history-job:has\(> details\[open\]\)\s*{\s*z-index:\s*20;/)
+  assert.match(pageSource, /const \[openMenuKey, setOpenMenuKey\]/)
+  assert.match(pageSource, /document\.addEventListener\('pointerdown', onPointerDown\)/)
+  assert.match(pageSource, /event\.key !== 'Escape'/)
+  assert.match(pageSource, /aria-expanded={menuOpen}/)
+  assert.match(pageSource, /menuOpen \? 'z-20' : ''/)
+  assert.doesNotMatch(pageSource, /<details/)
 })

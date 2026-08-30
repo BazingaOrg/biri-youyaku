@@ -113,43 +113,47 @@ export function ToastProvider({children}: {children: ReactNode}) {
               onAnimationEnd={() => {
                 if (toast.closing) remove(toast.id)
               }}
-              className={`${toast.closing ? 'animate-pop-out' : 'animate-pop'} overflow-hidden rounded-2xl border bg-panel/85 p-4 shadow-card backdrop-blur-md ${
+              className={`${toast.closing ? 'animate-pop-out' : 'animate-pop'} origin-bottom overflow-hidden rounded-2xl border bg-panel/85 p-4 shadow-card backdrop-blur-md sm:origin-top-right ${
               toast.type === 'error' ? 'border-danger/40' : toast.type === 'success' ? 'border-success/40' : 'border-line'
             }`}>
-              <div className="flex items-start gap-3">
-                <Icon size={20} className={`mt-0.5 shrink-0 ${toast.type === 'error' ? 'text-danger' : toast.type === 'success' ? 'text-success' : 'text-brand'}`} />
-                <div className="min-w-0 flex-1">
+              <div className="grid grid-cols-[1.25rem_minmax(0,1fr)_2rem] items-start gap-x-3">
+                <Icon size={20} className={`mt-0.5 ${toast.type === 'error' ? 'text-danger' : toast.type === 'success' ? 'text-success' : 'text-brand'}`} />
+                <div className="min-w-0">
                   <p className="font-semibold leading-6 text-ink">{toast.title}</p>
                   {toast.taskName && (
-                    <p className="mt-0.5 truncate text-xs leading-5 text-muted/80" title={toast.taskName}>
+                    <p className="mt-0.5 overflow-hidden text-[13px] leading-[1.125rem] text-muted [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]" title={toast.taskName}>
                       {toast.taskName}
                     </p>
                   )}
                   {toast.message && <p className="mt-1 break-words text-sm leading-5 text-muted">{toast.message}</p>}
                 </div>
-                <button type="button" aria-label="关闭提示" onClick={() => startClose(toast.id)} className="-mr-1 -mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-xl text-muted transition hover:bg-lift active:scale-95">
+                <button type="button" aria-label="关闭提示" onClick={() => startClose(toast.id)} className="-mr-1 -mt-1 grid h-8 w-8 place-items-center rounded-xl text-muted transition hover:bg-lift active:scale-95">
                   <X size={16} />
                 </button>
+                {(toast.action || toast.type === 'error') && (
+                  <div className="col-start-2 col-end-4 mt-2.5 flex flex-wrap items-center gap-2">
+                    {toast.action && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          toast.action?.onClick()
+                          startClose(toast.id)
+                        }}
+                        className="inline-flex min-h-8 items-center gap-1.5 rounded-xl bg-lift px-2.5 text-sm font-medium text-brand transition-[transform,background-color,color] hover:bg-brandSoft/60 active:scale-95"
+                      >
+                        <Undo2 size={14} />
+                        {toast.action.label}
+                      </button>
+                    )}
+                    {toast.type === 'error' && (
+                      <button type="button" onClick={() => navigator.clipboard.writeText(copyText)} className="inline-flex min-h-8 items-center gap-1.5 rounded-xl bg-lift px-2.5 text-sm text-muted transition-[transform,background-color,color] hover:bg-line/70 active:scale-95">
+                        <Copy size={14} />
+                        复制错误
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
-              {toast.action && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    toast.action?.onClick()
-                    startClose(toast.id)
-                  }}
-                  className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-xl bg-lift px-3 text-sm font-medium text-brand transition hover:bg-brandSoft/60 active:scale-95"
-                >
-                  <Undo2 size={14} />
-                  {toast.action.label}
-                </button>
-              )}
-              {toast.type === 'error' && (
-                <button type="button" onClick={() => navigator.clipboard.writeText(copyText)} className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-xl bg-lift px-3 text-sm text-muted transition hover:bg-line/70 active:scale-95">
-                  <Copy size={14} />
-                  复制错误
-                </button>
-              )}
             </div>
           )
         })}
