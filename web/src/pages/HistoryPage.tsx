@@ -2,7 +2,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import {MoreHorizontal, Plus, RotateCw, Search, Trash2} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
 import {
-  ApiError, executeBulkDelete, previewBulkDelete, deleteJob, listJobs, resummarizeJob,
+  ApiError, executeBulkDelete, previewBulkDelete, deleteJob, getJob, listJobs, resummarizeJob,
   type BulkDeletePreview, type BulkDeleteQuery, type Job, type JobOptionOverrides,
 } from '../lib/api'
 import {writeActive} from '../lib/activeJob'
@@ -17,6 +17,7 @@ import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
 import {IconTooltip} from './history/IconTooltip'
 
 const PAGE_SIZE = 60
+const ACTIVE_REFRESH_INTERVAL_MS = 2000
 const UNDO_WINDOW_MS = 5000
 const HISTORY_RESTORE_KEY = 'biri-youyaku.history.restore.v2'
 const BULK_ACTIONS_MENU_KEY = 'bulk-actions'
@@ -112,6 +113,8 @@ export function HistoryPage() {
   const pendingDeletes = useRef<Map<string, {timer: number; job: Job}>>(new Map())
   const loadGenerationRef = useRef(0)
   const activeLoadRef = useRef<{controller: AbortController; generation: number} | null>(null)
+  const activeRefreshRef = useRef<AbortController | null>(null)
+  const jobsRef = useRef<Job[]>([])
   const nextCursorRef = useRef<string | null>(null)
   const loadedPagesRef = useRef(restoreSnapshot?.loadedPages ?? 1)
   const restoreSnapshotRef = useRef(restoreSnapshot)
@@ -161,6 +164,8 @@ export function HistoryPage() {
     loadGenerationRef.current += 1
     activeLoadRef.current?.controller.abort()
     activeLoadRef.current = null
+    activeRefreshRef.current?.abort()
+    activeRefreshRef.current = null
   }, [])
 
   const historyFilters = useMemo(() => ({
@@ -242,6 +247,71 @@ export function HistoryPage() {
     void loadFirstPage()
     return () => invalidateLoad()
   }, [invalidateLoad, loadFirstPage])
+
+  useEffect(() => {
+    jobsRef.current = jobs
+  }, [jobs])
+
+  const refreshActiveJobs = useCallback(async () => {
+    if (loading) return
+    const generation = loadGenerationRef.current
+    activeRefreshRef.current?.abort()
+    const controller = new AbortController()
+    activeRefreshRef.current = controller
+    const previousActiveIds = jobsRef.current.filter((job) => isRunning(job.status)).map((job) => job.id)
+    try {
+      const response = await listJobs({active_only: true, ...historyFilters}, {signal: controller.signal})
+      if (controller.signal.aborted || generation !== loadGenerationRef.current) return
+      const activeIds = new Set(response.jobs.map((job) => job.id))
+      const terminalSnapshots = await Promise.allSettled(
+        previousActiveIds
+          .filter((jobId) => !activeIds.has(jobId))
+          .map((jobId) => getJob(jobId, {signal: controller.signal})),
+      )
+      if (controller.signal.aborted || generation !== loadGenerationRef.current) return
+      const snapshots = [
+        ...response.jobs,
+        ...terminalSnapshots
+          .filter((result): result is PromiseFulfilledResult<{ok: true; job: Job}> => result.status === 'fulfilled')
+          .map((result) => ({
+            ...result.value.job,
+            summary_available: result.value.job.summary_available ?? Boolean(result.value.job.summary),
+          })),
+      ]
+      const snapshotsById = new Map(snapshots.map((job) => [job.id, job]))
+      setJobs((current) => {
+        const knownIds = new Set(current.map((job) => job.id))
+        return [
+          ...current.map((job) => snapshotsById.get(job.id) ?? job),
+          ...response.jobs.filter((job) => !knownIds.has(job.id)),
+        ]
+      })
+    } catch {
+      return
+    } finally {
+      if (activeRefreshRef.current === controller) activeRefreshRef.current = null
+    }
+  }, [historyFilters, loading])
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'hidden') return
+      void refreshActiveJobs()
+    }
+    const timer = window.setInterval(refresh, ACTIVE_REFRESH_INTERVAL_MS)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refresh()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('focus', refresh)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('focus', refresh)
+      activeRefreshRef.current?.abort()
+      activeRefreshRef.current = null
+    }
+  }, [refreshActiveJobs])
 
   useEffect(() => {
     const pending = pendingDeletes.current
