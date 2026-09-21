@@ -10,5 +10,6 @@ test('history action menus are mutually exclusive and dismissible', async () => 
   assert.match(pageSource, /event\.key !== 'Escape'/)
   assert.match(pageSource, /aria-expanded={menuOpen}/)
   assert.match(pageSource, /menuOpen \? 'z-20' : ''/)
+  assert.doesNotMatch(pageSource, /<section key={group\.weekStart} className="overflow-hidden rounded-2xl/)
   assert.doesNotMatch(pageSource, /<details/)
 })

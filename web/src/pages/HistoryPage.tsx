@@ -558,7 +558,7 @@ export function HistoryPage() {
                   byDay.set(key, [...(byDay.get(key) ?? []), job])
                 }
                 return (
-                  <section key={group.weekStart} className="overflow-hidden rounded-2xl border border-line/70 bg-lift/45">
+                  <section key={group.weekStart} className="rounded-2xl border border-line/70 bg-lift/45">
                     <div className="flex min-h-12 items-center px-3">
                       <span className="text-sm font-medium text-ink">{weekLabel(group.weekStart)}</span>
                       <span className="ml-2 text-xs text-muted">{group.jobs.length} 条</span>
