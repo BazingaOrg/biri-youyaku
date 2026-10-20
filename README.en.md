@@ -18,7 +18,7 @@ Paste a Bilibili video link and get readable Markdown notes and a clickable tran
 - **Any LLM**: any OpenAI-compatible endpoint (DeepSeek by default; OpenAI / Gemini / local ollama all work).
 - **Browse by uploader**: list an uploader's whole catalog, see which are summarized, one-click the rest.
 - **Uploader corpus distillation** (experimental, hidden by default): scrape an uploader's video transcripts, extract viewpoints with LLM, and compile them into a persona corpus; set `VITE_DISTILL_ENABLED=true` in `web/.env` and rebuild to show the entry on the uploader page.
-- **Personal knowledge base**: completed summaries are registered automatically; local FTS search over summaries and transcripts.
+- **Knowledge base with purpose-specific search**: completed summaries register automatically; history locates jobs by title, uploader, BV ID, or tag, while local FTS searches summary and transcript content.
 - **Dedup to save tokens**: re-pasting an already-summarized video reuses the old result.
 - **Per-job fixes**: resummarize (reuse existing transcript), force re-transcription (ignore existing transcript/subtitles and redo ASR), resend email for a failed job.
 - **Audio download**: download the audio file used for transcription.

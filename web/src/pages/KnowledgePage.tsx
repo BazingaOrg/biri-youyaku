@@ -1,15 +1,15 @@
 import {useCallback, useEffect, useMemo, useState, type FormEvent} from 'react'
 import {ChevronDown, ChevronUp, ExternalLink, Search} from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
+import {Link} from 'wouter'
 import {
   getKnowledgeStatus,
   searchKnowledge,
   type KnowledgeSearchHit,
   type KnowledgeStatus,
 } from '../lib/api'
-import {PROSE} from '../lib/prose'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
 import {BackButton} from '../components/BackButton'
+import {SearchHighlight} from '../components/SearchHighlight'
 import {Spinner} from '../components/Spinner'
 
 function formatTimestamp(sec: number) {
@@ -39,10 +39,10 @@ function sourceUrl(hit: KnowledgeSearchHit) {
   }
 }
 
-function HitSnippet({hit}: {hit: KnowledgeSearchHit}) {
+function HitSnippet({hit, query}: {hit: KnowledgeSearchHit; query: string}) {
   const full = (hit.chunk_text || hit.snippet || '').trim()
   const snippet = (hit.snippet || '').trim()
-  const needsExpand = Boolean(snippet) && full.length > snippet.length
+  const needsExpand = Boolean(snippet) && snippet !== full
   const [open, setOpen] = useState(false)
   const body = open ? full : (snippet || full)
   const label = locatorLabel(hit)
@@ -62,7 +62,7 @@ function HitSnippet({hit}: {hit: KnowledgeSearchHit}) {
           {label}
         </span>
       </div>
-      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-ink/90">{body}</p>
+      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-ink/90"><SearchHighlight text={body} query={query} mode="fts" /></p>
       {needsExpand && (
         <button
           type="button"
@@ -88,7 +88,7 @@ function HitSnippet({hit}: {hit: KnowledgeSearchHit}) {
   )
 }
 
-function HitCard({hits}: {hits: KnowledgeSearchHit[]}) {
+function HitCard({hits, query}: {hits: KnowledgeSearchHit[]; query: string}) {
   const first = hits[0]
   return (
     <li className="rounded-2xl border border-line/70 bg-panel p-4 shadow-card">
@@ -97,7 +97,7 @@ function HitCard({hits}: {hits: KnowledgeSearchHit[]}) {
         {first.author && <p className="mt-1 truncate text-xs text-muted">{first.author}</p>}
       </div>
       <div className="mt-3 divide-y divide-line/60">
-        {hits.map((hit) => <HitSnippet key={hit.chunk_id} hit={hit} />)}
+        {hits.map((hit) => <HitSnippet key={hit.chunk_id} hit={hit} query={query} />)}
       </div>
     </li>
   )
@@ -107,6 +107,7 @@ export function KnowledgePage() {
   const runtime = useRuntimeConfig()
   const [status, setStatus] = useState<KnowledgeStatus | null>(null)
   const [query, setQuery] = useState('')
+  const [searchedQuery, setSearchedQuery] = useState('')
 
   const [searching, setSearching] = useState(false)
   const [hits, setHits] = useState<KnowledgeSearchHit[]>([])
@@ -144,11 +145,13 @@ export function KnowledgePage() {
       setHits([])
       setSearchError(null)
       setHasSearched(false)
+      setSearchedQuery('')
       return
     }
     setSearching(true)
     setSearchError(null)
     setHasSearched(true)
+    setSearchedQuery(trimmed)
     try {
       const result = await searchKnowledge(trimmed, 12)
       setHits(result.hits)
@@ -173,7 +176,7 @@ export function KnowledgePage() {
         <BackButton />
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-[-0.012em] text-ink sm:text-3xl">知识库</h1>
-          <p className="mt-1 text-sm text-muted">搜索看过的视频笔记与字幕。</p>
+          <p className="mt-1 text-sm text-muted">检索总结与字幕正文；按标题、UP 主或 BV 号找任务请到 <Link href="/history" className="text-brand underline-offset-2 hover:underline">历史</Link>。</p>
         </div>
       </header>
 
@@ -195,7 +198,8 @@ export function KnowledgePage() {
                   <input
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="搜索笔记或字幕…"
+                    aria-label="检索知识库正文"
+                    placeholder="搜索总结或字幕正文…"
                     disabled={searching}
                     className="min-h-11 w-full rounded-2xl bg-lift py-2 pl-10 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30 disabled:opacity-60"
                   />
@@ -222,7 +226,7 @@ export function KnowledgePage() {
               {!searching && hits.length > 0 && (
                 <ul className="grid gap-3">
                   {groupedHits.map((group) => (
-                    <HitCard key={group[0].document_id} hits={group} />
+                    <HitCard key={group[0].document_id} hits={group} query={searchedQuery} />
                   ))}
                 </ul>
               )}

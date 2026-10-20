@@ -6,10 +6,12 @@ import re
 from dataclasses import dataclass
 
 from biri_youyaku.db import connect
-from biri_youyaku.knowledge.chunker import fts_prepare_text
 
 # List cards: short preview; full chunk_text is always returned for expand.
 _SNIPPET_MAX = 160
+_QUERY_TOKEN_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]|[^\W_]+", re.UNICODE)
+_MATCH_SEPARATOR = r"[\W_]*"
+_FTS_OPERATORS = frozenset({"AND", "OR", "NOT", "NEAR"})
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,26 @@ def _safe_token(token: str) -> str:
     return token.replace('"', '""')
 
 
+def _query_token_groups(query: str) -> list[list[str]]:
+    raw = (query or "").strip()
+    if not raw:
+        return []
+    parts = re.split(r"\s+", raw) if re.search(r"\s", raw) else [raw]
+    groups: list[list[str]] = []
+    for part in parts:
+        tokens = [token for token in _QUERY_TOKEN_RE.findall(part) if token not in _FTS_OPERATORS]
+        if tokens:
+            groups.append(tokens)
+    return groups
+
+
+def _query_match_patterns(query: str) -> list[re.Pattern[str]]:
+    return [
+        re.compile(_MATCH_SEPARATOR.join(re.escape(token) for token in group), re.IGNORECASE)
+        for group in _query_token_groups(query)
+    ]
+
+
 def escape_fts_query(query: str) -> str:
     """Build a safe FTS5 MATCH expression from user text.
 
@@ -40,30 +62,25 @@ def escape_fts_query(query: str) -> str:
     - Multi-word queries: AND of quoted tokens (broader recall).
     """
     raw = (query or "").strip()
-    prepared = fts_prepare_text(raw)
-    if not prepared:
+    groups = _query_token_groups(raw)
+    if not groups:
         return ""
-    tokens: list[str] = []
-    for part in prepared.split():
-        token = part.strip()
-        if not token or token in {"AND", "OR", "NOT", "NEAR"}:
-            continue
-        tokens.append(_safe_token(token))
-    if not tokens:
-        return ""
-    if len(tokens) == 1:
-        return f'"{tokens[0]}"'
-    # No whitespace in original → one phrase (names, fixed terms, product ids).
-    if not re.search(r"\s", raw):
-        return f'"{" ".join(tokens)}"'
-    return " ".join(f'"{t}"' for t in tokens)
+    return " ".join(f'"{" ".join(_safe_token(token) for token in group)}"' for group in groups)
 
 
-def make_snippet(text: str, *, max_len: int = _SNIPPET_MAX) -> str:
+def make_snippet(text: str, *, query: str = "", max_len: int = _SNIPPET_MAX) -> str:
     body = (text or "").strip()
     if len(body) <= max_len:
         return body
-    return body[: max_len - 1].rstrip() + "…"
+    matches = [match.start() for pattern in _query_match_patterns(query) if (match := pattern.search(body))]
+    if not matches:
+        return body[: max_len - 1].rstrip() + "…"
+    match_at = min(matches)
+    start = max(0, match_at - max_len // 3)
+    end = min(len(body), start + max_len)
+    start = max(0, end - max_len)
+    snippet = body[start:end].strip()
+    return f"{'…' if start else ''}{snippet}{'…' if end < len(body) else ''}"
 
 
 def search_summaries(query: str, *, limit: int = 10) -> list[Hit]:
@@ -105,7 +122,7 @@ def search_summaries(query: str, *, limit: int = 10) -> list[Hit]:
     hits: list[Hit] = []
     for row in rows:
         text = row["chunk_text"] or ""
-        snippet = make_snippet(text)
+        snippet = make_snippet(text, query=query)
         hits.append(
             Hit(
                 chunk_id=row["chunk_id"],

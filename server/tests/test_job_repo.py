@@ -187,6 +187,48 @@ def test_history_pagination_filters_and_composite_cursor_do_not_skip_same_millis
     assert [job.id for job in repo.list_jobs(limit=10, author="未知 UP")] == [unknown.id]
 
 
+def test_history_query_matches_task_metadata_and_unknown_author_label(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    job = repo.create_job(
+        "https://www.bilibili.com/video/BVurl-only-token",
+        JobOptions(),
+    )
+    repo.update_meta(
+        job.id,
+        bvid="BVvisible123",
+        cid=None,
+        title="Searchable title",
+        author="Visible author",
+        duration=1,
+    )
+    repo.set_tags(job.id, ["tag-only-token"])
+    repo.update_status(job.id, JobStatus.COMPLETED)
+
+    assert [item.id for item in repo.list_jobs(query="searchable")] == [job.id]
+    assert [item.id for item in repo.list_jobs(query="visible author")] == [job.id]
+    assert [item.id for item in repo.list_jobs(query="bvVISIBLE123")] == [job.id]
+    assert [item.id for item in repo.list_jobs(query="url-only-token")] == [job.id]
+    assert [item.id for item in repo.list_jobs(query="tag-only-token")] == [job.id]
+    assert [item.id for item in repo.list_jobs(tag="tag-only-token")] == [job.id]
+
+    unknown = repo.create_job("https://www.bilibili.com/video/BVunknown", JobOptions())
+    repo.update_meta(
+        unknown.id,
+        bvid="BVunknown",
+        cid=None,
+        title="Missing author video",
+        author="",
+        duration=1,
+    )
+    repo.update_status(unknown.id, JobStatus.COMPLETED)
+
+    assert [item.id for item in repo.list_jobs(query="未知 UP")] == [unknown.id]
+    assert [item.id for item in repo.list_jobs(query="未知")] == [unknown.id]
+    assert [item.id for item in repo.list_jobs(query="up")] == []
+    assert [item.id for item in repo.list_jobs(query="知")] == []
+
+
 def test_history_pagination_uses_completion_time_before_creation_time(monkeypatch, tmp_path):
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
     db.init_db()

@@ -15,7 +15,7 @@ from biri_youyaku.knowledge import try_register_job
 from biri_youyaku.knowledge.chunker import chunk_summary_markdown, fts_prepare_text
 from biri_youyaku.knowledge import index as knowledge_index
 from biri_youyaku.knowledge.model import RECONCILE_REGISTERED
-from biri_youyaku.knowledge.search import search_summaries
+from biri_youyaku.knowledge.search import make_snippet, search_summaries
 from biri_youyaku.modules.transcript import TranscriptItem
 
 
@@ -113,6 +113,26 @@ def test_fts_prepare_splits_cjk():
     assert tokens == ["深", "度", "学", "习"]
 
 
+def test_snippet_centers_the_first_matching_term():
+    text = f"{'前文' * 100}精确命中词{'后文' * 100}"
+
+    snippet = make_snippet(text, query="精确命中词", max_len=80)
+
+    assert snippet.startswith("…")
+    assert snippet.endswith("…")
+    assert "精确命中词" in snippet
+
+
+def test_snippet_uses_fts_token_boundaries_for_punctuation():
+    text = f"{'prefix ' * 40}Node js 与量子、纠缠都在这里。{' suffix' * 40}"
+
+    latin = make_snippet(text, query="Node.js", max_len=80)
+    chinese = make_snippet(text, query="量子纠缠", max_len=80)
+
+    assert "Node js" in latin
+    assert "量子、纠缠" in chinese
+
+
 # --- index + search ---
 
 
@@ -142,6 +162,34 @@ def test_index_and_search_finds_distinct_docs(monkeypatch, tmp_path):
     hits_b = search_summaries("UniqueTermBeta", limit=5)
     assert hits_b
     assert all("Beta" in (h.title or "") or "UniqueTermBeta" in h.chunk_text for h in hits_b)
+
+
+def test_knowledge_search_does_not_match_task_title_only(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    job = _make_completed_job(
+        bvid="BV1scope",
+        cid=11,
+        title="TitleOnlyUniqueTerm",
+        summary_body="## 笔记\n正文只讨论检索职责边界。\n",
+    )
+    assert try_register_job(job.id) == RECONCILE_REGISTERED
+
+    assert search_summaries("TitleOnlyUniqueTerm", limit=5) == []
+    assert search_summaries("检索职责边界", limit=5)
+
+
+def test_knowledge_search_matches_punctuation_equivalent_phrase(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    job = _make_completed_job(
+        bvid="BV1punct",
+        cid=12,
+        title="Punctuation",
+        summary_body="## 笔记\nNode js 与量子、纠缠都出现在正文。\n",
+    )
+    assert try_register_job(job.id) == RECONCILE_REGISTERED
+
+    assert search_summaries("Node.js", limit=5)
+    assert search_summaries("量子纠缠", limit=5)
 
 
 def test_chinese_term_match_via_fts_prepare(monkeypatch, tmp_path):

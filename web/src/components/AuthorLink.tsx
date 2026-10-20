@@ -4,6 +4,7 @@ import {ChevronRight, Users} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
 import {resolveUp, type Job} from '../lib/api'
 import {Spinner} from './Spinner'
+import {SearchHighlight} from './SearchHighlight'
 import {useToast} from './ToastProvider'
 
 type AuthorJob = Pick<Job, 'mid' | 'author' | 'url'>
@@ -15,7 +16,15 @@ type AuthorJob = Pick<Job, 'mid' | 'author' | 'url'>
  * - 没有 mid（老任务，建任务时还没有 mid 列）→ 点击时用 job.url 现场解析出 mid 再跳，
  *   所以历史里的任何作者都能打开，不需要批量回填。
  */
-export function AuthorLink({job, variant = 'inline'}: {job: AuthorJob; variant?: 'inline' | 'chip'}) {
+export function AuthorLink({
+  job,
+  variant = 'inline',
+  highlightQuery = '',
+}: {
+  job: AuthorJob
+  variant?: 'inline' | 'chip'
+  highlightQuery?: string
+}) {
   const [, navigate] = useLocation()
   const toast = useToast()
   const [busy, setBusy] = useState(false)
@@ -48,7 +57,7 @@ export function AuthorLink({job, variant = 'inline'}: {job: AuthorJob; variant?:
   const inner = (
     <>
       <Users size={chip ? 13 : 11} className="shrink-0" />
-      <span className="truncate">{name}</span>
+      <span className="truncate"><SearchHighlight text={name} query={highlightQuery} /></span>
       {chip ? <span className="shrink-0 text-[11px] opacity-80">投稿</span> : null}
       {busy ? <Spinner size={12} className="shrink-0" /> : <ChevronRight size={chip ? 13 : 11} className="shrink-0" />}
     </>

@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
-import {MoreHorizontal, Plus, RotateCw, Search, Trash2} from 'lucide-react'
+import {ChevronRight, MoreHorizontal, Plus, RotateCw, Search, Trash2} from 'lucide-react'
 import {Link, useLocation} from 'wouter'
 import {
   ApiError, executeBulkDelete, previewBulkDelete, deleteJob, getJob, listJobs, resummarizeJob,
@@ -15,6 +15,8 @@ import {useToast} from '../components/ToastProvider'
 import {ConfirmDialog} from '../components/ConfirmDialog'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
 import {IconTooltip} from './history/IconTooltip'
+import {SearchHighlight} from '../components/SearchHighlight'
+import {includesSearchQuery} from '../lib/searchHighlight'
 
 const PAGE_SIZE = 60
 const ACTIVE_REFRESH_INTERVAL_MS = 2000
@@ -492,11 +494,22 @@ export function HistoryPage() {
     const menuKey = jobActionsMenuKey(job.id)
     const menuOpen = openMenuKey === menuKey
     const menuId = `history-actions-${job.id}`
+    const matchedBvid = searchMode && includesSearchQuery(job.bvid, debouncedQuery)
+    const matchedTags = searchMode ? (job.tags ?? []).filter((tag) => includesSearchQuery(tag, debouncedQuery)) : []
+    const matchedUrl = searchMode && Boolean(job.title) && includesSearchQuery(job.url, debouncedQuery)
+    const summaryAvailable = job.status === 'COMPLETED' && Boolean(job.summary_available)
     return <li id={`history-job-${job.id}`} key={job.id} style={{animationDelay: `${Math.min(index, 6) * 40}ms`}} className={`history-job group/item relative grid animate-fade-in-up grid-cols-[minmax(0,1fr)_auto] items-start gap-2 border-b border-line/60 py-2 opacity-0 [animation-fill-mode:forwards] last:border-0 ${menuOpen ? 'z-20' : ''}`}>
       <div className="min-w-0">
-        <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id)} className="block transition-[transform] active:scale-[0.99]"><p className="truncate text-sm font-medium text-ink">{job.title || job.url}</p></Link>
-        <p className="mt-1 flex min-w-0 items-center gap-1 text-[13px] text-muted"><AuthorLink job={job} /><span className="shrink-0">· {formatDuration(job.duration)}</span></p>
-        <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id)} className="mt-2 flex flex-wrap items-center gap-2 text-xs">{job.status !== 'COMPLETED' && <span className={`rounded-full px-2 py-0.5 font-medium ${job.status === 'FAILED' ? 'bg-danger/15 text-danger' : running ? 'bg-warning/15 text-warning' : 'bg-panel text-muted'}`}>{formatStatus(job.status)}</span>}<span className="tabular-nums text-muted/90">{formatDate(job.completed_at ?? job.created_at)}</span></Link>
+        <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id)} className="block transition-[transform] active:scale-[0.99]"><p className="truncate text-sm font-medium text-ink"><SearchHighlight text={job.title || job.url} query={debouncedQuery} /></p></Link>
+        <p className="mt-1 flex min-w-0 flex-wrap items-center gap-1 text-[13px] text-muted"><AuthorLink job={job} highlightQuery={debouncedQuery} /><span className="shrink-0">· {formatDuration(job.duration)}</span>{matchedBvid && job.bvid && <span className="inline-flex min-w-0 items-center rounded-full bg-brandSoft px-2 py-0.5 text-xs text-brand">BV 号：<span className="truncate"><SearchHighlight text={job.bvid} query={debouncedQuery} /></span></span>}{matchedTags.map((tag) => <span key={tag} className="inline-flex min-w-0 items-center rounded-full bg-brandSoft px-2 py-0.5 text-xs text-brand">标签：<span className="truncate"><SearchHighlight text={tag} query={debouncedQuery} /></span></span>)}{matchedUrl && <span className="inline-flex items-center rounded-full bg-brandSoft px-2 py-0.5 text-xs text-brand">命中视频链接</span>}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          {job.status !== 'COMPLETED' && <span className={`rounded-full px-2 py-0.5 font-medium ${job.status === 'FAILED' ? 'bg-danger/15 text-danger' : running ? 'bg-warning/15 text-warning' : 'bg-panel text-muted'}`}>{formatStatus(job.status)}</span>}
+          <span className="tabular-nums text-muted/90">{formatDate(job.completed_at ?? job.created_at)}</span>
+          <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id)} className="ml-auto inline-flex min-h-9 items-center gap-0.5 rounded-xl px-2 text-xs font-medium text-brand transition-colors hover:bg-brandSoft">
+            {summaryAvailable ? '查看总结' : '查看详情'}
+            <ChevronRight size={13} />
+          </Link>
+        </div>
       </div>
       <div data-history-menu-root className="relative shrink-0">
         <button type="button" aria-label="任务操作" aria-expanded={menuOpen} aria-controls={menuId} onClick={(event) => toggleHistoryMenu(menuKey, event.currentTarget)} className="grid h-11 w-11 place-items-center rounded-xl text-muted transition-[transform,background-color,color] hover:bg-lift hover:text-ink active:scale-95">
@@ -518,7 +531,7 @@ export function HistoryPage() {
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-[-0.012em] text-ink sm:text-3xl">历史</h1>
-          <p className="mt-1 text-sm text-muted">查看最近的总结，或搜索过去的内容。</p>
+          <p className="mt-1 text-sm text-muted">按任务元数据定位记录；总结与字幕正文请到知识库检索。</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <IconTooltip label="新建">
@@ -530,7 +543,7 @@ export function HistoryPage() {
     <section className="min-w-0 px-4 sm:px-5">
       <div className="border-y border-line/70 py-3">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-          <label className="relative block min-w-0"><Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜标题、UP 主或 BVID" className="min-h-11 w-full rounded-2xl bg-lift py-2 pl-10 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30" /></label>
+          <label className="relative block min-w-0"><Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="筛选历史任务" placeholder="筛选标题、UP 主、BV 号或标签" className="min-h-11 w-full rounded-2xl bg-lift py-2 pl-10 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30" /></label>
           <div data-history-menu-root className="relative flex gap-2"><button type="button" aria-label="更多操作" aria-expanded={bulkMenuOpen} aria-controls="history-bulk-actions" onClick={(event) => toggleHistoryMenu(BULK_ACTIONS_MENU_KEY, event.currentTarget)} disabled={previewingDelete || jobs.length === 0 || queryPending} title={queryPending ? '请等待搜索条件更新后再删除' : undefined} className="grid h-11 w-11 place-items-center rounded-2xl bg-lift text-muted hover:bg-line/70 hover:text-ink disabled:opacity-40"><MoreHorizontal size={18} /></button>{bulkMenuOpen && <div id="history-bulk-actions" role="group" aria-label="历史批量操作" className="absolute right-0 top-12 z-30 w-56 origin-top-right rounded-2xl border border-line bg-panel p-2 shadow-cardHover"><button type="button" onClick={() => void openDeletePreview()} className="flex min-h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-sm text-ink transition-colors hover:bg-lift"><Trash2 size={15} className="text-danger" />{hasFilters ? '删除筛选结果' : '清理历史'}</button></div>}</div>
         </div>
       </div>

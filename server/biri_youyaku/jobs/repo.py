@@ -182,7 +182,17 @@ _EXCLUDE_DISTILL_CLAUSE = "AND json_extract(effective_options_json, '$.task_type
 
 
 UNKNOWN_AUTHOR_SENTINEL = "未知 UP"
+_UNKNOWN_AUTHOR_LABEL_PREFIX = UNKNOWN_AUTHOR_SENTINEL.split()[0]
 _HISTORY_EFFECTIVE_AT = "COALESCE(completed_at, created_at)"
+
+
+def _query_matches_unknown_author_label(query: str) -> bool:
+    needle = query.strip().lower()
+    if not needle:
+        return False
+    label = UNKNOWN_AUTHOR_SENTINEL.lower()
+    minimum = _UNKNOWN_AUTHOR_LABEL_PREFIX.lower()
+    return label.startswith(needle) and len(needle) >= len(minimum)
 
 
 def encode_history_cursor(job: Job, *, terminal_only: bool = False) -> str:
@@ -212,19 +222,20 @@ def _history_filter_clauses(
     if query:
         escaped_query = query.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         pattern = f"%{escaped_query}%"
-        clauses.append(
-            """(
-                lower(COALESCE(title, '')) LIKE ? ESCAPE '\\'
-                OR lower(COALESCE(author, '')) LIKE ? ESCAPE '\\'
-                OR lower(COALESCE(bvid, '')) LIKE ? ESCAPE '\\'
-                OR lower(COALESCE(url, '')) LIKE ? ESCAPE '\\'
-                OR EXISTS (
+        query_clauses = [
+            "lower(COALESCE(title, '')) LIKE ? ESCAPE '\\'",
+            "lower(COALESCE(author, '')) LIKE ? ESCAPE '\\'",
+            "lower(COALESCE(bvid, '')) LIKE ? ESCAPE '\\'",
+            "lower(COALESCE(url, '')) LIKE ? ESCAPE '\\'",
+            """EXISTS (
                     SELECT 1 FROM json_each(COALESCE(tags_json, '[]')) AS tag_item
                     WHERE lower(CAST(tag_item.value AS TEXT)) LIKE ? ESCAPE '\\'
-                )
-            )"""
-        )
-        parameters.extend([pattern, pattern, pattern, pattern, pattern])
+                )""",
+        ]
+        parameters.extend([pattern] * 5)
+        if _query_matches_unknown_author_label(query):
+            query_clauses.append("(author IS NULL OR TRIM(author) = '')")
+        clauses.append("(" + " OR ".join(query_clauses) + ")")
     if author:
         if author == UNKNOWN_AUTHOR_SENTINEL:
             clauses.append("(author IS NULL OR TRIM(author) = '')")
