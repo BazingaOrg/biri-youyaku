@@ -18,6 +18,13 @@ function describeStage(stage?: string): string | null {
 }
 
 export function friendlyError(code?: string, message?: string, stage?: string): FriendlyError {
+  if (code === 'BILI_RATE_LIMITED') {
+    return {
+      title: 'B 站临时风控',
+      message: 'B 站暂时拒绝了下载请求。请停止连续重试，等待 10–30 分钟后再试；持续失败时更新 B 站 Cookie。',
+      actionLabel: '稍后重试',
+    }
+  }
   if (code === 'STAGE_TIMEOUT') {
     const stageLabel = describeStage(stage)
     return {
@@ -48,7 +55,14 @@ export function friendlyError(code?: string, message?: string, stage?: string): 
       actionLabel: '重试',
     }
   }
-  if (message?.includes('HTTP 4') || message?.includes('HTTP 5')) {
+  if (message && /\bHTTP(?: Error)? [45]\d{2}\b/.test(message)) {
+    if (stage === 'FETCHING_META' || stage === 'DOWNLOADING_AUDIO') {
+      return {
+        title: 'B 站请求失败',
+        message: 'B 站暂时拒绝了请求，或视频需要登录权限。请稍后重试，并检查 B 站 Cookie。',
+        actionLabel: '重试',
+      }
+    }
     return {
       title: '大模型接口异常',
       message: '模型服务返回了错误。可以换模型，或稍后重试。',

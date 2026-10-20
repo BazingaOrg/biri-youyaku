@@ -195,6 +195,25 @@ async def test_shutdown_drains_without_canceling_or_rewriting_active_job(monkeyp
     assert repo.get_job(canceled.id).status == JobStatus.CANCELED
 
 
+@pytest.mark.asyncio
+async def test_job_lifecycle_persists_domain_error_code(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    runner._registry.reset_for_tests()
+    db.init_db()
+    job = repo.create_job("https://www.bilibili.com/video/BV-rate-limited", JobOptions())
+
+    class CodedError(RuntimeError):
+        error_code = "BILI_RATE_LIMITED"
+
+    async with runner._job_lifecycle(job.id, JobStatus.DOWNLOADING_AUDIO):
+        raise CodedError("blocked")
+
+    failed = repo.get_job(job.id)
+    assert failed.status == JobStatus.FAILED
+    assert failed.error_code == "BILI_RATE_LIMITED"
+    assert failed.error_message == "blocked"
+
+
 def test_recovery_skips_distill_and_does_not_resend_email(monkeypatch, tmp_path):
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
     runner._registry.reset_for_tests()

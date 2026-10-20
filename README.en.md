@@ -105,6 +105,7 @@ Combined with local ASR below, this is fully offline (except fetching from Bilib
 
 - **Local ASR** (videos without subtitles): needs `ffmpeg`. Cross-platform `cd server && uv sync --extra asr`; on Apple Silicon use `--extra asr-mlx` (15-30× GPU/ANE speedup). Switch backends with `ASR_MODEL` (see table below).
 - **Bilibili login** (private videos / better subtitles): copy `SESSDATA` from your browser cookies into `BILI_SESSDATA` in `server/.env`.
+- **Bilibili HTTP 412**: the service refreshes device cookies and retries once; if it still fails, stop retrying for 10–30 minutes and refresh the Bilibili cookies if the block persists.
 - **Email delivery** (off by default): use the bundled Cloudflare Worker template — follow [`examples/email-worker/README.md`](examples/email-worker/README.md), then enable `EMAIL_ENABLED` etc. in `server/.env`.
 
 <details>

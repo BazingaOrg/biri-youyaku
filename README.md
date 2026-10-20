@@ -105,6 +105,7 @@ LLM_BASE_URL_ALLOWED_HOSTS=   # 仅本地留空；公网部署不要放开白名
 
 - **本地 ASR 转写**（无字幕的视频）：需 `ffmpeg`。跨平台 `cd server && uv sync --extra asr`；Apple Silicon 用 `--extra asr-mlx`（GPU/ANE 加速 15-30×）。用 `ASR_MODEL` 切换后端（见下表）。
 - **B 站登录态**（取私享视频 / 高画质字幕）：浏览器登录后复制 cookie 里的 `SESSDATA`，填到 `server/.env` 的 `BILI_SESSDATA`。
+- **B 站 412 风控**：服务会自动刷新设备 Cookie 并重试一次；若仍失败，请停止连续重试，等待 10–30 分钟后再试，持续失败时更新 B 站 Cookie。
 - **邮件推送**（默认关闭）：用仓库自带的 Cloudflare Worker 模板，跟着 [`examples/email-worker/README.md`](examples/email-worker/README.md) 走，再在 `server/.env` 开 `EMAIL_ENABLED` 等。
 
 <details>

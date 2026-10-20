@@ -368,7 +368,12 @@ async def _job_lifecycle(job_id: str, initial_stage: JobStatus):
         _registry.llm_api_keys.pop(job_id, None)
     except Exception as exc:
         logger.exception("Job %s failed at %s", job_id, stage.value)
-        error_code = "STAGE_TIMEOUT" if isinstance(exc, StageTimeoutError) else None
+        domain_error_code = getattr(exc, "error_code", None)
+        error_code = (
+            "STAGE_TIMEOUT"
+            if isinstance(exc, StageTimeoutError)
+            else domain_error_code if isinstance(domain_error_code, str) else None
+        )
         repo.set_error(job_id, stage.value, str(exc), error_code)
         await transition(
             job_id,
