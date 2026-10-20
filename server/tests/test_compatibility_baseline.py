@@ -130,6 +130,12 @@ def test_serialize_job_detail_vs_lite(monkeypatch, tmp_path):
     assert lite["summary"] is None
     assert lite["summary_available"] is True
 
+    saved.unlink()
+    missing = repo.get_job(job.id)
+    assert missing is not None
+    assert serialize_job(missing, lite=True)["summary_available"] is False
+    assert serialize_job(missing, lite=False)["summary"] is None
+
 
 class _FakeAsyncClient:
     last_request: dict | None = None

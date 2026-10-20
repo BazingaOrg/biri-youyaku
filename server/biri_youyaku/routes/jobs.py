@@ -261,7 +261,7 @@ def serialize_job(job: Job, *, lite: bool = False) -> dict:
         "tags": job.tags or [],
     }
     if lite:
-        payload["summary_available"] = job.summary_path is not None
+        payload["summary_available"] = repo.summary_file_exists(job)
     return payload
 
 

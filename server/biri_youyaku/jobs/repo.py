@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 import uuid
 from pathlib import Path
@@ -15,6 +16,8 @@ from biri_youyaku.jobs.model import (
 )
 from biri_youyaku.modules.bilibili.meta import Chapter, canonical_video_url
 from biri_youyaku.modules.transcript import TranscriptItem
+
+logger = logging.getLogger(__name__)
 
 
 def now_ms() -> int:
@@ -380,7 +383,7 @@ def all_audio_paths() -> set[str]:
 
 
 def all_summary_paths() -> set[str]:
-    """Resolved absolute path strings for orphan scan (legacy absolute + relative)."""
+    """Path strings for orphan scan (legacy absolute, relative, and resolved)."""
     from biri_youyaku.modules.storage import summary as summary_storage
 
     with connect() as connection:
@@ -393,9 +396,12 @@ def all_summary_paths() -> set[str]:
         if not stored:
             continue
         resolved = summary_storage.resolve_stored_path(stored)
-        known.add(str(resolved))
-        # Keep raw DB form too so mixed absolute/relative comparisons still work.
         known.add(stored)
+        known.add(str(resolved))
+        try:
+            known.add(str(resolved.expanduser().resolve()))
+        except OSError:
+            pass
     return known
 
 
@@ -751,13 +757,23 @@ def find_active_distill_by_bvid(bvid: str) -> Job | None:
     return _row_to_job(row) if row else None
 
 
+def summary_file_exists(job: Job) -> bool:
+    if job.summary_path is None:
+        return False
+    from biri_youyaku.modules.storage import summary as summary_storage
+
+    path = summary_storage.resolve_stored_path(job.summary_path)
+    return path.is_file()
+
+
 def read_summary(job: Job) -> str | None:
     if job.summary_path is None:
         return None
     from biri_youyaku.modules.storage import summary as summary_storage
 
     path = summary_storage.resolve_stored_path(job.summary_path)
-    if not path.exists():
+    if not path.is_file():
+        logger.warning("Summary file missing for job %s: %s", job.id, path)
         return None
     return path.read_text(encoding="utf-8")
 

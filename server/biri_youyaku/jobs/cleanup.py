@@ -260,6 +260,15 @@ async def fail_stale_running_once() -> int:
     return count
 
 
+def _canonical_path_keys(path: Path) -> set[str]:
+    keys = {str(path)}
+    try:
+        keys.add(str(path.expanduser().resolve()))
+    except OSError:
+        pass
+    return keys
+
+
 def _scan_orphan_files(directory: Path, known_paths: set[str], retention_days: int) -> int:
     """删除 directory 下「DB 不再引用且 mtime 比 retention_days 早」的文件。
 
@@ -267,6 +276,9 @@ def _scan_orphan_files(directory: Path, known_paths: set[str], retention_days: i
     """
     if not directory.exists():
         return 0
+    known: set[str] = set()
+    for raw in known_paths:
+        known.update(_canonical_path_keys(Path(raw)))
     cutoff_seconds = retention_days * 24 * 60 * 60
     removed = 0
     # 文件 mtime 是真实时间，必须用 time.time() 比对（不是 loop time）
@@ -274,8 +286,7 @@ def _scan_orphan_files(directory: Path, known_paths: set[str], retention_days: i
     for entry in directory.iterdir():
         if not entry.is_file():
             continue
-        path_str = str(entry)
-        if path_str in known_paths:
+        if _canonical_path_keys(entry) & known:
             continue
         try:
             if now_seconds - entry.stat().st_mtime < cutoff_seconds:

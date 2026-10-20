@@ -1,11 +1,10 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
-import {ChevronRight, MoreHorizontal, Plus, RotateCw, Search, Trash2} from 'lucide-react'
-import {Link, useLocation} from 'wouter'
+import {MoreHorizontal, Plus, RotateCw, Search, Trash2} from 'lucide-react'
+import {Link} from 'wouter'
 import {
-  ApiError, executeBulkDelete, previewBulkDelete, deleteJob, getJob, listJobs, resummarizeJob,
-  type BulkDeletePreview, type BulkDeleteQuery, type Job, type JobOptionOverrides,
+  ApiError, executeBulkDelete, previewBulkDelete, deleteJob, getJob, listJobs,
+  type BulkDeletePreview, type BulkDeleteQuery, type Job,
 } from '../lib/api'
-import {writeActive} from '../lib/activeJob'
 import {formatDate, formatDuration, formatStatus} from '../lib/format'
 import {isRunning} from '../lib/jobStatus'
 import {AuthorLink} from '../components/AuthorLink'
@@ -13,7 +12,6 @@ import {BackButton} from '../components/BackButton'
 import {Skeleton} from '../components/Skeleton'
 import {useToast} from '../components/ToastProvider'
 import {ConfirmDialog} from '../components/ConfirmDialog'
-import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
 import {IconTooltip} from './history/IconTooltip'
 import {SearchHighlight} from '../components/SearchHighlight'
 import {includesSearchQuery} from '../lib/searchHighlight'
@@ -23,10 +21,6 @@ const ACTIVE_REFRESH_INTERVAL_MS = 2000
 const UNDO_WINDOW_MS = 5000
 const HISTORY_RESTORE_KEY = 'biri-youyaku.history.restore.v2'
 const BULK_ACTIONS_MENU_KEY = 'bulk-actions'
-
-function jobActionsMenuKey(jobId: string) {
-  return `job-actions:${jobId}`
-}
 
 function opaqueHistoryCursor(cursor: string | number | null | undefined) {
   return typeof cursor === 'string' ? cursor : null
@@ -93,7 +87,6 @@ function readHistoryRestore(): HistoryRestoreSnapshot | null {
 }
 
 export function HistoryPage() {
-  const [, navigate] = useLocation()
   const [restoreSnapshot] = useState(readHistoryRestore)
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
@@ -108,10 +101,7 @@ export function HistoryPage() {
   const [deletePreviewFilters, setDeletePreviewFilters] = useState<BulkDeleteQuery | null>(null)
   const [previewingDelete, setPreviewingDelete] = useState(false)
   const [clearing, setClearing] = useState(false)
-  const [resummaryTarget, setResummaryTarget] = useState<Job | null>(null)
-  const [resummarizing, setResummarizing] = useState(false)
   const toast = useToast()
-  const runtime = useRuntimeConfig()
   const pendingDeletes = useRef<Map<string, {timer: number; job: Job}>>(new Map())
   const loadGenerationRef = useRef(0)
   const activeLoadRef = useRef<{controller: AbortController; generation: number} | null>(null)
@@ -458,14 +448,6 @@ export function HistoryPage() {
       }
     } finally { setClearing(false) }
   }
-  const newSummaryOptions = useCallback((): Partial<JobOptionOverrides> => ({task_type: 'summary', ...(runtime?.email_configured ? {email_enabled: true} : {})}), [runtime?.email_configured])
-  const handleResummarize = async () => {
-    if (!resummaryTarget) return
-    setResummarizing(true)
-    try { const response = await resummarizeJob(resummaryTarget.id, newSummaryOptions()); writeActive({jobId: response.job_id, url: resummaryTarget.url}); setResummaryTarget(null); toast.success('已开始重新总结', undefined, {dedupeKey: response.job_id}); navigate(`/jobs/${response.job_id}`) }
-    catch (err) { toast.error('重新总结失败', err instanceof Error ? err.message : '请重试') }
-    finally { setResummarizing(false) }
-  }
   const hasFilters = Boolean(debouncedQuery.trim())
   const previewHasFilters = Boolean(deletePreviewFilters?.query)
   const queryPending = query !== debouncedQuery
@@ -491,35 +473,25 @@ export function HistoryPage() {
 
   const renderJob = (job: Job, index: number) => {
     const running = isRunning(job.status)
-    const menuKey = jobActionsMenuKey(job.id)
-    const menuOpen = openMenuKey === menuKey
-    const menuId = `history-actions-${job.id}`
     const matchedBvid = searchMode && includesSearchQuery(job.bvid, debouncedQuery)
     const matchedTags = searchMode ? (job.tags ?? []).filter((tag) => includesSearchQuery(tag, debouncedQuery)) : []
     const matchedUrl = searchMode && Boolean(job.title) && includesSearchQuery(job.url, debouncedQuery)
-    const summaryAvailable = job.status === 'COMPLETED' && Boolean(job.summary_available)
-    return <li id={`history-job-${job.id}`} key={job.id} style={{animationDelay: `${Math.min(index, 6) * 40}ms`}} className={`history-job group/item relative grid animate-fade-in-up grid-cols-[minmax(0,1fr)_auto] items-start gap-2 border-b border-line/60 py-2 opacity-0 [animation-fill-mode:forwards] last:border-0 ${menuOpen ? 'z-20' : ''}`}>
+    return <li id={`history-job-${job.id}`} key={job.id} style={{animationDelay: `${Math.min(index, 6) * 40}ms`}} className="history-job group/item relative grid animate-fade-in-up grid-cols-[minmax(0,1fr)_auto] items-start gap-2 border-b border-line/60 py-2 opacity-0 [animation-fill-mode:forwards] last:border-0">
       <div className="min-w-0">
         <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id)} className="block transition-[transform] active:scale-[0.99]"><p className="truncate text-sm font-medium text-ink"><SearchHighlight text={job.title || job.url} query={debouncedQuery} /></p></Link>
         <p className="mt-1 flex min-w-0 flex-wrap items-center gap-1 text-[13px] text-muted"><AuthorLink job={job} highlightQuery={debouncedQuery} /><span className="shrink-0">· {formatDuration(job.duration)}</span>{matchedBvid && job.bvid && <span className="inline-flex min-w-0 items-center rounded-full bg-brandSoft px-2 py-0.5 text-xs text-brand">BV 号：<span className="truncate"><SearchHighlight text={job.bvid} query={debouncedQuery} /></span></span>}{matchedTags.map((tag) => <span key={tag} className="inline-flex min-w-0 items-center rounded-full bg-brandSoft px-2 py-0.5 text-xs text-brand">标签：<span className="truncate"><SearchHighlight text={tag} query={debouncedQuery} /></span></span>)}{matchedUrl && <span className="inline-flex items-center rounded-full bg-brandSoft px-2 py-0.5 text-xs text-brand">命中视频链接</span>}</p>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
           {job.status !== 'COMPLETED' && <span className={`rounded-full px-2 py-0.5 font-medium ${job.status === 'FAILED' ? 'bg-danger/15 text-danger' : running ? 'bg-warning/15 text-warning' : 'bg-panel text-muted'}`}>{formatStatus(job.status)}</span>}
           <span className="tabular-nums text-muted/90">{formatDate(job.completed_at ?? job.created_at)}</span>
-          <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id)} className="ml-auto inline-flex min-h-9 items-center gap-0.5 rounded-xl px-2 text-xs font-medium text-brand transition-colors hover:bg-brandSoft">
-            {summaryAvailable ? '查看总结' : '查看详情'}
-            <ChevronRight size={13} />
-          </Link>
         </div>
       </div>
-      <div data-history-menu-root className="relative shrink-0">
-        <button type="button" aria-label="任务操作" aria-expanded={menuOpen} aria-controls={menuId} onClick={(event) => toggleHistoryMenu(menuKey, event.currentTarget)} className="grid h-11 w-11 place-items-center rounded-xl text-muted transition-[transform,background-color,color] hover:bg-lift hover:text-ink active:scale-95">
-          <MoreHorizontal size={18} />
-        </button>
-        {menuOpen && <div id={menuId} role="group" aria-label="任务操作菜单" className="absolute right-0 top-11 z-20 grid w-36 origin-top-right gap-1 rounded-2xl border border-line bg-panel p-1.5 shadow-cardHover">
-          {!running && <button type="button" onClick={() => { closeHistoryMenu(); setResummaryTarget(job) }} className="flex min-h-10 items-center gap-2 rounded-xl px-3 text-left text-sm text-muted transition-colors hover:bg-lift hover:text-brand"><RotateCw size={15} />重新总结</button>}
-          <button type="button" onClick={() => { closeHistoryMenu(); handleDelete(job.id) }} className="flex min-h-10 items-center gap-2 rounded-xl px-3 text-left text-sm text-muted transition-colors hover:bg-lift hover:text-danger"><Trash2 size={15} />删除</button>
-        </div>}
-      </div>
+      {!running && (
+        <IconTooltip label="删除">
+          <button type="button" aria-label="删除" onClick={() => handleDelete(job.id)} className="grid h-11 w-11 place-items-center rounded-xl text-muted transition-[transform,background-color,color] hover:bg-lift hover:text-danger active:scale-95">
+            <Trash2 size={18} />
+          </button>
+        </IconTooltip>
+      )}
     </li>
   }
 
@@ -605,6 +577,5 @@ export function HistoryPage() {
       onConfirm={() => void handleBulkDelete()}
       onCancel={() => { setDeletePreview(null); setDeletePreviewFilters(null) }}
     />
-    <ConfirmDialog open={resummaryTarget != null} title="重新总结这个视频？" description="会复用这条记录的字幕创建一条新的总结任务，原总结会继续保留在历史记录中。" confirmLabel="重新总结" loading={resummarizing} onConfirm={() => void handleResummarize()} onCancel={() => setResummaryTarget(null)} />
   </div>
 }

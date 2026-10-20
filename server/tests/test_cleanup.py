@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
@@ -8,6 +9,7 @@ from biri_youyaku import db
 from biri_youyaku.distill import repo as distill_repo
 from biri_youyaku.jobs import cleanup, repo
 from biri_youyaku.jobs.model import JobOptions, JobStatus
+from biri_youyaku.modules.storage import summary as summary_storage
 
 
 @pytest.mark.asyncio
@@ -227,6 +229,34 @@ async def test_scan_orphans_respects_retention_window_for_distill_dir(monkeypatc
 
     assert result["distill_orphans"] == 0
     assert fresh_orphan_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_scan_orphans_keeps_referenced_summary_with_relative_storage(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    monkeypatch.setattr(cleanup, "ORPHAN_FILE_RETENTION_DAYS", 1)
+    summary_dir = Path("data/summaries")
+    summary_dir.mkdir(parents=True)
+    monkeypatch.setattr(cleanup.settings, "summary_storage_dir", summary_dir)
+    monkeypatch.setattr(summary_storage.settings, "summary_storage_dir", summary_dir)
+    db.init_db()
+
+    job = repo.create_job("https://www.bilibili.com/video/BVkeep", JobOptions())
+    kept = summary_storage.save(job.id, "notes")
+    repo.set_summary_path(job.id, kept)
+    repo.update_status(job.id, JobStatus.COMPLETED)
+    _age_dir(kept, 2)
+
+    orphan = summary_dir / "orphan.md"
+    orphan.write_text("stale", encoding="utf-8")
+    _age_dir(orphan, 2)
+
+    result = await cleanup.scan_orphans_once()
+
+    assert result["summary_orphans"] == 1
+    assert kept.exists()
+    assert not orphan.exists()
 
 
 @pytest.mark.asyncio
