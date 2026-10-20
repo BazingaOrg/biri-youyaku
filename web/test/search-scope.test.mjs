@@ -12,7 +12,7 @@ test('history and knowledge searches communicate separate scopes', async () => {
   assert.match(historySource, /aria-label="删除"/)
   assert.doesNotMatch(historySource, /查看总结/)
   assert.doesNotMatch(historySource, /重新总结/)
-  assert.match(knowledgeSource, /搜索总结或字幕正文/)
+  assert.match(knowledgeSource, /搜索笔记或字幕/)
   assert.match(knowledgeSource, /mode="fts"/)
   assert.match(knowledgeSource, /snippet !== full/)
   assert.match(knowledgeSource, /query={searchedQuery}/)

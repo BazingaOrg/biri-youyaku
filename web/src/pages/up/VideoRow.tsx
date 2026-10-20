@@ -1,4 +1,4 @@
-import {Check, RotateCw, Sparkles} from 'lucide-react'
+import {Check, RotateCw} from 'lucide-react'
 import {Link} from 'wouter'
 import {type JobStatus, type UpVideo} from '../../lib/api'
 import {formatDay, formatDuration} from '../../lib/format'
@@ -26,7 +26,7 @@ export function VideoRow({
   return (
     <li
       style={{animationDelay: `${Math.min(index, 6) * 40}ms`}}
-      className="grid animate-fade-in-up grid-cols-[7.5rem_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl bg-lift/55 p-2 opacity-0 [animation-fill-mode:forwards] transition-[background-color] hover:bg-brandSoft/30"
+      className="grid grid-cols-[7.5rem_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl bg-lift/55 p-2 transition-[background-color] hover:bg-brandSoft/30"
     >
       <div className="relative aspect-video overflow-hidden rounded-xl bg-panel">
         {video.cover && (
@@ -83,7 +83,7 @@ export function VideoRow({
             title={failed ? '上次未完成，重新总结' : undefined}
             className="inline-flex min-h-9 items-center gap-1 rounded-xl bg-brandSolid px-3 text-xs font-medium text-onBrand shadow-card transition hover:brightness-105 active:scale-95 disabled:opacity-50"
           >
-            {busy ? <RotateCw size={13} className="animate-spin" /> : <Sparkles size={14} />}
+            {busy ? <RotateCw size={13} className="animate-spin" /> : null}
             {failed ? '重试' : '总结'}
           </button>
         )}

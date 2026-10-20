@@ -435,7 +435,7 @@ export function HistoryPage() {
     const matchedBvid = searchMode && includesSearchQuery(job.bvid, debouncedQuery)
     const matchedTags = searchMode ? (job.tags ?? []).filter((tag) => includesSearchQuery(tag, debouncedQuery)) : []
     const matchedUrl = searchMode && Boolean(job.title) && includesSearchQuery(job.url, debouncedQuery)
-    return <li id={`history-job-${job.id}`} key={job.id} style={{animationDelay: `${Math.min(index, 6) * 40}ms`}} className="history-job group/item relative grid animate-fade-in-up grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-line/60 py-2 opacity-0 [animation-fill-mode:forwards] last:border-0">
+    return <li id={`history-job-${job.id}`} key={job.id} className="history-job group/item relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-line/60 py-2 last:border-0">
       <div className="min-w-0">
         <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id)} className="block transition-[transform] active:scale-[0.99]"><p className="truncate text-sm font-medium text-ink"><SearchHighlight text={job.title || job.url} query={debouncedQuery} /></p></Link>
         <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-muted">
@@ -460,17 +460,16 @@ export function HistoryPage() {
 
   const bulkDeleteLabel = hasFilters ? '删除筛选结果' : '清理历史'
 
-  return <div className="grid min-h-[calc(100dvh-3rem)] animate-fade-in-up content-start gap-5 sm:min-h-[calc(100dvh-5rem)]">
+  return <div className="grid min-h-[calc(100dvh-3rem)] content-start gap-5 sm:min-h-[calc(100dvh-5rem)]">
     <header className="grid gap-4 px-4 sm:px-5">
       <BackButton />
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-[-0.012em] text-ink sm:text-3xl">历史</h1>
-          <p className="mt-1 text-sm text-muted">按任务元数据定位记录；总结与字幕正文请到知识库检索。</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <IconTooltip label="新建">
-            <Link href="/" aria-label="新建" className="grid h-11 w-11 place-items-center rounded-2xl bg-brandSolid text-onBrand shadow-card"><Plus size={18} /></Link>
+          <IconTooltip label="粘贴新链接">
+            <Link href="/" aria-label="粘贴新链接" className="grid h-11 w-11 place-items-center rounded-2xl bg-brandSolid text-onBrand shadow-card"><Plus size={18} /></Link>
           </IconTooltip>
         </div>
       </div>
@@ -489,7 +488,7 @@ export function HistoryPage() {
       <div className="py-3">
         {loading && <Skeleton count={6} />}
         {!loading && loadError === 'initial' && <div className="grid justify-items-center gap-3 border-b border-line/60 py-12 text-center"><p className="text-sm text-muted">加载失败，请检查网络后重试</p><button type="button" onClick={() => void loadFirstPage()} className="inline-flex min-h-10 items-center gap-2 rounded-2xl bg-lift px-4 text-sm text-muted"><RotateCw size={15} />重试</button></div>}
-        {!loading && loadError !== 'initial' && jobs.length === 0 && !hasFilters && <div className="grid justify-items-center gap-3 border-b border-line/60 py-12 text-center"><p className="text-sm text-muted">还没有任务记录</p><Link href="/" className="inline-flex min-h-10 items-center gap-2 rounded-2xl bg-brandSolid px-4 text-sm font-medium text-onBrand shadow-card"><Plus size={15} />新建一个</Link></div>}
+        {!loading && loadError !== 'initial' && jobs.length === 0 && !hasFilters && <div className="grid justify-items-center gap-3 border-b border-line/60 py-12 text-center"><p className="text-sm text-muted">还没有笔记</p><Link href="/" className="inline-flex min-h-10 items-center gap-2 rounded-2xl bg-brandSolid px-4 text-sm font-medium text-onBrand shadow-card"><Plus size={15} />粘贴一个链接</Link></div>}
         {!loading && loadError !== 'initial' && jobs.length === 0 && hasFilters && (
           <div className="grid justify-items-center gap-3 border-b border-line/60 py-12 text-center">
             <p className="text-sm text-muted">没有匹配的记录</p>
@@ -498,7 +497,7 @@ export function HistoryPage() {
         )}
         {!loading && loadError === 'partial' && <p role="alert" className="mb-3 text-center text-sm text-muted">部分记录加载失败，请稍后重试。</p>}
         {!loading && loadError !== 'initial' && jobs.length > 0 && <>
-          {activeJobs.length > 0 && <section className="mb-4 rounded-2xl border border-warning/20 bg-warning/5 p-3"><h2 className="text-sm font-medium text-ink">进行中与等待继续 <span className="text-muted">{activeJobs.length}</span></h2><ul className="mt-2">{activeJobs.map(renderJob)}</ul></section>}
+          {activeJobs.length > 0 && <section className="mb-4 rounded-2xl border border-warning/20 bg-warning/5 p-3"><h2 className="text-sm font-medium text-ink">进行中 <span className="text-muted">{activeJobs.length}</span></h2><ul className="mt-2">{activeJobs.map(renderJob)}</ul></section>}
           {searchMode ? (
             <ul className="rounded-2xl bg-lift/45 px-3">{searchJobs.map(renderJob)}</ul>
           ) : (

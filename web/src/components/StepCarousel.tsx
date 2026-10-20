@@ -61,7 +61,7 @@ export function StepCarousel({steps, currentIndex, followKey}: StepCarouselProps
   }
 
   return (
-    <section className="min-w-0 w-full rounded-3xl bg-panel p-4 shadow-card sm:p-5">
+    <section className="min-w-0 w-full rounded-2xl bg-lift/70 p-4 sm:p-5">
       <div className="overflow-hidden">
         <div
           className="flex min-w-0 transition-transform duration-[220ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]"

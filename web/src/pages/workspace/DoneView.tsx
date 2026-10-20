@@ -51,7 +51,7 @@ export function DoneView({
           className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-lift px-3.5 text-sm text-muted transition-[transform,background-color,color] duration-150 ease-out hover:bg-line/70 hover:text-ink active:scale-[0.97]"
         >
           <Plus size={16} />
-          新建
+          再贴一条
         </button>
         <button
           type="button"

@@ -16,8 +16,8 @@ export function SummaryTabs({job}: {job: Job}) {
   const toast = useToast()
 
   const tabs: Array<[Tab, string]> = [['notes', '笔记']]
-  if (hasTranscript) tabs.push(['transcript', '原文'])
-  const copyLabel = tab === 'notes' ? '复制笔记' : '复制原文'
+  if (hasTranscript) tabs.push(['transcript', '字幕'])
+  const copyLabel = tab === 'notes' ? '复制笔记' : '复制字幕'
   const copyText = tab === 'notes' ? summary : transcriptToPlainText(job.transcript ?? [])
 
   const copyCurrent = async () => {
@@ -26,14 +26,14 @@ export function SummaryTabs({job}: {job: Job}) {
     const taskName = job.title || undefined
     try {
       await navigator.clipboard.writeText(copyText)
-      toast.success(tab === 'notes' ? '笔记已复制' : '原文已复制', undefined, {taskName})
+      toast.success(tab === 'notes' ? '笔记已复制' : '字幕已复制', undefined, {taskName})
     } catch {
       toast.error('复制失败', '请手动选中复制', {taskName})
     }
   }
 
   return (
-    <section className="min-w-0 w-full rounded-3xl bg-panel p-4 shadow-card sm:p-5">
+    <section className="min-w-0 w-full rounded-2xl bg-lift/70 p-4 sm:p-5">
       <div className="mb-4 flex min-w-0 items-center gap-2">
         <div className="inline-flex min-w-0 gap-1 rounded-2xl bg-lift p-1 text-sm">
           {tabs.map(([key, label]) => (
@@ -42,7 +42,7 @@ export function SummaryTabs({job}: {job: Job}) {
               type="button"
               onClick={() => setTab(key)}
               className={`min-h-9 rounded-xl px-4 transition-[background-color,color] ${
-                tab === key ? 'bg-brandSolid text-onBrand shadow-card' : 'text-muted hover:text-ink'
+                tab === key ? 'bg-brandSolid text-onBrand' : 'text-muted hover:text-ink'
               }`}
             >
               {label}

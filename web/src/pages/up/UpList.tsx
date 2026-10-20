@@ -187,7 +187,7 @@ export function UpList({mid}: {mid: number}) {
   }, [videos, effectiveStatus])
 
   return (
-    <div className="grid animate-fade-in-up content-start gap-5">
+    <div className="grid content-start gap-5">
       <header className="grid gap-4 px-4 sm:px-5">
         <BackButton />
         <div className="flex flex-wrap items-start justify-between gap-3">
