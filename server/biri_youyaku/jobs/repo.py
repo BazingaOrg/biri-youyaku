@@ -342,6 +342,24 @@ def list_jobs_by_status(statuses: Collection[JobStatus]) -> list[Job]:
     return [_row_to_job_lite(row) for row in rows]
 
 
+def list_jobs_with_expired_audio(statuses: Collection[JobStatus], before_ms: int) -> list[Job]:
+    if not statuses:
+        return []
+    placeholders, values = _status_filter(statuses)
+    with connect() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT {_LITE_COLUMNS} FROM jobs
+            WHERE status IN ({placeholders})
+              AND audio_path IS NOT NULL
+              AND COALESCE(completed_at, created_at) < ?
+            ORDER BY created_at ASC
+            """,
+            [*values, before_ms],
+        ).fetchall()
+    return [_row_to_job_lite(row) for row in rows]
+
+
 def list_jobs_by_status_before(statuses: Collection[JobStatus], before_ms: int) -> list[Job]:
     if not statuses:
         return []
@@ -398,10 +416,6 @@ def all_summary_paths() -> set[str]:
         resolved = summary_storage.resolve_stored_path(stored)
         known.add(stored)
         known.add(str(resolved))
-        try:
-            known.add(str(resolved.expanduser().resolve()))
-        except OSError:
-            pass
     return known
 
 
@@ -572,8 +586,12 @@ def set_audio_path(job_id: str, audio_path: Path) -> None:
     _set(job_id, audio_path=str(audio_path))
 
 
-def clear_audio_path(job_id: str) -> None:
-    _set(job_id, audio_path=None)
+def clear_audio_path(job_id: str, *, touch: bool = True) -> None:
+    if touch:
+        _set(job_id, audio_path=None)
+        return
+    with connect() as connection:
+        connection.execute("UPDATE jobs SET audio_path = NULL WHERE id = ?", (job_id,))
 
 
 def set_subtitle_source(job_id: str, subtitle_source: str) -> None:

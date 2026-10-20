@@ -14,7 +14,7 @@ LLM_TEMPERATURE: float | None = None
 LLM_CHUNK_TOKEN_THRESHOLD = 30000
 # 段级总结并发上限，>1 时长视频分段总结走 asyncio.gather。
 LLM_SEGMENT_CONCURRENCY = 3
-# Auto: clear audio files/paths after N days; job row stays.
+# Backstop: leftover ASR files after transcript persist; job row stays.
 AUDIO_RETENTION_DAYS = 7
 # Auto job-row purge only for FAILED/CANCELED with no summary_path.
 JOB_RETENTION_DAYS = 180

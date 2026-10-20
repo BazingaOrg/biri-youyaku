@@ -1,9 +1,12 @@
+from pathlib import Path
+
 import pytest
 from fastapi import HTTPException
 
 from biri_youyaku import db
 from biri_youyaku.jobs import cleanup, repo
 from biri_youyaku.jobs.model import JobOptions, JobStatus
+from biri_youyaku.modules.storage import summary as summary_storage
 from biri_youyaku.routes import jobs as jobs_route
 
 
@@ -110,6 +113,31 @@ async def test_bulk_delete_preview_and_execute_delete_all_matching_files(monkeyp
     assert repo.get_job(other.id) is not None
     assert not audio_path.exists()
     assert not summary_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_removes_relative_summary_files(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    summary_dir = Path("data/summaries")
+    summary_dir.mkdir(parents=True)
+    monkeypatch.setattr(summary_storage.settings, "summary_storage_dir", summary_dir)
+    db.init_db()
+    job = _create_finished_job(title="Relative", author="Alice", tags=["知识"])
+    saved = summary_storage.save(job.id, "notes")
+    repo.set_summary_path(job.id, saved)
+
+    preview = await jobs_route.preview_bulk_delete(
+        jobs_route.BulkDeleteFilterPayload(author="Alice")
+    )
+    result = await jobs_route.execute_bulk_delete(
+        jobs_route.BulkDeleteExecutePayload(preview_token=preview["preview_token"])
+    )
+
+    assert result["deleted_count"] == 1
+    assert result["cleanup_pending_count"] == 0
+    assert repo.get_job(job.id) is None
+    assert not saved.exists()
 
 
 @pytest.mark.asyncio

@@ -7,8 +7,8 @@ test('history refreshes active jobs while the page remains open', async () => {
 
   assert.match(pageSource, /const ACTIVE_REFRESH_INTERVAL_MS = 2000/)
   assert.match(pageSource, /listJobs\(\{active_only: true, \.\.\.historyFilters\}, \{signal: controller\.signal\}\)/)
-  assert.match(pageSource, /getJob\(jobId, \{signal: controller\.signal\}\)/)
-  assert.match(pageSource, /window\.setInterval\(refresh, ACTIVE_REFRESH_INTERVAL_MS\)/)
+  assert.match(pageSource, /getJob\(jobId, \{signal: controller\.signal, lite: true\}\)/)
+  assert.match(pageSource, /activeJobs\.length > 0 \? window\.setInterval\(refresh, ACTIVE_REFRESH_INTERVAL_MS\)/)
   assert.match(pageSource, /document\.addEventListener\('visibilitychange', onVisibilityChange\)/)
   assert.match(pageSource, /window\.addEventListener\('focus', refresh\)/)
 })

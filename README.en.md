@@ -21,7 +21,6 @@ Paste a Bilibili video link and get readable Markdown notes and a clickable tran
 - **Knowledge base with purpose-specific search**: completed summaries register automatically; history locates jobs by title, uploader, BV ID, or tag, while local FTS searches summary and transcript content.
 - **Dedup to save tokens**: re-pasting an already-summarized video reuses the old result.
 - **Per-job fixes**: resummarize (reuse existing transcript), force re-transcription (ignore existing transcript/subtitles and redo ASR), resend email for a failed job.
-- **Audio download**: download the audio file used for transcription.
 - **Local-first**: all data stays local, no telemetry; optional email delivery and optional API-token auth.
 
 ## 🚀 Quick start

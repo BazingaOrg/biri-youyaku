@@ -23,11 +23,7 @@ async def test_cleanup_removes_expired_audio_without_deleting_job(monkeypatch, t
     audio_path.write_text("audio", encoding="utf-8")
     repo.set_audio_path(job.id, audio_path)
     repo.update_status(job.id, JobStatus.COMPLETED)
-    with db.connect() as connection:
-        connection.execute(
-            "UPDATE jobs SET updated_at = ? WHERE id = ?",
-            (repo.now_ms() - 2 * 24 * 60 * 60 * 1000, job.id),
-        )
+    _age_job(job.id, 2)
 
     result = await cleanup.cleanup_once()
 
@@ -39,11 +35,55 @@ async def test_cleanup_removes_expired_audio_without_deleting_job(monkeypatch, t
     assert loaded.audio_path is None
 
 
+def test_discard_job_audio_clears_path_without_touching_updated_at(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    job = repo.create_job("https://www.bilibili.com/video/BVaudio", JobOptions())
+    audio_path = tmp_path / f"{job.id}.wav"
+    audio_path.write_text("audio", encoding="utf-8")
+    repo.set_audio_path(job.id, audio_path)
+    repo.update_status(job.id, JobStatus.FAILED)
+    before = repo.get_job(job.id)
+    assert before is not None
+
+    assert cleanup.discard_job_audio(before, touch=False) is True
+
+    loaded = repo.get_job(job.id)
+    assert loaded is not None
+    assert loaded.audio_path is None
+    assert loaded.updated_at == before.updated_at
+    assert not audio_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_purges_expired_failed_job_in_same_tick_as_audio(monkeypatch, tmp_path):
+    _patch_retention(monkeypatch, tmp_path, audio_days=1, job_days=1)
+    db.init_db()
+    job = repo.create_job("https://www.bilibili.com/video/BV-failed-audio", JobOptions())
+    audio_path = tmp_path / f"{job.id}.wav"
+    audio_path.write_text("audio", encoding="utf-8")
+    repo.set_audio_path(job.id, audio_path)
+    repo.update_status(job.id, JobStatus.FAILED)
+    _age_job(job.id, 2)
+
+    result = await cleanup.cleanup_once()
+
+    assert result["audio_removed"] == 1
+    assert result["jobs_removed"] == 1
+    assert repo.get_job(job.id) is None
+    assert not audio_path.exists()
+
+
 def _age_job(job_id: str, days: int) -> None:
+    aged = repo.now_ms() - days * 24 * 60 * 60 * 1000
     with db.connect() as connection:
         connection.execute(
-            "UPDATE jobs SET updated_at = ? WHERE id = ?",
-            (repo.now_ms() - days * 24 * 60 * 60 * 1000, job_id),
+            """
+            UPDATE jobs
+            SET updated_at = ?, created_at = ?, completed_at = CASE WHEN completed_at IS NULL THEN NULL ELSE ? END
+            WHERE id = ?
+            """,
+            (aged, aged, aged, job_id),
         )
 
 

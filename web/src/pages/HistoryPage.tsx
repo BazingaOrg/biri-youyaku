@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
-import {MoreHorizontal, Plus, RotateCw, Search, Trash2} from 'lucide-react'
+import {Plus, RotateCw, Search, Trash2} from 'lucide-react'
 import {Link} from 'wouter'
 import {
   ApiError, executeBulkDelete, previewBulkDelete, deleteJob, getJob, listJobs,
@@ -20,7 +20,6 @@ const PAGE_SIZE = 60
 const ACTIVE_REFRESH_INTERVAL_MS = 2000
 const UNDO_WINDOW_MS = 5000
 const HISTORY_RESTORE_KEY = 'biri-youyaku.history.restore.v2'
-const BULK_ACTIONS_MENU_KEY = 'bulk-actions'
 
 function opaqueHistoryCursor(cursor: string | number | null | undefined) {
   return typeof cursor === 'string' ? cursor : null
@@ -95,7 +94,6 @@ export function HistoryPage() {
   const [debouncedQuery, setDebouncedQuery] = useState(() => restoreSnapshot?.query ?? '')
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [openMenuKey, setOpenMenuKey] = useState<string | null>(null)
   const [deletePreview, setDeletePreview] = useState<BulkDeletePreview | null>(null)
   // 弹窗只使用发起预览时的筛选快照；用户随后改筛选不会误导确认文案。
   const [deletePreviewFilters, setDeletePreviewFilters] = useState<BulkDeleteQuery | null>(null)
@@ -111,46 +109,6 @@ export function HistoryPage() {
   const loadedPagesRef = useRef(restoreSnapshot?.loadedPages ?? 1)
   const restoreSnapshotRef = useRef(restoreSnapshot)
   const restoredScrollRef = useRef(false)
-  const openMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
-
-  const closeHistoryMenu = useCallback(() => {
-    setOpenMenuKey(null)
-    openMenuTriggerRef.current = null
-  }, [])
-
-  const toggleHistoryMenu = useCallback((menuKey: string, trigger: HTMLButtonElement) => {
-    setOpenMenuKey((current) => {
-      if (current === menuKey) {
-        openMenuTriggerRef.current = null
-        return null
-      }
-      openMenuTriggerRef.current = trigger
-      return menuKey
-    })
-  }, [])
-
-  useEffect(() => {
-    if (!openMenuKey) return
-
-    const onPointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Element && event.target.closest('[data-history-menu-root]')) return
-      closeHistoryMenu()
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      const trigger = openMenuTriggerRef.current
-      closeHistoryMenu()
-      window.requestAnimationFrame(() => trigger?.focus())
-    }
-
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [closeHistoryMenu, openMenuKey])
 
   const invalidateLoad = useCallback(() => {
     loadGenerationRef.current += 1
@@ -258,7 +216,7 @@ export function HistoryPage() {
       const terminalSnapshots = await Promise.allSettled(
         previousActiveIds
           .filter((jobId) => !activeIds.has(jobId))
-          .map((jobId) => getJob(jobId, {signal: controller.signal})),
+          .map((jobId) => getJob(jobId, {signal: controller.signal, lite: true})),
       )
       if (controller.signal.aborted || generation !== loadGenerationRef.current) return
       const snapshots = [
@@ -286,26 +244,6 @@ export function HistoryPage() {
   }, [historyFilters, loading])
 
   useEffect(() => {
-    const refresh = () => {
-      if (document.visibilityState === 'hidden') return
-      void refreshActiveJobs()
-    }
-    const timer = window.setInterval(refresh, ACTIVE_REFRESH_INTERVAL_MS)
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') refresh()
-    }
-    document.addEventListener('visibilitychange', onVisibilityChange)
-    window.addEventListener('focus', refresh)
-    return () => {
-      window.clearInterval(timer)
-      document.removeEventListener('visibilitychange', onVisibilityChange)
-      window.removeEventListener('focus', refresh)
-      activeRefreshRef.current?.abort()
-      activeRefreshRef.current = null
-    }
-  }, [refreshActiveJobs])
-
-  useEffect(() => {
     const pending = pendingDeletes.current
     return () => {
       for (const [jobId, entry] of pending) {
@@ -322,6 +260,27 @@ export function HistoryPage() {
   }, [query])
 
   const activeJobs = useMemo(() => jobs.filter((job) => isRunning(job.status)), [jobs])
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'hidden') return
+      void refreshActiveJobs()
+    }
+    const timer = activeJobs.length > 0 ? window.setInterval(refresh, ACTIVE_REFRESH_INTERVAL_MS) : undefined
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refresh()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('focus', refresh)
+    return () => {
+      if (timer != null) window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('focus', refresh)
+      activeRefreshRef.current?.abort()
+      activeRefreshRef.current = null
+    }
+  }, [activeJobs.length, refreshActiveJobs])
+
   const weekGroups = useMemo<WeekGroup[]>(() => {
     const groups = new Map<number, Job[]>()
     for (const job of jobs) {
@@ -408,7 +367,7 @@ export function HistoryPage() {
   const openDeletePreview = async () => {
     if (query !== debouncedQuery) return
     const filters = {...bulkFilters}
-    closeHistoryMenu(); setPreviewingDelete(true)
+    setPreviewingDelete(true)
     try {
       // A preview must begin from a committed database state. Otherwise a
       // later bulk delete could cancel unrelated optimistic single deletes.
@@ -476,14 +435,18 @@ export function HistoryPage() {
     const matchedBvid = searchMode && includesSearchQuery(job.bvid, debouncedQuery)
     const matchedTags = searchMode ? (job.tags ?? []).filter((tag) => includesSearchQuery(tag, debouncedQuery)) : []
     const matchedUrl = searchMode && Boolean(job.title) && includesSearchQuery(job.url, debouncedQuery)
-    return <li id={`history-job-${job.id}`} key={job.id} style={{animationDelay: `${Math.min(index, 6) * 40}ms`}} className="history-job group/item relative grid animate-fade-in-up grid-cols-[minmax(0,1fr)_auto] items-start gap-2 border-b border-line/60 py-2 opacity-0 [animation-fill-mode:forwards] last:border-0">
+    return <li id={`history-job-${job.id}`} key={job.id} style={{animationDelay: `${Math.min(index, 6) * 40}ms`}} className="history-job group/item relative grid animate-fade-in-up grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-line/60 py-2 opacity-0 [animation-fill-mode:forwards] last:border-0">
       <div className="min-w-0">
         <Link href={`/jobs/${job.id}`} onClick={() => saveHistoryState(job.id)} className="block transition-[transform] active:scale-[0.99]"><p className="truncate text-sm font-medium text-ink"><SearchHighlight text={job.title || job.url} query={debouncedQuery} /></p></Link>
-        <p className="mt-1 flex min-w-0 flex-wrap items-center gap-1 text-[13px] text-muted"><AuthorLink job={job} highlightQuery={debouncedQuery} /><span className="shrink-0">· {formatDuration(job.duration)}</span>{matchedBvid && job.bvid && <span className="inline-flex min-w-0 items-center rounded-full bg-brandSoft px-2 py-0.5 text-xs text-brand">BV 号：<span className="truncate"><SearchHighlight text={job.bvid} query={debouncedQuery} /></span></span>}{matchedTags.map((tag) => <span key={tag} className="inline-flex min-w-0 items-center rounded-full bg-brandSoft px-2 py-0.5 text-xs text-brand">标签：<span className="truncate"><SearchHighlight text={tag} query={debouncedQuery} /></span></span>)}{matchedUrl && <span className="inline-flex items-center rounded-full bg-brandSoft px-2 py-0.5 text-xs text-brand">命中视频链接</span>}</p>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-          {job.status !== 'COMPLETED' && <span className={`rounded-full px-2 py-0.5 font-medium ${job.status === 'FAILED' ? 'bg-danger/15 text-danger' : running ? 'bg-warning/15 text-warning' : 'bg-panel text-muted'}`}>{formatStatus(job.status)}</span>}
-          <span className="tabular-nums text-muted/90">{formatDate(job.completed_at ?? job.created_at)}</span>
-        </div>
+        <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-muted">
+          <AuthorLink job={job} highlightQuery={debouncedQuery} />
+          <span className="shrink-0">· {formatDuration(job.duration)}</span>
+          <span className="shrink-0 tabular-nums text-muted/90">· {formatDate(job.completed_at ?? job.created_at)}</span>
+          {job.status !== 'COMPLETED' && <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${job.status === 'FAILED' ? 'bg-danger/15 text-danger' : running ? 'bg-warning/15 text-warning' : 'bg-panel text-muted'}`}>{formatStatus(job.status)}</span>}
+          {matchedBvid && job.bvid && <span className="inline-flex min-w-0 items-center rounded-full bg-brandSoft px-2 py-0.5 text-xs text-brand">BV 号：<span className="truncate"><SearchHighlight text={job.bvid} query={debouncedQuery} /></span></span>}
+          {matchedTags.map((tag) => <span key={tag} className="inline-flex min-w-0 items-center rounded-full bg-brandSoft px-2 py-0.5 text-xs text-brand">标签：<span className="truncate"><SearchHighlight text={tag} query={debouncedQuery} /></span></span>)}
+          {matchedUrl && <span className="inline-flex items-center rounded-full bg-brandSoft px-2 py-0.5 text-xs text-brand">命中视频链接</span>}
+        </p>
       </div>
       {!running && (
         <IconTooltip label="删除">
@@ -495,7 +458,7 @@ export function HistoryPage() {
     </li>
   }
 
-  const bulkMenuOpen = openMenuKey === BULK_ACTIONS_MENU_KEY
+  const bulkDeleteLabel = hasFilters ? '删除筛选结果' : '清理历史'
 
   return <div className="grid min-h-[calc(100dvh-3rem)] animate-fade-in-up content-start gap-5 sm:min-h-[calc(100dvh-5rem)]">
     <header className="grid gap-4 px-4 sm:px-5">
@@ -516,7 +479,11 @@ export function HistoryPage() {
       <div className="border-y border-line/70 py-3">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
           <label className="relative block min-w-0"><Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="筛选历史任务" placeholder="筛选标题、UP 主、BV 号或标签" className="min-h-11 w-full rounded-2xl bg-lift py-2 pl-10 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30" /></label>
-          <div data-history-menu-root className="relative flex gap-2"><button type="button" aria-label="更多操作" aria-expanded={bulkMenuOpen} aria-controls="history-bulk-actions" onClick={(event) => toggleHistoryMenu(BULK_ACTIONS_MENU_KEY, event.currentTarget)} disabled={previewingDelete || jobs.length === 0 || queryPending} title={queryPending ? '请等待搜索条件更新后再删除' : undefined} className="grid h-11 w-11 place-items-center rounded-2xl bg-lift text-muted hover:bg-line/70 hover:text-ink disabled:opacity-40"><MoreHorizontal size={18} /></button>{bulkMenuOpen && <div id="history-bulk-actions" role="group" aria-label="历史批量操作" className="absolute right-0 top-12 z-30 w-56 origin-top-right rounded-2xl border border-line bg-panel p-2 shadow-cardHover"><button type="button" onClick={() => void openDeletePreview()} className="flex min-h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-sm text-ink transition-colors hover:bg-lift"><Trash2 size={15} className="text-danger" />{hasFilters ? '删除筛选结果' : '清理历史'}</button></div>}</div>
+          <IconTooltip label={bulkDeleteLabel}>
+            <button type="button" aria-label={bulkDeleteLabel} onClick={() => void openDeletePreview()} disabled={previewingDelete || jobs.length === 0 || queryPending} title={queryPending ? '请等待搜索条件更新后再删除' : undefined} className="grid h-11 w-11 place-items-center rounded-2xl bg-lift text-muted hover:bg-line/70 hover:text-danger disabled:opacity-40">
+              <Trash2 size={18} />
+            </button>
+          </IconTooltip>
         </div>
       </div>
       <div className="py-3">

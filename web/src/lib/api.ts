@@ -174,27 +174,6 @@ async function getErrorMessage(response: Response): Promise<string> {
   return text
 }
 
-async function requestBlob(path: string): Promise<{blob: Blob; filename?: string}> {
-  const headers = new Headers()
-  const token = getApiToken()
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`)
-  }
-
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers,
-    credentials: 'include',
-  })
-  if (!response.ok) {
-    throw new Error((await getErrorMessage(response)) || `HTTP ${response.status}`)
-  }
-
-  const disposition = response.headers.get('content-disposition') ?? ''
-  const filenameMatch = disposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^"]+)"?/)
-  const filename = filenameMatch?.[1] ? decodeURIComponent(filenameMatch[1]) : filenameMatch?.[2]
-  return {blob: await response.blob(), filename}
-}
-
 export function getConfigDefaults() {
   return request<{ok: true; defaults: ConfigDefaults}>('/v1/config/defaults')
 }
@@ -359,10 +338,11 @@ export function resummarizeJob(jobId: string, options: JobOptionOverrides) {
 // POST /v1/jobs/{id}/resume（总结改为服务端自动续跑后不再需要前端驱动）、GET /v1/usage。
 // 真要接入时去 routes/jobs.py / routes/config.py 看签名重新加。
 
-export function getJob(jobId: string, init?: RequestInit) {
+export function getJob(jobId: string, init?: RequestInit & {lite?: boolean}) {
   // init 主要是为了 useJob 透传 AbortController.signal：jobId 切换时取消上一个请求，
   // 避免旧 jobId 的响应晚到覆盖新 jobId 的数据。
-  return request<{ok: true; job: Job}>(`/v1/jobs/${jobId}`, init)
+  const {lite, ...requestInit} = init ?? {}
+  return request<{ok: true; job: Job}>(`/v1/jobs/${jobId}${lite ? '?lite=true' : ''}`, requestInit)
 }
 
 export function retryJob(jobId: string, options: JobOptionOverrides = {}) {
@@ -442,10 +422,6 @@ export function executeBulkDelete(previewToken: string) {
     method: 'POST',
     body: JSON.stringify({preview_token: previewToken}),
   })
-}
-
-export function downloadJobAudio(jobId: string) {
-  return requestBlob(`/v1/jobs/${jobId}/audio`)
 }
 
 export interface UpVideo {

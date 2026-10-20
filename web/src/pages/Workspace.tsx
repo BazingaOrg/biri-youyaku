@@ -4,7 +4,6 @@ import {useLocation} from 'wouter'
 import {
   cancelJob,
   createJob,
-  downloadJobAudio,
   getConfigDefaults,
   getJob,
   resummarizeJob,
@@ -12,8 +11,6 @@ import {
 } from '../lib/api'
 import type {ConfigDefaults, Job, JobOptionOverrides} from '../lib/api'
 import {isRunning} from '../lib/jobStatus'
-import {triggerDownload} from '../lib/download'
-import {transcriptToSrt} from '../lib/subtitle'
 import {clearActive, readActive, subscribeActive, writeActive} from '../lib/activeJob'
 import {useJob} from '../hooks/useJob'
 import {useJobStream} from '../hooks/useJobStream'
@@ -271,37 +268,6 @@ export function Workspace({jobId}: WorkspaceProps) {
     }
   }
 
-  const downloadAudio = async () => {
-    if (!jobId) return
-    const taskName = job?.title || undefined
-    try {
-      const {blob, filename} = await downloadJobAudio(jobId)
-      triggerDownload(blob, filename || `${job?.title || jobId}.wav`)
-      toast.success('音频已下载', undefined, {taskName})
-    } catch (err) {
-      toast.error('下载音频失败', err instanceof Error ? err.message : '请重试', {taskName})
-    }
-  }
-
-  const downloadMarkdown = () => {
-    if (!job?.summary) return
-    const blob = new Blob([job.summary], {type: 'text/markdown;charset=utf-8'})
-    triggerDownload(blob, `${job.title || 'summary'}.md`)
-    toast.success('Markdown 已下载', undefined, {taskName: job.title || undefined})
-  }
-
-  const downloadSubtitle = () => {
-    const taskName = job?.title || undefined
-    const srt = job?.transcript?.length ? transcriptToSrt(job.transcript) : ''
-    if (!srt) {
-      toast.error('没有可下载的字幕', undefined, {taskName})
-      return
-    }
-    const blob = new Blob([srt], {type: 'application/x-subrip;charset=utf-8'})
-    triggerDownload(blob, `${job?.title || 'subtitle'}.srt`)
-    toast.success('字幕已下载', undefined, {taskName})
-  }
-
   const goNew = () => {
     clearActive()
     navigate('/')
@@ -375,9 +341,6 @@ export function Workspace({jobId}: WorkspaceProps) {
             job={job}
             onNew={goNew}
             onOpenHistory={openHistory}
-            onDownloadAudio={downloadAudio}
-            onDownloadMarkdown={downloadMarkdown}
-            onDownloadSubtitle={downloadSubtitle}
             onResummarize={() => setResummaryConfirmOpen(true)}
             resummarizeBusy={actionBusy}
           />

@@ -505,6 +505,11 @@ async def run_until_transcript(job_id: str) -> None:
                 )
         _raise_if_canceled(job_id)
         repo.set_transcript(job_id, items)
+        stored = repo.get_job(job_id)
+        if stored is not None and stored.audio_path:
+            from biri_youyaku.jobs.cleanup import discard_job_audio
+
+            discard_job_audio(stored, touch=False)
         # 带前 3 行 preview 一起发出去，前端不用等 refresh 就能渲染「字幕已就绪」预览
         transcript_preview = [
             {"start": float(item.start), "end": float(item.end), "text": item.text}
@@ -595,7 +600,7 @@ async def _do_summarize(job_id: str, stage: _RunStage) -> None:
     try:
         from biri_youyaku.knowledge import try_register_job
 
-        try_register_job(job_id)
+        await asyncio.to_thread(try_register_job, job_id)
     except Exception:
         logger.exception("knowledge register hook failed for job %s", job_id)
 

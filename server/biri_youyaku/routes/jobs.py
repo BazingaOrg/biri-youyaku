@@ -256,12 +256,12 @@ def serialize_job(job: Job, *, lite: bool = False) -> dict:
         "summary": None if lite else repo.read_summary(job),
         "options": job.options.as_dict(),
         "option_overrides": job.option_overrides or {},
-        "audio_available": _has_audio(job),
+        "audio_available": job.audio_path is not None if lite else _has_audio(job),
         "email_error": job.email_error,
         "tags": job.tags or [],
     }
     if lite:
-        payload["summary_available"] = repo.summary_file_exists(job)
+        payload["summary_available"] = job.summary_path is not None
     return payload
 
 
@@ -457,11 +457,11 @@ async def execute_bulk_delete(payload: BulkDeleteExecutePayload) -> dict:
 
 
 @router.get("/jobs/{job_id}")
-async def get_job(job_id: str) -> dict:
+async def get_job(job_id: str, lite: bool = Query(default=False)) -> dict:
     job = repo.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    return {"ok": True, "job": serialize_job(job)}
+    return {"ok": True, "job": serialize_job(job, lite=lite)}
 
 
 @router.get("/jobs/{job_id}/stream")

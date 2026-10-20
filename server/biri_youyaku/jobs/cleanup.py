@@ -46,6 +46,13 @@ def is_auto_job_purge_eligible(job: Job) -> bool:
 # --- 单 job 文件级清理 ---------------------------------------------------------
 
 
+def _resolved_path(path: Path) -> Path:
+    try:
+        return path.expanduser().resolve()
+    except OSError:
+        return path
+
+
 def delete_job_files(job: Job, *, audio_only: bool = False) -> None:
     if job.audio_path:
         audio_path = Path(job.audio_path)
@@ -73,7 +80,9 @@ def collect_job_file_cleanup_targets(job: Job) -> list[dict[str, str]]:
     targets: list[dict[str, str]] = []
     if job.audio_path:
         audio_path = Path(job.audio_path)
-        targets.append({"job_id": job.id, "file_type": "audio", "path": str(audio_path)})
+        targets.append(
+            {"job_id": job.id, "file_type": "audio", "path": str(_resolved_path(audio_path))}
+        )
         try:
             siblings = list(audio_path.parent.glob(f"{job.id}*"))
         except OSError:
@@ -82,12 +91,16 @@ def collect_job_file_cleanup_targets(job: Job) -> list[dict[str, str]]:
                 {
                     "job_id": job.id,
                     "file_type": "audio_siblings",
-                    "path": str(audio_path.parent),
+                    "path": str(_resolved_path(audio_path.parent)),
                 }
             )
         else:
             targets.extend(
-                {"job_id": job.id, "file_type": "audio", "path": str(sibling)}
+                {
+                    "job_id": job.id,
+                    "file_type": "audio",
+                    "path": str(_resolved_path(sibling)),
+                }
                 for sibling in siblings
                 if sibling.is_file()
             )
@@ -96,24 +109,26 @@ def collect_job_file_cleanup_targets(job: Job) -> list[dict[str, str]]:
 
         summary_path = summary_storage.resolve_stored_path(job.summary_path)
         targets.append(
-            {"job_id": job.id, "file_type": "summary", "path": str(summary_path)}
+            {
+                "job_id": job.id,
+                "file_type": "summary",
+                "path": str(_resolved_path(summary_path)),
+            }
         )
     return targets
 
 
 def delete_job_file_targets_with_result(targets: list[dict[str, str]]) -> list[dict[str, str]]:
     """Delete a pre-commit file snapshot and return any post-commit failures."""
-    from biri_youyaku.modules.storage import summary as summary_storage
-
     failures: list[dict[str, str]] = []
     for target in targets:
-        raw = target["path"]
-        if target["file_type"] == "summary":
-            path = summary_storage.resolve_stored_path(raw)
-        else:
-            path = Path(raw)
+        path = Path(target["path"])
         try:
-            if path.is_file():
+            if target["file_type"] == "audio_siblings":
+                for sibling in path.glob(f"{target['job_id']}*"):
+                    if sibling.is_file():
+                        sibling.unlink()
+            elif path.is_file():
                 path.unlink()
         except OSError:
             logger.warning(
@@ -123,9 +138,15 @@ def delete_job_file_targets_with_result(targets: list[dict[str, str]]) -> list[d
     return failures
 
 
-def delete_job_files_with_result(job: Job) -> list[dict[str, str]]:
-    """Compatibility wrapper for callers that do not need transaction snapshots."""
-    return delete_job_file_targets_with_result(collect_job_file_cleanup_targets(job))
+def discard_job_audio(job: Job, *, touch: bool = True) -> bool:
+    if not job.audio_path:
+        return False
+    delete_job_files(job, audio_only=True)
+    leftover = Path(job.audio_path)
+    if leftover.is_file():
+        return False
+    repo.clear_audio_path(job.id, touch=touch)
+    return True
 
 
 def enqueue_pending_file_cleanup(failures: list[dict[str, str]]) -> None:
@@ -186,11 +207,11 @@ def retry_pending_file_cleanup_once() -> int:
 # --- 主循环：每轮做哪些事 -------------------------------------------------------
 
 
-async def cleanup_once() -> dict[str, int]:
+def cleanup_once_sync() -> dict[str, int]:
     """每小时跑一次的「文件级 + 任务级」常规清理。
 
     A0 retention matrix (automatic only; manual delete unchanged):
-    - audio_path: after audio_retention_days, delete file(s) and clear path; job stays
+    - audio_path: leftover ASR files after audio_retention_days; job stays
     - COMPLETED or summary_path set: never auto-delete job/summary/transcript
     - TRANSCRIPT_READY: never auto-delete
     - FAILED/CANCELED with no summary: after job_retention_days, delete files + row
@@ -201,10 +222,8 @@ async def cleanup_once() -> dict[str, int]:
     audio_removed = 0
     jobs_removed = 0
 
-    for job in repo.list_jobs_by_status(RETENTION_DELETE_JOB_STATUSES):
-        if job.audio_path and job.updated_at < audio_cutoff:
-            delete_job_files(job, audio_only=True)
-            repo.clear_audio_path(job.id)
+    for job in repo.list_jobs_with_expired_audio(RETENTION_DELETE_JOB_STATUSES, audio_cutoff):
+        if discard_job_audio(job, touch=False):
             audio_removed += 1
 
     expired_jobs = repo.list_jobs_by_status_before(AUTO_JOB_DELETE_STATUSES, job_cutoff)
@@ -232,6 +251,10 @@ async def cleanup_once() -> dict[str, int]:
         "jobs_removed": jobs_removed,
         "knowledge_soft_purged": knowledge_purged,
     }
+
+
+async def cleanup_once() -> dict[str, int]:
+    return await asyncio.to_thread(cleanup_once_sync)
 
 
 # --- P3 新增：僵尸任务、孤儿文件、DB 维护 -----------------------------------
@@ -328,7 +351,7 @@ def _scan_orphan_distill_dirs(directory: Path, retention_days: int) -> int:
     return removed
 
 
-async def scan_orphans_once() -> dict[str, int]:
+def scan_orphans_once_sync() -> dict[str, int]:
     """文件 → DB 反向校验：DB 不引用的文件清掉。"""
     retry_pending_file_cleanup_once()
     retention = max(0, ORPHAN_FILE_RETENTION_DAYS)
@@ -352,6 +375,10 @@ async def scan_orphans_once() -> dict[str, int]:
         "summary_orphans": summary_orphans,
         "distill_orphans": distill_orphans,
     }
+
+
+async def scan_orphans_once() -> dict[str, int]:
+    return await asyncio.to_thread(scan_orphans_once_sync)
 
 
 def clean_tempfile_residues() -> int:

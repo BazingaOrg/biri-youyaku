@@ -14,12 +14,13 @@ test('completed job copy sits on the tab row and follows the active tab', async 
   assert.doesNotMatch(doneSource, /onCopy/)
 })
 
-test('resummarize is a top-level completed-job action', async () => {
+test('completed job actions stay on the toolbar without a more menu', async () => {
   const doneSource = await readFile(new URL('../src/pages/workspace/DoneView.tsx', import.meta.url), 'utf8')
-  const moreBlock = doneSource.slice(doneSource.indexOf('<details'), doneSource.indexOf('</details>'))
 
   assert.match(doneSource, /onClick=\{onResummarize\}/)
   assert.match(doneSource, /\{resummarizeBusy \? '重新总结中…' : '重新总结'\}/)
-  assert.doesNotMatch(moreBlock, /重新总结/)
-  assert.match(moreBlock, /下载 Markdown/)
+  assert.doesNotMatch(doneSource, /<details/)
+  assert.doesNotMatch(doneSource, /更多/)
+  assert.doesNotMatch(doneSource, /下载 Markdown/)
+  assert.doesNotMatch(doneSource, /onDownload/)
 })

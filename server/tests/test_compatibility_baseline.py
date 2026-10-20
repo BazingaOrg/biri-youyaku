@@ -133,7 +133,7 @@ def test_serialize_job_detail_vs_lite(monkeypatch, tmp_path):
     saved.unlink()
     missing = repo.get_job(job.id)
     assert missing is not None
-    assert serialize_job(missing, lite=True)["summary_available"] is False
+    assert serialize_job(missing, lite=True)["summary_available"] is True
     assert serialize_job(missing, lite=False)["summary"] is None
 
 
