@@ -283,17 +283,6 @@ export function Workspace({jobId}: WorkspaceProps) {
     }
   }
 
-  const copySummary = async () => {
-    if (!job?.summary) return
-    const taskName = job.title || undefined
-    try {
-      await navigator.clipboard.writeText(job.summary)
-      toast.success('总结全文已复制', undefined, {taskName})
-    } catch {
-      toast.error('复制失败', '请手动选中复制', {taskName})
-    }
-  }
-
   const downloadMarkdown = () => {
     if (!job?.summary) return
     const blob = new Blob([job.summary], {type: 'text/markdown;charset=utf-8'})
@@ -387,7 +376,6 @@ export function Workspace({jobId}: WorkspaceProps) {
             onNew={goNew}
             onOpenHistory={openHistory}
             onDownloadAudio={downloadAudio}
-            onCopy={copySummary}
             onDownloadMarkdown={downloadMarkdown}
             onDownloadSubtitle={downloadSubtitle}
             onResummarize={() => setResummaryConfirmOpen(true)}

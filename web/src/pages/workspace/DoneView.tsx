@@ -1,5 +1,5 @@
 import {type ReactNode, useRef, useState} from 'react'
-import {Captions, Copy, FileDown, History, MoreHorizontal, Music, Plus, RotateCw} from 'lucide-react'
+import {Captions, FileDown, History, MoreHorizontal, Music, Plus, RotateCw} from 'lucide-react'
 import {resendEmail, type Job} from '../../lib/api'
 import {useToast} from '../../components/ToastProvider'
 import {MetaBar} from './MetaBar'
@@ -10,7 +10,6 @@ interface DoneViewProps {
   onNew: () => void
   onOpenHistory: () => void
   onDownloadAudio: () => void
-  onCopy: () => void
   onDownloadMarkdown: () => void
   onDownloadSubtitle: () => void
   onResummarize: () => void
@@ -43,7 +42,6 @@ export function DoneView({
   onNew,
   onOpenHistory,
   onDownloadAudio,
-  onCopy,
   onDownloadMarkdown,
   onDownloadSubtitle,
   onResummarize,
@@ -72,12 +70,12 @@ export function DoneView({
       <div className="flex flex-wrap items-center justify-center gap-2">
         <button
           type="button"
-          onClick={onCopy}
-          disabled={!job.summary}
-          className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brandSolid px-3.5 text-sm font-medium text-onBrand shadow-card transition-[transform,filter] duration-150 ease-out hover:brightness-105 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={onResummarize}
+          disabled={resummarizeBusy || !job.transcript?.length}
+          className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-lift px-3.5 text-sm text-muted transition-[transform,background-color,color] duration-150 ease-out hover:bg-line/70 hover:text-ink active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Copy size={16} />
-          复制总结全文
+          <RotateCw size={16} />
+          {resummarizeBusy ? '重新总结中…' : '重新总结'}
         </button>
         <button
           type="button"
@@ -101,12 +99,6 @@ export function DoneView({
             更多
           </summary>
           <div className="absolute right-0 top-full z-20 mt-2 grid w-48 gap-1 rounded-2xl border border-line/70 bg-panel/95 p-1.5 shadow-card backdrop-blur">
-            <MoreAction
-              icon={<RotateCw size={16} />}
-              label={resummarizeBusy ? '重新总结中…' : '重新总结'}
-              onClick={() => runMoreAction(onResummarize)}
-              disabled={resummarizeBusy || !job.transcript?.length}
-            />
             <MoreAction
               icon={<FileDown size={16} />}
               label="下载 Markdown"

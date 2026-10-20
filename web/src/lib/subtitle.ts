@@ -40,3 +40,24 @@ export function transcriptToSrt(items: Cue[]): string {
   })
   return blocks.length > 0 ? `${blocks.join('\n\n')}\n` : ''
 }
+
+function formatCueTime(seconds: number): string {
+  const total = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0
+  const mins = Math.floor(total / 60)
+  const secs = total % 60
+  if (mins >= 60) {
+    const hours = Math.floor(mins / 60)
+    return `${hours}:${pad(mins % 60)}:${pad(secs)}`
+  }
+  return `${mins}:${pad(secs)}`
+}
+
+export function transcriptToPlainText(items: Cue[]): string {
+  return items
+    .map((item) => {
+      const text = (item.text ?? '').trim()
+      return text ? `${formatCueTime(item.start)}  ${text}` : ''
+    })
+    .filter(Boolean)
+    .join('\n')
+}

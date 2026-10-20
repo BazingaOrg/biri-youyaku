@@ -1,9 +1,11 @@
 import {useMemo, useState} from 'react'
 import ReactMarkdown from 'react-markdown'
-import {Search} from 'lucide-react'
+import {Copy, Search} from 'lucide-react'
 import type {Job} from '../../lib/api'
 import {formatDuration} from '../../lib/format'
+import {transcriptToPlainText} from '../../lib/subtitle'
 import {PROSE} from '../../lib/prose'
+import {useToast} from '../../components/ToastProvider'
 
 type Tab = 'notes' | 'transcript'
 
@@ -11,30 +13,57 @@ export function SummaryTabs({job}: {job: Job}) {
   const summary = job.summary ?? ''
   const hasTranscript = (job.transcript?.length ?? 0) > 0
   const [tab, setTab] = useState<Tab>('notes')
+  const toast = useToast()
 
   const tabs: Array<[Tab, string]> = [['notes', '笔记']]
-  if (hasTranscript) tabs.push(['transcript', '字幕原文'])
+  if (hasTranscript) tabs.push(['transcript', '原文'])
+  const copyLabel = tab === 'notes' ? '复制笔记' : '复制原文'
+  const copyText = tab === 'notes' ? summary : transcriptToPlainText(job.transcript ?? [])
+
+  const copyCurrent = async () => {
+    const text = copyText.trim()
+    if (!text) return
+    const taskName = job.title || undefined
+    try {
+      await navigator.clipboard.writeText(copyText)
+      toast.success(tab === 'notes' ? '笔记已复制' : '原文已复制', undefined, {taskName})
+    } catch {
+      toast.error('复制失败', '请手动选中复制', {taskName})
+    }
+  }
 
   return (
     <section className="min-w-0 w-full rounded-3xl bg-panel p-4 shadow-card sm:p-5">
-      <div className="mb-4 inline-flex gap-1 rounded-2xl bg-lift p-1 text-sm">
-        {tabs.map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setTab(key)}
-            className={`min-h-9 rounded-xl px-4 transition-[background-color,color] ${
-              tab === key ? 'bg-brandSolid text-onBrand shadow-card' : 'text-muted hover:text-ink'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="mb-4 flex min-w-0 items-center gap-2">
+        <div className="inline-flex min-w-0 gap-1 rounded-2xl bg-lift p-1 text-sm">
+          {tabs.map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={`min-h-9 rounded-xl px-4 transition-[background-color,color] ${
+                tab === key ? 'bg-brandSolid text-onBrand shadow-card' : 'text-muted hover:text-ink'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => void copyCurrent()}
+          disabled={!copyText.trim()}
+          aria-label={copyLabel}
+          className="ml-auto inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl px-2.5 text-sm text-muted transition-[transform,background-color,color] duration-150 ease-out hover:bg-lift hover:text-ink active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Copy size={15} />
+          {copyLabel}
+        </button>
       </div>
 
       <div key={tab}>
         {tab === 'notes' &&
-          (summary ? <NotesView markdown={summary} /> : <p className="text-sm text-muted">没有总结内容</p>)}
+          (summary ? <NotesView markdown={summary} /> : <p className="text-sm text-muted">没有笔记内容</p>)}
         {tab === 'transcript' && hasTranscript && <TranscriptList job={job} />}
       </div>
     </section>
