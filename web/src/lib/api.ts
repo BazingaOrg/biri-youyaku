@@ -566,6 +566,7 @@ export interface LibraryListResponse {
   ok: true
   items: LibraryListItem[]
   next_cursor?: string | null
+  total: number
 }
 
 export type SearchScope = 'all' | 'notes' | 'subs'
@@ -929,10 +930,12 @@ export function listLibrary(
         : Array.isArray(payload.results)
           ? payload.results
           : []
+    const items = itemsRaw.map(normalizeLibraryItem).filter((item): item is LibraryListItem => item != null)
     return {
       ok: true as const,
-      items: itemsRaw.map(normalizeLibraryItem).filter((item): item is LibraryListItem => item != null),
+      items,
       next_cursor: asString(payload.next_cursor) || null,
+      total: asNumber(payload.total) ?? items.length,
     }
   })
 }

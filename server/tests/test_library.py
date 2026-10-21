@@ -355,6 +355,17 @@ def test_library_tag_and_up_are_not_keyword_concat(monkeypatch, tmp_path):
     up_bvids = [item["bvid"] for item in by_up.json()["items"]]
     assert "BV1tagaaa" in up_bvids
     assert "BV1tagbbb" not in up_bvids
+    assert by_tag.json()["total"] == 1
+    assert by_up.json()["total"] == 1
+
+    paged = client.get("/v1/library", params={"limit": 1})
+    assert paged.status_code == 200
+    page = paged.json()
+    assert len(page["items"]) == 1
+    assert page["next_cursor"]
+    assert page["total"] == 2
+    rest = client.get("/v1/library", params={"limit": 1, "cursor": page["next_cursor"]})
+    assert rest.json()["total"] == 2
 
 
 def test_library_search_empty_q_400(monkeypatch, tmp_path):

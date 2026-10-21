@@ -35,6 +35,7 @@ export function LibraryPage() {
   const [error, setError] = useState<'initial' | 'partial' | null>(null)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [trashCount, setTrashCount] = useState(0)
+  const [total, setTotal] = useState<number | null>(null)
   const [retryNonce, setRetryNonce] = useState(0)
   const loadedPagesRef = useRef(1)
   const nextCursorRef = useRef<string | null>(null)
@@ -63,12 +64,14 @@ export function LibraryPage() {
         }
         if (!active) return
         setItems(collected)
+        setTotal(page.total)
         loadedPagesRef.current = pages
         nextCursorRef.current = cursor
         setNextCursor(cursor)
       } catch {
         if (!active || controller.signal.aborted) return
         setItems([])
+        setTotal(null)
         setError('initial')
       } finally {
         if (active) setLoading(false)
@@ -164,7 +167,7 @@ export function LibraryPage() {
       <div className="mt-7 flex flex-wrap items-center gap-2">
         <p className="mr-auto text-[13px] text-muted">
           {filtered ? '' : '全部 · '}
-          {loading ? '…' : `${items.length} 篇笔记`}
+          {loading || total == null ? '…' : `${total} 篇笔记`}
         </p>
         {up ? (
           <Chip href="/" onRemove={() => setParams({up: null})}>

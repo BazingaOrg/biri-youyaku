@@ -147,7 +147,73 @@ def list_library(
         next_cursor = encode_cursor(
             {"t": last["saved_at"] or 0, "k": last["kind"], "i": last["id"]}
         )
-    return {"ok": True, "items": items, "next_cursor": next_cursor}
+    total = _count_library(
+        mid=mid,
+        tag_value=tag_value,
+        jobs_only=not settings.knowledge_register_enabled,
+    )
+    return {"ok": True, "items": items, "next_cursor": next_cursor, "total": total}
+
+
+def _count_library(*, mid: int | None, tag_value: str | None, jobs_only: bool) -> int:
+    """Match the list filters, ignoring the page cursor."""
+    if jobs_only:
+        where = [
+            "j.status = ?",
+            "IFNULL(j.summary_path, '') != ''",
+            "IFNULL(r.status, '') != 'purged'",
+        ]
+        params: list[Any] = [JobStatus.COMPLETED.value]
+        if mid is not None:
+            where.append("j.mid = ?")
+            params.append(mid)
+        if tag_value is not None:
+            where.append(_tag_exists_sql("j.tags_json"))
+            params.append(tag_value)
+        sql = f"""
+            SELECT COUNT(*) AS n
+            FROM jobs j
+            LEFT JOIN knowledge_reconcile r ON r.job_id = j.id
+            WHERE {' AND '.join(where)}
+        """
+        count_params = params
+    else:
+        doc_where = ["d.deleted_at IS NULL"]
+        job_where = [
+            "j.status = ?",
+            "IFNULL(j.summary_path, '') != ''",
+            "l.job_id IS NULL",
+            "IFNULL(r.status, '') != 'purged'",
+        ]
+        doc_params: list[Any] = []
+        job_params: list[Any] = [JobStatus.COMPLETED.value]
+        if mid is not None:
+            doc_where.append("d.mid = ?")
+            job_where.append("j.mid = ?")
+            doc_params.append(mid)
+            job_params.append(mid)
+        if tag_value is not None:
+            doc_where.append(_tag_exists_sql("d.tags_json"))
+            job_where.append(_tag_exists_sql("j.tags_json"))
+            doc_params.append(tag_value)
+            job_params.append(tag_value)
+        sql = f"""
+            SELECT
+              (
+                SELECT COUNT(*) FROM knowledge_documents d
+                WHERE {' AND '.join(doc_where)}
+              ) + (
+                SELECT COUNT(*)
+                FROM jobs j
+                LEFT JOIN knowledge_job_links l ON l.job_id = j.id
+                LEFT JOIN knowledge_reconcile r ON r.job_id = j.id
+                WHERE {' AND '.join(job_where)}
+              ) AS n
+        """
+        count_params = [*doc_params, *job_params]
+    with connect() as connection:
+        row = connection.execute(sql, count_params).fetchone()
+    return int(row["n"] or 0)
 
 
 def _list_jobs_only(

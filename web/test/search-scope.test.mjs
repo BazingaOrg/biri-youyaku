@@ -18,6 +18,8 @@ test('search page scopes and highlights without inventing library-wide totals', 
   assert.match(omniSource, /生成笔记/)
   assert.match(librarySource, /OmniBar/)
   assert.match(librarySource, /grid min-w-0 gap-1/)
+  assert.match(librarySource, /\$\{total\} 篇笔记/)
+  assert.doesNotMatch(librarySource, /\$\{items\.length\} 篇笔记/)
   assert.doesNotMatch(librarySource, /开始总结/)
   assert.doesNotMatch(librarySource, /清理历史/)
 })
