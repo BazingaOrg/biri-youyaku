@@ -1,6 +1,7 @@
 import {useState} from 'react'
 import {Boxes} from 'lucide-react'
 import {ApiError, getLatestDistillRun, startDistill, type DistillRun} from '../../lib/api'
+import {Button} from '../../components/Button'
 import {ConfirmDialog} from '../../components/ConfirmDialog'
 import {useToast} from '../../components/ToastProvider'
 
@@ -53,14 +54,10 @@ export function DistillButton({mid, onStarted}: {mid: number; onStarted: (run: D
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="inline-flex min-h-10 w-fit shrink-0 items-center gap-2 rounded-2xl bg-lift px-3 text-sm text-ink transition-[transform,background-color,color] hover:bg-line/70 active:scale-95"
-      >
+      <Button variant="secondary" onClick={() => setOpen(true)}>
         <Boxes size={15} />
         蒸馏语料
-      </button>
+      </Button>
       <ConfirmDialog
         open={open}
         title="蒸馏该 UP 的语料"

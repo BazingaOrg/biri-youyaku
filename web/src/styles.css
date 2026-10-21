@@ -119,10 +119,9 @@
   }
 }
 
-html,
-body {
-  /* 兜底：任何漏网的宽元素都不会让整页横向滚动 */
-  overflow-x: hidden;
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
 }
 
 body {

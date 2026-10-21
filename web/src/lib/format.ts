@@ -17,6 +17,16 @@ export function formatStatus(status: JobStatus) {
   return statusLabels[status]
 }
 
+export function formatClock(seconds?: number) {
+  if (seconds == null || Number.isNaN(seconds)) return '--:--'
+  const total = Math.max(0, Math.floor(seconds))
+  const hours = Math.floor(total / 3600)
+  const mins = Math.floor((total % 3600) / 60)
+  const secs = total % 60
+  if (hours > 0) return `${hours}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+}
+
 export function formatDuration(seconds?: number) {
   if (seconds == null || Number.isNaN(seconds)) {
     return '--:--'
@@ -65,6 +75,11 @@ export function formatDate(ms: number) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(ms))
+}
+
+export function formatSavedDay(ms?: number | null) {
+  if (ms == null || Number.isNaN(ms)) return ''
+  return new Intl.DateTimeFormat('zh-CN', {month: '2-digit', day: '2-digit'}).format(new Date(ms))
 }
 
 /** 仅年月日：UP 投稿列表跨越多年，需要带年份。 */

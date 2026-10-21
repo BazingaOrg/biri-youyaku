@@ -43,10 +43,10 @@ export function IdleView({onSubmit, onOpenHistory, onOpenKnowledge}: IdleViewPro
           <img src="/icon.svg" alt="" aria-hidden className="h-14 w-14" />
           <div>
             <h1 className="text-2xl font-semibold tracking-[-0.02em] text-ink sm:text-3xl">
-              哔哩要約
+              笔哩
             </h1>
             <p className="mt-1 text-sm leading-6 text-muted sm:text-base">
-              粘贴链接，生成笔记
+              把视频变成能回看的笔记
             </p>
           </div>
         </header>
@@ -69,7 +69,7 @@ export function IdleView({onSubmit, onOpenHistory, onOpenKnowledge}: IdleViewPro
             className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-brandSolid px-5 text-sm font-medium text-onBrand shadow-card transition-[transform,filter] duration-150 ease-out hover:brightness-105 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? <RotateCw size={18} className="animate-spin" /> : null}
-            {busy ? '正在总结…' : '开始总结'}
+            {busy ? '正在生成…' : '生成笔记'}
           </button>
         </div>
 
@@ -80,7 +80,7 @@ export function IdleView({onSubmit, onOpenHistory, onOpenKnowledge}: IdleViewPro
             className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-lift px-4 text-sm text-muted transition-[transform,background-color,color] duration-150 ease-out hover:bg-line/70 hover:text-ink active:scale-[0.97]"
           >
             <History size={17} />
-            历史
+            任务
           </button>
           <button
             type="button"
@@ -88,7 +88,7 @@ export function IdleView({onSubmit, onOpenHistory, onOpenKnowledge}: IdleViewPro
             className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-lift px-4 text-sm text-muted transition-[transform,background-color,color] duration-150 ease-out hover:bg-line/70 hover:text-ink active:scale-[0.97]"
           >
             <BookOpen size={17} />
-            搜索笔记
+            搜索
           </button>
         </nav>
       </div>

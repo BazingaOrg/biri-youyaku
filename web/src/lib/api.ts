@@ -96,6 +96,7 @@ export interface Job {
   queued?: boolean
   /** 长视频分段总结进度（transient，仅 SSE 推送）：done=已完成段数，total=总段数。 */
   summary_segment?: {done: number; total: number}
+  document_id?: string | null
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:17821'
@@ -538,6 +539,511 @@ export function getUpVideos(
   if (params.keyword) search.set('keyword', params.keyword)
   if (params.order) search.set('order', params.order)
   return request<UpVideosResponse>(`/v1/up/${mid}/videos?${search.toString()}`, init)
+}
+
+export type LibraryItemKind = 'document' | 'legacy_job'
+
+export interface LibraryListItem {
+  kind: LibraryItemKind
+  id: string
+  document_id?: string | null
+  job_id?: string | null
+  title: string
+  author?: string | null
+  mid?: number | null
+  bvid?: string | null
+  cid?: number | null
+  duration?: number | null
+  tags: string[]
+  tldr?: string | null
+  saved_at?: number | null
+  source_url?: string | null
+  legacy?: boolean
+  legacy_reason?: string | null
+}
+
+export interface LibraryListResponse {
+  ok: true
+  items: LibraryListItem[]
+  next_cursor?: string | null
+}
+
+export type SearchScope = 'all' | 'notes' | 'subs'
+
+export interface LibrarySearchHit {
+  kind: 'notes' | 'subs'
+  chunk_ord?: number | null
+  heading_path: string
+  start_sec?: number | null
+  end_sec?: number | null
+  snippet: string
+}
+
+export interface LibrarySearchMatch {
+  title: boolean
+  author: boolean
+  bvid: boolean
+  tags: string[]
+}
+
+export interface LibrarySearchGroup {
+  document_id?: string | null
+  job_id?: string | null
+  title: string
+  author?: string | null
+  mid?: number | null
+  bvid?: string | null
+  cid?: number | null
+  source_url?: string | null
+  saved_at?: number | null
+  tags: string[]
+  tldr?: string | null
+  duration?: number | null
+  legacy?: boolean
+  legacy_reason?: string | null
+  match: LibrarySearchMatch
+  hits: LibrarySearchHit[]
+  hit_counts: {notes: number; subs: number}
+  more?: boolean
+}
+
+export interface LibrarySearchResponse {
+  ok: true
+  query: string
+  scope: SearchScope
+  partial: string[]
+  next_cursor?: string | null
+  groups: LibrarySearchGroup[]
+  hit_counts?: {notes?: number; subs?: number; documents?: number} | null
+}
+
+export interface LibraryNoteChunk {
+  chunk_ord: number
+  heading_path: string
+  start_sec?: number | null
+  text: string
+}
+
+export interface LibraryTranscriptCue {
+  start: number
+  end: number
+  text: string
+  index?: number
+}
+
+export interface LibraryDocumentContent {
+  document: {
+    id: string
+    title?: string | null
+    author?: string | null
+    mid?: number | null
+    bvid?: string | null
+    cid?: number | null
+    duration?: number | null
+    tags: string[]
+    tldr?: string | null
+    source_url?: string | null
+    deleted_at?: number | null
+    expires_at?: number | null
+    job_id?: string | null
+    legacy?: boolean
+    legacy_reason?: string | null
+    subtitle_source?: string | null
+  }
+  summary: {markdown: string; content_hash?: string | null}
+  transcript: LibraryTranscriptCue[]
+  note_chunks: LibraryNoteChunk[]
+  transcript_chunks: Array<{
+    chunk_ord?: number | null
+    start_sec: number
+    end_sec?: number | null
+    text: string
+  }>
+}
+
+export interface TrashItem {
+  document_id: string
+  title?: string | null
+  author?: string | null
+  bvid?: string | null
+  deleted_at: number
+  expires_at?: number | null
+  days_left: number
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  return null
+}
+
+function asString(value: unknown, fallback = ''): string {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return fallback
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const n = Number(value)
+    return Number.isFinite(n) ? n : null
+  }
+  return null
+}
+
+function asBool(value: unknown): boolean {
+  return value === true || value === 'true' || value === 1
+}
+
+function asTags(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => asString(item).trim()).filter(Boolean)
+  }
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(value)
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => asString(item).trim()).filter(Boolean)
+      }
+    } catch {
+      return value.split(/[,，]/).map((item) => item.trim()).filter(Boolean)
+    }
+  }
+  return []
+}
+
+function asHeadingPath(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map((item) => asString(item).trim()).filter(Boolean).join(' · ')
+  }
+  return asString(value)
+}
+
+function unixMaybeMs(value: number | null): number | null {
+  if (value == null) return null
+  return value > 0 && value < 1e12 ? value * 1000 : value
+}
+
+function normalizeLibraryItem(raw: unknown): LibraryListItem | null {
+  const row = asRecord(raw)
+  if (!row) return null
+  const documentId = asString(row.document_id || row.id || row.documentId)
+  const jobId = asString(row.job_id || row.jobId) || null
+  const kind: LibraryItemKind =
+    asString(row.kind) === 'legacy_job' || (asBool(row.legacy) && !documentId)
+      ? 'legacy_job'
+      : 'document'
+  const id = kind === 'legacy_job' ? asString(jobId || row.id) : asString(documentId || row.id)
+  if (!id) return null
+  return {
+    kind,
+    id,
+    document_id: documentId || null,
+    job_id: jobId,
+    title: asString(row.title) || asString(row.url) || '未命名',
+    author: asString(row.author) || null,
+    mid: asNumber(row.mid),
+    bvid: asString(row.bvid || row.external_bvid) || null,
+    cid: asNumber(row.cid ?? row.external_cid),
+    duration: asNumber(row.duration),
+    tags: asTags(row.tags ?? row.tags_json),
+    tldr: asString(row.tldr) || null,
+    saved_at: unixMaybeMs(asNumber(row.saved_at ?? row.updated_at ?? row.created_at ?? row.completed_at)),
+    source_url: asString(row.source_url || row.url) || null,
+    legacy: asBool(row.legacy) || kind === 'legacy_job',
+    legacy_reason: asString(row.legacy_reason) || null,
+  }
+}
+
+function normalizeSearchHit(raw: unknown): LibrarySearchHit | null {
+  const row = asRecord(raw)
+  if (!row) return null
+  const kind = asString(row.kind || row.source_level)
+  const notes = kind === 'notes' || kind === 'summary' || kind === 'note'
+  return {
+    kind: notes ? 'notes' : 'subs',
+    chunk_ord: asNumber(row.chunk_ord ?? row.ord),
+    heading_path: asHeadingPath(row.heading_path ?? row.heading),
+    start_sec: asNumber(row.start_sec ?? row.start),
+    end_sec: asNumber(row.end_sec ?? row.end),
+    snippet: asString(row.snippet || row.text || row.body),
+  }
+}
+
+function normalizeSearchMatch(raw: unknown, group: Record<string, unknown>, query: string): LibrarySearchMatch {
+  const row = asRecord(raw) ?? {}
+  const tags = asTags(row.tags)
+  const q = query.trim().toLowerCase()
+  const includes = (value: unknown) => Boolean(q && asString(value).toLowerCase().includes(q))
+  return {
+    title: asBool(row.title) || includes(group.title),
+    author: asBool(row.author) || includes(group.author),
+    bvid: 'bvid' in row ? asBool(row.bvid) : includes(group.bvid),
+    tags: tags.length > 0 ? tags : asTags(group.tags).filter((tag) => includes(tag)),
+  }
+}
+
+function normalizeSearchGroup(raw: unknown, query: string): LibrarySearchGroup | null {
+  const row = asRecord(raw)
+  if (!row) return null
+  const hits = (Array.isArray(row.hits) ? row.hits : []).map(normalizeSearchHit).filter((hit): hit is LibrarySearchHit => hit != null)
+  const hitCounts = asRecord(row.hit_counts)
+  const notes = asNumber(hitCounts?.notes) ?? hits.filter((hit) => hit.kind === 'notes').length
+  const subs = asNumber(hitCounts?.subs) ?? hits.filter((hit) => hit.kind === 'subs').length
+  return {
+    document_id: asString(row.document_id) || null,
+    job_id: asString(row.job_id) || null,
+    title: asString(row.title) || '未命名',
+    author: asString(row.author) || null,
+    mid: asNumber(row.mid),
+    bvid: asString(row.bvid) || null,
+    cid: asNumber(row.cid),
+    source_url: asString(row.source_url) || null,
+    saved_at: unixMaybeMs(asNumber(row.saved_at ?? row.updated_at ?? row.created_at)),
+    tags: asTags(row.tags ?? row.tags_json),
+    tldr: asString(row.tldr) || null,
+    duration: asNumber(row.duration),
+    legacy: asBool(row.legacy),
+    legacy_reason: asString(row.legacy_reason) || null,
+    match: normalizeSearchMatch(row.match, row, query),
+    hits,
+    hit_counts: {notes, subs},
+    more: asBool(row.more),
+  }
+}
+
+function normalizeCue(raw: unknown, index: number): LibraryTranscriptCue | null {
+  const row = asRecord(raw)
+  if (!row) return null
+  const text = asString(row.text)
+  const start = asNumber(row.start ?? row.start_sec) ?? 0
+  const end = asNumber(row.end ?? row.end_sec) ?? start
+  if (!text && start === 0) return null
+  return {start, end, text, index}
+}
+
+function normalizeNoteChunk(raw: unknown, index: number): LibraryNoteChunk | null {
+  const row = asRecord(raw)
+  if (!row) return null
+  const text = asString(row.text || row.body || row.markdown || row.snippet)
+  return {
+    chunk_ord: asNumber(row.chunk_ord ?? row.ord) ?? index,
+    heading_path: asHeadingPath(row.heading_path ?? row.heading),
+    start_sec: asNumber(row.start_sec ?? row.start),
+    text,
+  }
+}
+
+export function normalizeLibraryDocumentContent(raw: unknown): LibraryDocumentContent {
+  const root = asRecord(raw) ?? {}
+  const payload = asRecord(root.document) ? root : {document: root, ...root}
+  const document = asRecord(payload.document) ?? payload
+  const summaryRaw = asRecord(payload.summary) ?? {}
+  const markdown = asString(
+    summaryRaw.markdown || summaryRaw.text || payload.markdown || payload.summary_markdown || payload.summary,
+  )
+  const cuesSource =
+    (Array.isArray(payload.transcript) ? payload.transcript : null) ??
+    (Array.isArray(asRecord(payload.transcript)?.cues) ? (asRecord(payload.transcript)?.cues as unknown[]) : null) ??
+    (Array.isArray(payload.cues) ? payload.cues : [])
+  const noteSource =
+    (Array.isArray(payload.note_chunks) ? payload.note_chunks : null) ??
+    (Array.isArray(payload.rag_chunks) ? payload.rag_chunks : null) ??
+    (Array.isArray(payload.chunks) ? payload.chunks : [])
+  const transcriptChunksSource = Array.isArray(payload.transcript_chunks) ? payload.transcript_chunks : []
+  return {
+    document: {
+      id: asString(document.id || document.document_id || payload.id),
+      title: asString(document.title) || null,
+      author: asString(document.author) || null,
+      mid: asNumber(document.mid),
+      bvid: asString(document.bvid || document.external_bvid) || null,
+      cid: asNumber(document.cid ?? document.external_cid),
+      duration: asNumber(document.duration),
+      tags: asTags(document.tags ?? document.tags_json),
+      tldr: asString(document.tldr) || null,
+      source_url: asString(document.source_url || document.url) || null,
+      deleted_at: unixMaybeMs(asNumber(document.deleted_at)),
+      expires_at: unixMaybeMs(asNumber(document.expires_at)),
+      job_id: asString(document.job_id || payload.job_id) || null,
+      legacy: asBool(document.legacy),
+      legacy_reason: asString(document.legacy_reason) || null,
+      subtitle_source: asString(document.subtitle_source) || null,
+    },
+    summary: {
+      markdown,
+      content_hash: asString(summaryRaw.content_hash || payload.content_hash || document.content_hash) || null,
+    },
+    transcript: cuesSource.map(normalizeCue).filter((cue): cue is LibraryTranscriptCue => cue != null),
+    note_chunks: noteSource.map(normalizeNoteChunk).filter((chunk): chunk is LibraryNoteChunk => chunk != null),
+    transcript_chunks: transcriptChunksSource.map((item, index) => {
+      const row = asRecord(item) ?? {}
+      return {
+        chunk_ord: asNumber(row.chunk_ord ?? row.ord) ?? index,
+        start_sec: asNumber(row.start_sec ?? row.start) ?? 0,
+        end_sec: asNumber(row.end_sec ?? row.end),
+        text: asString(row.text || row.body || row.snippet),
+      }
+    }),
+  }
+}
+
+function normalizeTrashItem(raw: unknown): TrashItem | null {
+  const row = asRecord(raw)
+  if (!row) return null
+  const documentId = asString(row.document_id || row.id)
+  if (!documentId) return null
+  const deletedAt = unixMaybeMs(asNumber(row.deleted_at)) ?? 0
+  const expiresAt = unixMaybeMs(asNumber(row.expires_at))
+  const daysLeft =
+    asNumber(row.days_left) ??
+    (expiresAt != null ? Math.max(0, Math.ceil((expiresAt - Date.now()) / 86_400_000)) : 0)
+  return {
+    document_id: documentId,
+    title: asString(row.title) || null,
+    author: asString(row.author) || null,
+    bvid: asString(row.bvid || row.external_bvid) || null,
+    deleted_at: deletedAt,
+    expires_at: expiresAt,
+    days_left: daysLeft,
+  }
+}
+
+export function listLibrary(
+  params: {cursor?: string | null; up?: string; tag?: string; limit?: number} = {},
+  init?: RequestInit,
+) {
+  const search = new URLSearchParams()
+  if (params.limit) search.set('limit', String(params.limit))
+  if (params.cursor) search.set('cursor', params.cursor)
+  if (params.up) search.set('up', params.up)
+  if (params.tag) search.set('tag', params.tag)
+  const suffix = search.toString() ? `?${search.toString()}` : ''
+  return request<Record<string, unknown>>(`/v1/library${suffix}`, init).then((payload) => {
+    const itemsRaw = Array.isArray(payload.items)
+      ? payload.items
+      : Array.isArray(payload.documents)
+        ? payload.documents
+        : Array.isArray(payload.results)
+          ? payload.results
+          : []
+    return {
+      ok: true as const,
+      items: itemsRaw.map(normalizeLibraryItem).filter((item): item is LibraryListItem => item != null),
+      next_cursor: asString(payload.next_cursor) || null,
+    }
+  })
+}
+
+export function searchLibrary(
+  params: {q: string; scope?: SearchScope; cursor?: string | null; limit?: number},
+  init?: RequestInit,
+) {
+  const search = new URLSearchParams()
+  search.set('q', params.q)
+  if (params.scope) search.set('scope', params.scope)
+  if (params.cursor) search.set('cursor', params.cursor)
+  if (params.limit) search.set('limit', String(params.limit))
+  return request<Record<string, unknown>>(`/v1/library/search?${search.toString()}`, init).then((payload) => {
+    const query = asString(payload.query, params.q)
+    const groupsRaw = Array.isArray(payload.groups) ? payload.groups : Array.isArray(payload.results) ? payload.results : []
+    const partial = Array.isArray(payload.partial) ? payload.partial.map((item) => asString(item)).filter(Boolean) : []
+    const hitCounts = asRecord(payload.hit_counts)
+    return {
+      ok: true as const,
+      query,
+      scope: (asString(payload.scope, params.scope ?? 'all') as SearchScope) || 'all',
+      partial,
+      next_cursor: asString(payload.next_cursor) || null,
+      groups: groupsRaw.map((row) => normalizeSearchGroup(row, query)).filter((row): row is LibrarySearchGroup => row != null),
+      hit_counts: hitCounts
+        ? {
+            notes: asNumber(hitCounts.notes) ?? undefined,
+            subs: asNumber(hitCounts.subs) ?? undefined,
+            documents: asNumber(hitCounts.documents) ?? undefined,
+          }
+        : null,
+    }
+  })
+}
+
+const documentContentCache = new Map<string, {etag: string; body: LibraryDocumentContent}>()
+
+export async function getLibraryDocumentContent(id: string, init?: RequestInit): Promise<LibraryDocumentContent> {
+  const headers = new Headers(init?.headers)
+  headers.set('Content-Type', 'application/json')
+  const token = getApiToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const cached = documentContentCache.get(id)
+  if (cached?.etag) headers.set('If-None-Match', cached.etag)
+
+  const url = `${API_BASE_URL}/v1/library/documents/${encodeURIComponent(id)}/content`
+  let response: Response
+  try {
+    response = await fetch(url, {...init, headers, credentials: init?.credentials ?? 'include'})
+  } catch (error) {
+    if (!(error instanceof TypeError) || init?.signal?.aborted) throw error
+    await new Promise((resolve) => window.setTimeout(resolve, 500))
+    response = await fetch(url, {...init, headers, credentials: init?.credentials ?? 'include'})
+  }
+  if (response.status === 304) {
+    if (cached) return cached.body
+    headers.delete('If-None-Match')
+    response = await fetch(url, {...init, headers, credentials: init?.credentials ?? 'include'})
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, (await getErrorMessage(response)) || `HTTP ${response.status}`)
+  }
+  const payload: unknown = await response.json()
+  const body = normalizeLibraryDocumentContent(payload)
+  const etag = response.headers.get('ETag') || body.summary.content_hash || ''
+  if (etag) documentContentCache.set(id, {etag, body})
+  return body
+}
+
+export function listLibraryTrash(init?: RequestInit) {
+  return request<Record<string, unknown>>('/v1/library/trash', init).then((payload) => {
+    const itemsRaw = Array.isArray(payload.items) ? payload.items : Array.isArray(payload.documents) ? payload.documents : []
+    return {
+      ok: true as const,
+      items: itemsRaw.map(normalizeTrashItem).filter((item): item is TrashItem => item != null),
+    }
+  })
+}
+
+export function softDeleteDocument(documentId: string) {
+  return request<{ok: true}>(`/v1/knowledge/documents/${encodeURIComponent(documentId)}/soft-delete`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+export function restoreDocument(documentId: string) {
+  return request<{ok: true}>(`/v1/knowledge/documents/${encodeURIComponent(documentId)}/restore`, {
+    method: 'POST',
+  })
+}
+
+export function purgeDocument(documentId: string, confirmTitle: string) {
+  return request<{ok: true}>(`/v1/knowledge/documents/${encodeURIComponent(documentId)}/purge`, {
+    method: 'POST',
+    body: JSON.stringify({confirm: true, confirm_title: confirmTitle}),
+  })
+}
+
+export function biliPlayUrl(sourceUrl?: string | null, bvid?: string | null, startSec?: number | null) {
+  const base = sourceUrl || (bvid ? `https://www.bilibili.com/video/${bvid}` : null)
+  if (!base) return null
+  if (startSec == null || Number.isNaN(startSec)) return base
+  try {
+    const url = new URL(base)
+    url.searchParams.set('t', String(Math.floor(startSec)))
+    return url.toString()
+  } catch {
+    return `${base}${base.includes('?') ? '&' : '?'}t=${Math.floor(startSec)}`
+  }
 }
 
 export {API_BASE_URL}

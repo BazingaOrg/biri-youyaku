@@ -1,7 +1,9 @@
 import {useState} from 'react'
-import {History, Plus, RotateCw} from 'lucide-react'
+import {Link} from 'wouter'
+import {Plus, RotateCw} from 'lucide-react'
 import {resendEmail, type Job} from '../../lib/api'
 import {useToast} from '../../components/ToastProvider'
+import {Button, buttonClassName} from '../../components/Button'
 import {MetaBar} from './MetaBar'
 import {SummaryTabs} from './SummaryTabs'
 
@@ -33,35 +35,36 @@ export function DoneView({
       setResending(false)
     }
   }
+  const readHref = job.document_id
+    ? `/doc/${job.document_id}?from=task`
+    : job.bvid
+      ? `/search?q=${encodeURIComponent(job.bvid)}&scope=all`
+      : '/'
   return (
     <div className="grid min-w-0 gap-4 py-4">
       <div className="flex flex-wrap items-center justify-center gap-2">
-        <button
-          type="button"
+        <Link href={readHref} className={buttonClassName({variant: 'primary', size: 'md'})}>
+          阅读笔记
+        </Link>
+        <Button
+          variant="secondary"
           onClick={onResummarize}
           disabled={resummarizeBusy || !job.transcript?.length}
-          className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-lift px-3.5 text-sm text-muted transition-[transform,background-color,color] duration-150 ease-out hover:bg-line/70 hover:text-ink active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <RotateCw size={16} />
-          {resummarizeBusy ? '重新总结中…' : '重新总结'}
-        </button>
-        <button
-          type="button"
-          onClick={onNew}
-          className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-lift px-3.5 text-sm text-muted transition-[transform,background-color,color] duration-150 ease-out hover:bg-line/70 hover:text-ink active:scale-[0.97]"
-        >
+          {resummarizeBusy ? '重新生成中…' : '重新生成笔记'}
+        </Button>
+        <Button variant="ghost" onClick={onNew}>
           <Plus size={16} />
-          再贴一条
-        </button>
-        <button
-          type="button"
-          onClick={onOpenHistory}
-          className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-lift px-3.5 text-sm text-muted transition-[transform,background-color,color] duration-150 ease-out hover:bg-line/70 hover:text-ink active:scale-[0.97]"
-        >
-          <History size={16} />
-          历史
-        </button>
+          新建笔记
+        </Button>
+        <Button variant="ghost" onClick={onOpenHistory}>
+          任务
+        </Button>
       </div>
+      {!job.summary && !job.document_id ? (
+        <p className="px-1 text-center text-sm text-muted">这篇笔记已经永久删除，任务记录还在。</p>
+      ) : null}
       <MetaBar job={job} />
       {job.email_error && (
         <p className="px-1 text-xs text-warning">

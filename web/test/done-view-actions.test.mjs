@@ -18,7 +18,8 @@ test('completed job actions stay on the toolbar without a more menu', async () =
   const doneSource = await readFile(new URL('../src/pages/workspace/DoneView.tsx', import.meta.url), 'utf8')
 
   assert.match(doneSource, /onClick=\{onResummarize\}/)
-  assert.match(doneSource, /\{resummarizeBusy \? '重新总结中…' : '重新总结'\}/)
+  assert.match(doneSource, /阅读笔记/)
+  assert.match(doneSource, /\{resummarizeBusy \? '重新生成中…' : '重新生成笔记'\}/)
   assert.doesNotMatch(doneSource, /<details/)
   assert.doesNotMatch(doneSource, /更多/)
   assert.doesNotMatch(doneSource, /下载 Markdown/)

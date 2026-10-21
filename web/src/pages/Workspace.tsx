@@ -21,8 +21,8 @@ import {useToast} from '../components/ToastProvider'
 import {ConfirmDialog} from '../components/ConfirmDialog'
 import {IconButton} from '../components/IconButton'
 import {PageLoading} from '../components/Spinner'
-import {IdleView} from './workspace/IdleView'
 import {RunningView} from './workspace/RunningView'
+import {BackButton} from '../components/BackButton'
 
 const DoneView = lazy(() =>
   import('./workspace/DoneView').then((module) => ({default: module.DoneView})),
@@ -182,7 +182,7 @@ export function Workspace({jobId}: WorkspaceProps) {
       return
     }
     writeActive({jobId: response.job_id, url})
-    toast.success('已开始总结', undefined, {dedupeKey: response.job_id})
+    toast.success('已开始生成笔记', undefined, {dedupeKey: response.job_id})
     navigate(`/jobs/${response.job_id}`)
   }
 
@@ -201,10 +201,10 @@ export function Workspace({jobId}: WorkspaceProps) {
       const response = await resummarizeJob(sourceJobId, newSummaryOptions())
       writeActive({jobId: response.job_id, url})
       setDuplicateJob(null)
-      toast.success('已开始重新总结', undefined, {dedupeKey: response.job_id})
+      toast.success('已开始重新生成笔记', undefined, {dedupeKey: response.job_id})
       navigate(`/jobs/${response.job_id}`)
     } catch (err) {
-      toast.error('重新总结失败', err instanceof Error ? err.message : '请重试')
+      toast.error('重新生成失败', err instanceof Error ? err.message : '请重试')
     } finally {
       setDuplicateBusy(false)
     }
@@ -218,10 +218,10 @@ export function Workspace({jobId}: WorkspaceProps) {
       const response = await resummarizeJob(job.id, newSummaryOptions())
       writeActive({jobId: response.job_id, url: job.url})
       setResummaryConfirmOpen(false)
-      toast.success('已开始重新总结', undefined, {taskName, dedupeKey: response.job_id})
+      toast.success('已开始重新生成笔记', undefined, {taskName, dedupeKey: response.job_id})
       navigate(`/jobs/${response.job_id}`)
     } catch (err) {
-      toast.error('重新总结失败', err instanceof Error ? err.message : '请重试', {taskName})
+      toast.error('重新生成失败', err instanceof Error ? err.message : '请重试', {taskName})
     } finally {
       setActionBusy(false)
     }
@@ -272,8 +272,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     clearActive()
     navigate('/')
   }
-  const openHistory = () => navigate('/history')
-  const openKnowledge = () => navigate('/knowledge')
+  const openTasks = () => navigate('/tasks')
 
   // ---- render ----
 
@@ -283,18 +282,13 @@ export function Workspace({jobId}: WorkspaceProps) {
     }
     return (
       <>
-        <IdleView
-          onSubmit={submitNew}
-          onOpenHistory={openHistory}
-          onOpenKnowledge={openKnowledge}
-        />
         <ConfirmDialog
           open={duplicateJob != null}
-          title="这条视频之前总结过"
-          description="可以直接查看原总结；重新总结会复用已有字幕创建一条新总结任务，原记录会保留在历史中。"
+          title="这条视频之前生成过笔记"
+          description="可以直接阅读笔记；重新生成会复用已有字幕创建一条新任务，原记录会保留。"
           cancelLabel="取消"
-          secondaryLabel="查看原总结"
-          confirmLabel="重新总结"
+          secondaryLabel="阅读笔记"
+          confirmLabel="重新生成笔记"
           loading={duplicateBusy}
           onSecondary={viewDuplicateSummary}
           onConfirm={() => void resummarizeDuplicate()}
@@ -311,7 +305,7 @@ export function Workspace({jobId}: WorkspaceProps) {
         <div className="flex flex-wrap items-center justify-center gap-2">
           <IconButton icon={<RotateCw size={18} />} label="重试" onClick={() => { void refresh() }} />
           <IconButton icon={<Plus size={18} />} label="新建" onClick={goNew} />
-          <IconButton icon={<History size={18} />} label="历史" onClick={openHistory} />
+          <IconButton icon={<History size={18} />} label="任务" onClick={openTasks} />
         </div>
       </div>
     )
@@ -333,23 +327,26 @@ export function Workspace({jobId}: WorkspaceProps) {
     </button>
   ) : null
 
+  const back = <BackButton href="/tasks" label="任务" />
+
   if (job.status === 'COMPLETED') {
     return (
       <>
-        <Suspense fallback={<PageLoading label="加载总结…" />}>
+        {back}
+        <Suspense fallback={<PageLoading label="加载笔记…" />}>
           <DoneView
             job={job}
             onNew={goNew}
-            onOpenHistory={openHistory}
+            onOpenHistory={openTasks}
             onResummarize={() => setResummaryConfirmOpen(true)}
             resummarizeBusy={actionBusy}
           />
         </Suspense>
         <ConfirmDialog
           open={resummaryConfirmOpen}
-          title="重新总结这个视频？"
-          description="会复用当前字幕创建一条新的总结任务，原总结会继续保留在历史记录中。"
-          confirmLabel="重新总结"
+          title="重新生成这篇笔记？"
+          description="会复用当前字幕创建一条新任务，原来的笔记会保留。"
+          confirmLabel="重新生成笔记"
           loading={actionBusy}
           onConfirm={() => void resummarizeCurrent()}
           onCancel={() => setResummaryConfirmOpen(false)}
@@ -360,12 +357,13 @@ export function Workspace({jobId}: WorkspaceProps) {
 
   return (
     <>
+      {back}
       <RunningView
         job={job}
         onCancel={cancel}
         onRetry={retry}
         onNew={goNew}
-        onOpenHistory={openHistory}
+        onOpenHistory={openTasks}
         busy={actionBusy}
         cancelPending={cancelPending}
       />

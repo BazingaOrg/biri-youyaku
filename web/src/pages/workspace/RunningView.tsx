@@ -61,7 +61,7 @@ export function RunningView({
     <div className="grid min-w-0 gap-4 py-4">
       <div className="flex flex-wrap items-center justify-center gap-2">
         <IconButton icon={<Plus size={18} />} label="新建" onClick={onNew} />
-        <IconButton icon={<History size={18} />} label="历史" onClick={onOpenHistory} />
+        <IconButton icon={<History size={18} />} label="任务" onClick={onOpenHistory} />
       </div>
       <MetaBar job={job} />
       <StepCarousel steps={steps} currentIndex={currentIdx} followKey={job.summary?.length ?? 0} />
@@ -93,13 +93,16 @@ export function RunningView({
             />
           )}
           {canRetry && (
-            <IconButton
-              icon={<RotateCw size={18} />}
-              label={failure?.actionLabel || '重试'}
-              onClick={onRetry}
-              disabled={busy}
-              variant="primary"
-            />
+            <>
+              <IconButton
+                icon={<RotateCw size={18} />}
+                label={failure?.actionLabel || '重试'}
+                onClick={onRetry}
+                disabled={busy}
+                variant="primary"
+              />
+              <IconButton icon={<Plus size={18} />} label="忽略" onClick={onNew} />
+            </>
           )}
         </div>
       )}

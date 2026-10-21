@@ -1,6 +1,7 @@
 import {useEffect, useRef, useState} from 'react'
 import type {ReactNode} from 'react'
 import {POP_OUT_FALLBACK_MS} from '../lib/animation'
+import {Button} from './Button'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -161,35 +162,22 @@ export function ConfirmDialog({
             p 标签会被浏览器强制截断成非法嵌套。 */}
         {description && <div className="min-h-0 overflow-y-auto px-5 pt-2 text-sm leading-6 text-muted">{description}</div>}
         <div className="mt-4 flex shrink-0 flex-wrap justify-end gap-2 border-t border-line/70 px-5 py-4">
-          <button
-            type="button"
-            ref={cancelButtonRef}
-            onClick={onCancel}
-            disabled={loading}
-            className="inline-flex min-h-10 items-center rounded-xl bg-lift px-4 text-sm text-muted transition-[transform,background-color,color] hover:bg-line/70 hover:text-ink active:scale-95 disabled:opacity-40"
-          >
+          <Button variant="ghost" ref={cancelButtonRef} onClick={onCancel} disabled={loading}>
             {cancelLabel}
-          </button>
+          </Button>
           {secondaryLabel && onSecondary && (
-            <button
-              type="button"
-              onClick={onSecondary}
-              disabled={loading}
-              className="inline-flex min-h-10 items-center rounded-xl bg-lift px-4 text-sm font-medium text-ink transition-[transform,background-color,color] hover:bg-line/70 active:scale-95 disabled:opacity-40"
-            >
+            <Button variant="secondary" onClick={onSecondary} disabled={loading}>
               {secondaryLabel}
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
+          <Button
+            variant="primary"
             onClick={onConfirm}
             disabled={loading || confirmDisabled}
-            className={`inline-flex min-h-10 items-center rounded-xl px-4 text-sm font-medium shadow-card transition-[transform,filter] hover:brightness-105 active:scale-95 disabled:opacity-50 ${
-              danger ? 'bg-dangerSolid text-onDanger' : 'bg-brandSolid text-onBrand'
-            }`}
+            className={danger ? 'bg-dangerSolid text-onDanger hover:brightness-105' : ''}
           >
             {loading ? '处理中…' : confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

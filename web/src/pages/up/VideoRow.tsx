@@ -1,5 +1,6 @@
 import {Check, RotateCw} from 'lucide-react'
 import {Link} from 'wouter'
+import {Button, buttonClassName} from '../../components/Button'
 import {type JobStatus, type UpVideo} from '../../lib/api'
 import {formatDay, formatDuration} from '../../lib/format'
 import {isRunning} from '../../lib/jobStatus'
@@ -62,7 +63,7 @@ export function VideoRow({
         {done ? (
           <Link
             href={`/jobs/${jobId}`}
-            className="inline-flex min-h-9 items-center gap-1 rounded-xl bg-brandSoft px-3 text-xs font-medium text-brand transition hover:brightness-95 active:scale-95"
+            className={buttonClassName({variant: 'secondary', size: 'sm', className: 'text-brand'})}
           >
             <Check size={14} />
             查看
@@ -70,22 +71,22 @@ export function VideoRow({
         ) : running && jobId ? (
           <Link
             href={`/jobs/${jobId}`}
-            className="inline-flex min-h-9 items-center gap-1 rounded-xl bg-warning/15 px-3 text-xs font-medium text-warning transition hover:brightness-95 active:scale-95"
+            className={buttonClassName({variant: 'secondary', size: 'sm', className: 'text-warning'})}
           >
             <RotateCw size={13} className="animate-spin" />
             进行中
           </Link>
         ) : (
-          <button
-            type="button"
+          <Button
+            size="sm"
+            variant="primary"
             onClick={onSummarize}
             disabled={busy}
             title={failed ? '上次未完成，重新总结' : undefined}
-            className="inline-flex min-h-9 items-center gap-1 rounded-xl bg-brandSolid px-3 text-xs font-medium text-onBrand shadow-card transition hover:brightness-105 active:scale-95 disabled:opacity-50"
           >
             {busy ? <RotateCw size={13} className="animate-spin" /> : null}
             {failed ? '重试' : '总结'}
-          </button>
+          </Button>
         )}
       </div>
     </li>
