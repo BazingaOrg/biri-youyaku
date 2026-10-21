@@ -76,18 +76,13 @@ export function ThemeToggle() {
   }
 
   return (
-    <div className="group relative">
-      <button
-        type="button"
-        onClick={cycleMode}
-        aria-label={`当前${LABEL[mode]}，点击切换为${LABEL[nextMode]}`}
-        className="grid h-11 w-11 place-items-center rounded-full border border-line bg-panel/80 text-muted shadow-card backdrop-blur transition-[transform,color,background-color] duration-150 ease-out hover:text-ink active:scale-[0.96]"
-      >
-        <Icon size={19} strokeWidth={1.8} />
-      </button>
-      <span className="pointer-events-none absolute bottom-full right-0 mb-2 whitespace-nowrap rounded-lg bg-ink px-2 py-1 text-xs text-canvas opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-        {LABEL[mode]} · 点击切换
-      </span>
-    </div>
+    <button
+      type="button"
+      onClick={cycleMode}
+      aria-label={`当前${LABEL[mode]}，点击切换为${LABEL[nextMode]}`}
+      className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-muted hover:bg-lift hover:text-ink"
+    >
+      <Icon size={18} strokeWidth={1.8} />
+    </button>
   )
 }

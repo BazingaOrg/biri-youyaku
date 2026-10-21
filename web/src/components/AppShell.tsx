@@ -56,16 +56,12 @@ export function AppShell({children}: AppShellProps) {
               </span>
             ) : null}
           </Link>
-        </div>
-      </header>
-      <main className="mx-auto min-w-0 w-full max-w-5xl px-4 pb-24 pt-2 sm:px-6 sm:pt-4">{children}</main>
-      <div className="pointer-events-none fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-40 flex flex-col-reverse items-end gap-2 sm:right-6">
-        <div className="pointer-events-auto">
           <ThemeToggle />
         </div>
-        <div className="pointer-events-auto">
-          <ScrollToTop />
-        </div>
+      </header>
+      <main className="mx-auto min-w-0 w-full max-w-5xl px-4 pb-16 pt-2 sm:px-6 sm:pt-4">{children}</main>
+      <div className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-40 sm:right-6">
+        <ScrollToTop />
       </div>
     </div>
   )
