@@ -254,32 +254,34 @@ function LibraryRow({
   const href = libraryItemHref(item, ctx)
   const missing = item.legacy_reason === 'summary_file_missing'
   return (
-    <li className="grid grid-cols-1 gap-1 border-b border-line py-3.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-4">
-      <Link href={href} className="line-clamp-2 text-base font-semibold leading-snug break-words hover:text-brand">
-        {item.title}
-      </Link>
-      {item.tldr ? <p className="line-clamp-1 text-sm text-muted">{item.tldr}</p> : null}
-      <p className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-muted">
-        {item.mid ? (
-          <Link href={`/?up=${item.mid}`} className="text-ink/80 hover:text-brand">
-            {item.author || '未知 UP'}
-          </Link>
-        ) : (
-          <span>{item.author || '未知 UP'}</span>
-        )}
-        <span>{formatDuration(item.duration ?? undefined)}</span>
-        {item.tags.map((tag) => (
-          <Link key={tag} href={`/?tag=${encodeURIComponent(tag)}`} className="hover:text-brand">
-            #{tag}
-          </Link>
-        ))}
-        {item.legacy || missing ? (
-          <span className="rounded-md bg-lift px-1.5 py-0.5 text-[11px] text-muted">
-            {missing ? '笔记文件已丢失，可重新生成' : '旧版 · 仅支持标题搜索'}
-          </span>
-        ) : null}
-      </p>
-      <span className="hidden self-center text-right text-xs tabular-nums text-muted/80 sm:block">
+    <li className="grid grid-cols-1 gap-1 border-b border-line py-3.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-x-4">
+      <div className="grid min-w-0 gap-1">
+        <Link href={href} className="line-clamp-2 text-base font-semibold leading-snug break-words hover:text-brand">
+          {item.title}
+        </Link>
+        {item.tldr ? <p className="line-clamp-1 text-sm text-muted">{item.tldr}</p> : null}
+        <p className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-muted">
+          {item.mid ? (
+            <Link href={`/?up=${item.mid}`} className="text-ink/80 hover:text-brand">
+              {item.author || '未知 UP'}
+            </Link>
+          ) : (
+            <span>{item.author || '未知 UP'}</span>
+          )}
+          <span>{formatDuration(item.duration ?? undefined)}</span>
+          {item.tags.map((tag) => (
+            <Link key={tag} href={`/?tag=${encodeURIComponent(tag)}`} className="hover:text-brand">
+              #{tag}
+            </Link>
+          ))}
+          {item.legacy || missing ? (
+            <span className="rounded-md bg-lift px-1.5 py-0.5 text-[11px] text-muted">
+              {missing ? '笔记文件已丢失，可重新生成' : '旧版 · 仅支持标题搜索'}
+            </span>
+          ) : null}
+        </p>
+      </div>
+      <span className="hidden text-right text-xs tabular-nums text-muted/80 sm:block sm:pt-1">
         {formatSavedDay(item.saved_at)}
       </span>
     </li>
