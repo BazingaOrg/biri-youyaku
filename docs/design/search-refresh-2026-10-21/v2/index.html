@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>笔哩 · 原型评审</title>
+<style>
+:root { --bg: #f2ece4; --panel: #fbf7f2; --fg: #2b2a33; --muted: #746e7b; --line: #e3d9cb; --brand: #b33f66; --soft: #fbe7ee; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 "Inter", "PingFang SC", system-ui, sans-serif; display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 100vh; }
+aside { background: var(--panel); border-right: 1px solid var(--line); padding: 20px 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+aside h1 { font: 700 18px "Songti SC", serif; margin: 0 8px 2px; letter-spacing: .04em; }
+aside p { margin: 0 8px 16px; color: var(--muted); font-size: 12px; }
+aside h2 { font-size: 11px; letter-spacing: .08em; color: var(--muted); margin: 16px 8px 4px; font-weight: 600; }
+aside button, aside a.lnk { display: block; width: 100%; text-align: left; padding: 7px 10px; border: 0; border-radius: 8px; background: none; font: inherit; color: inherit; cursor: pointer; text-decoration: none; }
+aside button:hover, aside a.lnk:hover { background: var(--bg); }
+aside button.is-on { background: var(--soft); color: var(--brand); font-weight: 500; }
+main { padding: 20px; min-width: 0; }
+.ctrl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.ctrl .title { font-weight: 600; margin-right: auto; }
+.ctrl .note { color: var(--muted); font-size: 12px; flex-basis: 100%; }
+.seg { display: inline-flex; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.seg button { border: 0; background: none; padding: 5px 10px; border-radius: 7px; font: inherit; cursor: pointer; color: var(--muted); }
+.seg button.is-on { background: var(--soft); color: var(--brand); }
+.stage { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+.dev { flex: none; }
+.dev .cap { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.frame { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: #fff; box-shadow: 0 12px 32px rgba(43,42,51,.1); }
+.frame iframe { border: 0; display: block; transform-origin: 0 0; }
+.phone .frame { border-radius: 36px; border: 10px solid #2b2a33; }
+</style>
+</head>
+<body>
+<aside>
+  <h1>笔哩 · v2</h1>
+  <p>原型评审 · 示例数据均为虚构</p>
+  <div id="list"></div>
+  <h2>其他</h2>
+  <a class="lnk" href="logo.html" target="_blank">图标方案 ↗</a>
+  <a class="lnk" href="prototype.html" target="_blank">单独打开原型 ↗</a>
+  <a class="lnk" href="README.md" target="_blank">设计说明 README ↗</a>
+</aside>
+<main>
+  <div class="ctrl">
+    <span class="title" id="title"></span>
+    <div class="seg" id="view"><button data-v="both" class="is-on">桌面 + 手机</button><button data-v="desk">桌面</button><button data-v="phone">手机</button></div>
+    <div class="seg" id="theme"><button data-t="light" class="is-on">浅色</button><button data-t="dark">深色</button></div>
+    <span class="note" id="note"></span>
+  </div>
+  <div class="stage">
+    <div class="dev" id="desk"><div class="cap">桌面 1280 × 800（缩放显示）</div><div class="frame" id="desk-frame"><iframe id="f-desk" title="桌面" src="prototype.html"></iframe></div></div>
+    <div class="dev phone" id="phone"><div class="cap">手机 390 × 844</div><div class="frame"><iframe id="f-phone" title="手机" src="prototype.html" width="390" height="844"></iframe></div></div>
+  </div>
+</main>
+<script>
+const S = [
+  ['笔记首页', [
+    ['首页 · 笔记列表', '#/', '一个输入框：粘贴链接 = 生成，输入文字 = 搜索。进行中 / 失败的任务以条带出现在列表上方。'],
+    ['粘贴了新视频链接', '#/?paste=' + encodeURIComponent('https://www.bilibili.com/video/BV1Xy4y1Z9qQ?p=1'), '识别为链接后图标变成链接、出现「生成笔记」主按钮（宽度随文字）。'],
+    ['粘贴了已有笔记的链接', '#/?paste=BV1Ab4y1Q7aZ', '已有笔记时主操作是「阅读笔记」，重新生成退到次要。'],
+    ['按 UP 主筛选', '#/?up=3001', '点任意 UP 名进入，筛选以可移除的 chip 呈现；在线投稿走现有 UP 页。'],
+  ]],
+  ['搜索', [
+    ['搜索结果 · 全部', '#/search?q=' + encodeURIComponent('注意力') + '&scope=all', '按视频分组；标题 / UP / 标签命中标在元信息里；每组最多 2 条正文命中，可展开。'],
+    ['搜索结果 · 只看字幕', '#/search?q=' + encodeURIComponent('注意力') + '&scope=subs', '范围切换是服务端重新查询，不是在已截断结果里过滤。'],
+    ['搜索 · 字幕索引不可用', '#/search?q=' + encodeURIComponent('注意力') + '&scope=all&sim=partial', '部分失败明确提示，不显示成「没有结果」。'],
+    ['搜索 · 无结果', '#/search?q=' + encodeURIComponent('量子纠缠') + '&scope=all', '说明查了哪些字段，并提示粘贴链接即可生成。'],
+  ]],
+  ['阅读', [
+    ['从搜索进入笔记（定位命中）', '#/doc/d1?from=search&q=' + encodeURIComponent('注意力') + '&scope=all&tab=notes&at=1-0', '返回链接写明「搜索「注意力」」；本篇命中可上一处 / 下一处跳转。'],
+    ['从搜索进入字幕（定位时间）', '#/doc/d1?from=search&q=' + encodeURIComponent('注意力') + '&scope=all&tab=subs&at=4', '高亮命中行，前后文完整保留；时间戳在 B 站对应时间播放。'],
+    ['命中段落已过期', '#/doc/d1?from=search&q=' + encodeURIComponent('注意力') + '&scope=all&tab=notes&sim=stale', '笔记重新生成后旧定位失效，明确提示而不是跳到错误段落。'],
+    ['直接打开笔记', '#/doc/d2', '没有来源时返回「全部笔记」。'],
+    ['旧版记录（未入库）', '#/doc/d6', '早期任务没有字幕、未进全文索引，仍可阅读。'],
+  ]],
+  ['任务', [
+    ['任务进行中', '#/jobs/j1', '三步进度，不显示没有依据的百分比；可以离开。'],
+    ['任务失败', '#/jobs/j2', '写明失败步骤和原因，给出对应的恢复动作；错误详情折叠。'],
+    ['任务列表', '#/tasks', '只在有进行中 / 失败任务时顶栏徽标提示；删除任务不删笔记。'],
+  ]],
+  ['删除与恢复', [
+    ['移除笔记（确认）', '#/doc/d3?dialog=remove', '说明会从列表和搜索中消失、30 天内可恢复、任务和视频不受影响。确认后回到来源页，提示条里可以撤销。'],
+    ['最近删除', '#/trash', '每条显示还剩几天，3 天内标黄。恢复是次要按钮，永久删除是幽灵按钮。入口在笔记列表底部，只在有内容时出现。'],
+    ['永久删除（确认）', '#/trash?dialog=purge&id=t2', '需要输入 BV 号才能确认，和后端 confirm_title 的校验一致。'],
+    ['打开已移除的笔记', '#/doc/t1?from=trash', '仍然可以阅读，顶部提示剩余天数和恢复按钮；「⋯」里换成永久删除。'],
+    ['粘贴已移除视频的链接', '#/?paste=BV1Np4y1W4gT', '主操作是「恢复笔记」；重新生成也会自动恢复（后端 upsert 会清掉 deleted_at）。'],
+  ]],
+  ['规范', [
+    ['组件与文案', '#/system', 'Button 3 样式 × 2 尺寸；文案对照表。'],
+  ]],
+];
+const list = document.getElementById('list');
+const flat = [];
+list.innerHTML = S.map(([g, items]) => `<h2>${g}</h2>` + items.map(it => { flat.push(it); return `<button data-i="${flat.length - 1}">${it[0]}</button>`; }).join('')).join('');
+const fd = document.getElementById('f-desk'), fp = document.getElementById('f-phone');
+let theme = 'light';
+function go(i) {
+  const [name, route, note] = flat[i];
+  document.getElementById('title').textContent = name;
+  document.getElementById('note').textContent = note;
+  list.querySelectorAll('button').forEach(b => b.classList.toggle('is-on', +b.dataset.i === i));
+  [fd, fp].forEach(f => { f.src = 'prototype.html?theme=' + theme + route; });
+  try { localStorage.setItem('v2-scene', i); } catch (e) {}
+}
+list.addEventListener('click', e => { const b = e.target.closest('button'); if (b) go(+b.dataset.i); });
+function fit() {
+  const mode = document.querySelector('#view .is-on').dataset.v;
+  document.getElementById('desk').hidden = mode === 'phone';
+  document.getElementById('phone').hidden = mode === 'desk';
+  const avail = document.querySelector('main').clientWidth - 40 - (mode === 'both' ? 434 : 0);
+  const scale = Math.min(1, Math.max(.35, avail / 1280));
+  fd.style.width = '1280px'; fd.style.height = '800px'; fd.style.transform = `scale(${scale})`;
+  const box = document.getElementById('desk-frame');
+  box.style.width = 1280 * scale + 'px'; box.style.height = 800 * scale + 'px';
+}
+document.getElementById('view').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; document.querySelectorAll('#view button').forEach(x => x.classList.toggle('is-on', x === b)); fit(); });
+document.getElementById('theme').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; theme = b.dataset.t; document.querySelectorAll('#theme button').forEach(x => x.classList.toggle('is-on', x === b)); [fd, fp].forEach(f => f.contentWindow.postMessage({ theme }, '*')); });
+addEventListener('resize', fit);
+fit();
+let start = 0; try { start = +(localStorage.getItem('v2-scene') || 0); } catch (e) {}
+go(flat[start] ? start : 0);
+</script>
+</body>
+</html>

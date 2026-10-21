@@ -1,0 +1,873 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>笔哩 · 原型 v2</title>
+<style>
+:root {
+  --bg: #fbf7f2;
+  --panel: #ffffff;
+  --sunken: #f2ece4;
+  --fg: #2b2a33;
+  --muted: #746e7b;
+  --faint: #a39cab;
+  --line: #ece3d6;
+  --brand: #b33f66;
+  --brand-solid: #b33f66;
+  --brand-soft: #fbe7ee;
+  --mark: #fbd9e4;
+  --on-brand: #ffffff;
+  --success: #5b8c6a;
+  --warning: #b07a33;
+  --warning-soft: #f8ecd9;
+  --danger: #a63d52;
+  --danger-soft: #f8e3e7;
+  --shadow: 0 1px 2px rgba(43,42,51,.04), 0 8px 24px rgba(43,42,51,.06);
+  --serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", ui-serif, Georgia, serif;
+  --sans: "Inter", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", system-ui, sans-serif;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #15131a;
+  --panel: #1e1b23;
+  --sunken: #0f0d12;
+  --fg: #ede7db;
+  --muted: #9b95a4;
+  --faint: #6f6977;
+  --line: #2a2630;
+  --brand: #f29cb4;
+  --brand-solid: #a94164;
+  --brand-soft: #3a1f2a;
+  --mark: #5a2a3b;
+  --success: #8fbf9f;
+  --warning: #e2b074;
+  --warning-soft: #33281a;
+  --danger: #ed8fa4;
+  --danger-soft: #3a1d25;
+  --shadow: inset 0 0 0 1px rgba(255,255,255,.04), 0 8px 24px rgba(0,0,0,.4);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-decoration: none; }
+button, input { font: inherit; color: inherit; }
+mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1px; }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 40px; padding: 0 16px; border-radius: 12px; border: 1px solid transparent; font-size: 14px; font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color .15s, border-color .15s, transform .1s; }
+.btn:active { transform: scale(.98); }
+.btn-primary { background: var(--brand-solid); color: var(--on-brand); }
+.btn-primary:hover { filter: brightness(1.05); }
+.btn-secondary { background: var(--panel); border-color: var(--line); }
+.btn-secondary:hover { background: var(--sunken); }
+.btn-ghost { background: transparent; color: var(--muted); }
+.btn-ghost:hover { background: var(--sunken); color: var(--fg); }
+.btn-danger { background: var(--panel); border-color: var(--line); color: var(--danger); }
+.btn-sm { height: 32px; padding: 0 12px; border-radius: 10px; font-size: 13px; }
+.btn-icon { width: 40px; padding: 0; }
+.btn-sm.btn-icon { width: 32px; }
+.btn[disabled] { opacity: .45; cursor: not-allowed; }
+@media (pointer: coarse) { .btn { min-height: 44px; } .btn-sm { min-height: 36px; } }
+
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; border-radius: 999px; font-size: 13px; color: var(--muted); background: var(--sunken); border: 0; cursor: pointer; white-space: nowrap; }
+.chip.is-on { background: var(--brand-soft); color: var(--brand); }
+.chip .x { font-size: 15px; line-height: 1; margin-left: 2px; }
+.seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--sunken); border-radius: 12px; }
+.seg button { height: 32px; padding: 0 12px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; white-space: nowrap; }
+.seg button.is-on { background: var(--panel); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.08); font-weight: 500; }
+.seg .n { color: var(--faint); margin-left: 4px; font-variant-numeric: tabular-nums; }
+
+.topbar { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid transparent; }
+.topbar.is-scrolled { border-bottom-color: var(--line); }
+.topbar-in { max-width: 1120px; margin: 0 auto; height: 56px; padding: 0 20px; display: flex; align-items: center; gap: 12px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; font-family: var(--serif); font-weight: 700; font-size: 19px; letter-spacing: .04em; }
+.brand svg { width: 28px; height: 28px; flex: none; }
+.topbar .spacer { flex: 1; }
+.nav-link { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 10px; color: var(--muted); font-size: 14px; }
+.nav-link:hover { background: var(--sunken); color: var(--fg); }
+.nav-link.is-on { color: var(--fg); font-weight: 500; }
+.badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--brand-solid); color: var(--on-brand); font-size: 11px; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; }
+.badge.is-warn { background: var(--warning); }
+
+.page { max-width: 1120px; margin: 0 auto; padding: 8px 20px 96px; }
+.narrow { max-width: 760px; margin: 0 auto; }
+
+.omni { position: relative; margin: 24px 0 8px; }
+.omni-box { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 6px 6px 6px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); transition: border-color .15s; }
+.omni-box:focus-within { border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
+.omni-box .lead { color: var(--faint); flex: none; display: flex; }
+.omni-box input { flex: 1; min-width: 0; height: 44px; border: 0; outline: 0; background: transparent; font-size: 16px; }
+.omni-box input::placeholder { color: var(--faint); }
+.omni-hint { margin: 8px 4px 0; font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.omni-hint kbd { font: 12px var(--sans); padding: 1px 6px; border-radius: 6px; background: var(--sunken); color: var(--muted); }
+.detect { margin-top: 10px; padding: 14px 16px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.detect .t { flex: 1 1 260px; min-width: 0; }
+.detect .k { font-size: 12px; color: var(--muted); }
+.detect .v { font-weight: 600; overflow-wrap: anywhere; }
+.detect .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.m-only { display: none !important; }
+
+.strip { display: flex; align-items: center; gap: 12px; padding: 10px 14px; margin: 16px 0 0; border-radius: 14px; font-size: 14px; flex-wrap: wrap; }
+.strip.run { background: var(--brand-soft); }
+.strip.warn { background: var(--warning-soft); }
+.strip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); flex: none; animation: pulse 1.6s ease-in-out infinite; }
+.strip.warn .dot { background: var(--warning); animation: none; }
+.strip .txt { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.strip .txt b { font-weight: 600; }
+.strip a.more { color: var(--brand); font-weight: 500; white-space: nowrap; }
+.strip.warn a.more { color: var(--warning); }
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .strip .dot { animation: none; } * { scroll-behavior: auto !important; } }
+
+.toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 28px 0 4px; }
+.toolbar .count { font-size: 13px; color: var(--muted); margin-right: auto; }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.group-h { margin: 28px 0 4px; font-size: 12px; font-weight: 600; letter-spacing: .06em; color: var(--faint); }
+.list { list-style: none; margin: 0; padding: 0; }
+.row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 4px 16px; padding: 14px 4px; border-bottom: 1px solid var(--line); border-radius: 0; }
+.row:hover { background: color-mix(in srgb, var(--sunken) 60%, transparent); }
+.row-title { font-size: 16px; font-weight: 600; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.row-meta { grid-column: 1; font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: center; }
+.row-meta .up { color: var(--fg); opacity: .8; }
+.row-meta .up:hover { color: var(--brand); opacity: 1; }
+.row-side { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-size: 12px; color: var(--faint); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tag { font-size: 12px; color: var(--faint); }
+.tag:hover { color: var(--brand); }
+.legacy { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: var(--sunken); color: var(--muted); }
+
+.result { padding: 18px 4px 16px; border-bottom: 1px solid var(--line); }
+.result-head { display: flex; gap: 8px 12px; align-items: baseline; flex-wrap: wrap; }
+.result-title { font-size: 16px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; flex: 1 1 300px; }
+.result-title:hover { color: var(--brand); }
+.result-meta { font-size: 13px; color: var(--muted); margin-top: 2px; display: flex; gap: 2px 10px; flex-wrap: wrap; }
+.metahit { font-size: 12px; color: var(--brand); }
+.hits { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 2px; }
+.hit { display: grid; grid-template-columns: 88px minmax(0,1fr); gap: 12px; padding: 8px 10px; margin: 0 -10px; border-radius: 10px; }
+.hit:hover { background: var(--sunken); }
+.hit .src { font-size: 12px; color: var(--muted); padding-top: 2px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.hit .src b { display: block; font-weight: 500; color: var(--fg); opacity: .75; }
+.hit .snip { font-size: 14px; line-height: 1.7; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.result .expand { margin-top: 4px; }
+.banner { margin: 16px 0 0; padding: 10px 14px; border-radius: 12px; background: var(--warning-soft); color: var(--fg); font-size: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.banner .txt { flex: 1 1 240px; }
+
+.empty { text-align: center; padding: 56px 16px; color: var(--muted); }
+.empty h3 { margin: 0 0 6px; color: var(--fg); font-size: 17px; }
+.empty .acts { margin-top: 16px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+
+.doc-wrap { display: grid; grid-template-columns: minmax(0, 720px) 220px; gap: 56px; justify-content: center; }
+.back { display: inline-flex; align-items: center; gap: 6px; margin: 20px 0 0; font-size: 14px; color: var(--muted); max-width: 100%; }
+.back span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.back:hover { color: var(--brand); }
+.doc-title { font-family: var(--serif); font-size: 30px; line-height: 1.35; font-weight: 700; margin: 14px 0 10px; overflow-wrap: anywhere; letter-spacing: .01em; }
+.doc-meta { font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.doc-meta a:hover { color: var(--brand); }
+.doc-tags { margin-top: 8px; display: flex; gap: 10px; flex-wrap: wrap; }
+.doc-sticky { position: sticky; top: 56px; z-index: 10; background: var(--bg); margin-top: 18px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+.doc-bar { display: flex; align-items: center; gap: 8px; padding: 12px 0 0; }
+.doc-bar .spacer { flex: 1; }
+.menu { position: relative; }
+.menu-pop { position: absolute; right: 0; top: 44px; min-width: 200px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 6px; display: none; z-index: 30; }
+.menu.is-open .menu-pop { display: block; }
+.menu-pop button, .menu-pop a { display: block; width: 100%; text-align: left; padding: 9px 12px; border: 0; background: none; border-radius: 9px; font-size: 14px; cursor: pointer; }
+.menu-pop button:hover, .menu-pop a:hover { background: var(--sunken); }
+.menu-pop .sub { display: block; font-size: 12px; color: var(--muted); }
+.menu-pop hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; }
+.menu-pop .danger { color: var(--danger); }
+.findbar { display: flex; align-items: center; gap: 4px; margin-top: 10px; padding: 6px 6px 6px 14px; border-radius: 12px; background: var(--brand-soft); font-size: 14px; flex-wrap: wrap; }
+.findbar .q { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+.findbar .pos { font-variant-numeric: tabular-nums; color: var(--muted); margin-right: 4px; }
+.prose { font-size: 16px; line-height: 1.85; }
+.prose h2 { font-size: 19px; line-height: 1.4; margin: 32px 0 10px; scroll-margin-top: 190px; }
+.prose p { margin: 0 0 14px; scroll-margin-top: 190px; }
+.prose ul { margin: 0 0 14px; padding-left: 1.3em; }
+.prose mark.is-cur { background: var(--brand-solid); color: var(--on-brand); }
+.toc { position: sticky; top: 132px; align-self: start; font-size: 13px; padding-top: 28px; }
+.toc h4 { margin: 0 0 8px; font-size: 12px; letter-spacing: .06em; color: var(--faint); }
+.toc a { display: block; padding: 5px 0 5px 12px; border-left: 2px solid var(--line); color: var(--muted); }
+.toc a:hover { color: var(--fg); }
+.toc a.has-hit::after { content: "•"; color: var(--brand); margin-left: 6px; }
+.toc-m { display: none; margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.toc-m summary { padding: 10px 14px; font-size: 14px; cursor: pointer; color: var(--muted); }
+.toc-m a { display: block; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 14px; }
+.lines { list-style: none; margin: 8px 0 0; padding: 0; }
+.line { display: grid; grid-template-columns: 56px minmax(0,1fr); gap: 12px; padding: 7px 8px; margin: 0 -8px; border-radius: 8px; font-size: 15px; line-height: 1.7; scroll-margin-top: 200px; }
+.line .ts { font-size: 13px; color: var(--brand); font-variant-numeric: tabular-nums; padding-top: 2px; }
+.line .ts:hover { text-decoration: underline; }
+.line.is-hit { background: var(--brand-soft); }
+.doc-foot { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); display: flex; gap: 8px 16px; flex-wrap: wrap; }
+.doc-foot a { color: var(--brand); }
+.stale { margin-top: 14px; padding: 10px 14px; border-radius: 12px; background: var(--warning-soft); font-size: 14px; }
+
+.h1 { font-size: 24px; font-weight: 700; margin: 24px 0 4px; }
+.sub { color: var(--muted); margin: 0; font-size: 14px; }
+.job { margin-top: 24px; padding: 24px; background: var(--panel); border: 1px solid var(--line); border-radius: 20px; }
+.job-title { font-size: 18px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; margin: 0; }
+.job-meta { font-size: 13px; color: var(--muted); margin-top: 4px; display: flex; gap: 2px 10px; flex-wrap: wrap; }
+.steps { list-style: none; margin: 20px 0 0; padding: 0; }
+.step { display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 12px; padding-bottom: 18px; position: relative; }
+.step:not(:last-child)::before { content: ""; position: absolute; left: 9px; top: 22px; bottom: 2px; width: 2px; background: var(--line); }
+.step .ic { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--line); background: var(--panel); margin-top: 2px; display: grid; place-items: center; font-size: 11px; color: var(--on-brand); }
+.step.done .ic { background: var(--success); border-color: var(--success); }
+.step.cur .ic { border-color: var(--brand); }
+.step.cur .ic::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--brand); animation: pulse 1.6s infinite; }
+.step.fail .ic { background: var(--danger); border-color: var(--danger); }
+.step .lb { font-weight: 500; }
+.step.todo .lb { color: var(--muted); font-weight: 400; }
+.step .ds { font-size: 13px; color: var(--muted); }
+.step.fail .ds { color: var(--danger); }
+.job-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.errbox { margin-top: 12px; font-size: 13px; color: var(--muted); }
+.errbox summary { cursor: pointer; }
+.errbox pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--sunken); padding: 10px 12px; border-radius: 10px; font-size: 12px; margin: 8px 0 0; }
+.tasklist .row-side { color: var(--muted); }
+.st { font-size: 12px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.st.run { background: var(--brand-soft); color: var(--brand); }
+.st.fail { background: var(--danger-soft); color: var(--danger); }
+.st.ok { background: var(--sunken); color: var(--muted); }
+
+.sys h2 { font-size: 15px; margin: 32px 0 12px; }
+.sys .demo { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; }
+.sys table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.sys td, .sys th { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.sys th { font-size: 12px; color: var(--muted); font-weight: 500; }
+.sys td:first-child { color: var(--muted); text-decoration: line-through; white-space: nowrap; }
+.sys .tbl { overflow-x: auto; }
+
+.toast { position: fixed; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 50; max-width: calc(100vw - 32px); }
+.toast.is-on { opacity: 1; }
+.toast.has-act { pointer-events: auto; display: flex; align-items: center; gap: 12px; }
+.toast button { border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 4px 0; white-space: nowrap; }
+.btn-danger-solid { background: var(--danger); color: #fff; }
+.btn-danger-solid:hover { filter: brightness(1.06); }
+dialog.dlg { border: 0; padding: 0; border-radius: 20px; background: var(--panel); color: var(--fg); box-shadow: 0 24px 64px rgba(0,0,0,.25); width: min(440px, calc(100vw - 32px)); }
+dialog.dlg::backdrop { background: rgba(20,18,24,.45); }
+.dlg-in { padding: 22px 22px 18px; }
+.dlg-in h3 { margin: 0 0 8px; font-size: 18px; }
+.dlg-in p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.dlg-field { display: grid; gap: 6px; margin-top: 16px; font-size: 13px; color: var(--muted); }
+.dlg-field b { color: var(--fg); font-family: ui-monospace, monospace; font-weight: 600; }
+.dlg-field input { height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); font: 15px ui-monospace, monospace; outline: 0; }
+.dlg-field input:focus { border-color: color-mix(in srgb, var(--danger) 50%, var(--line)); }
+.dlg-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.lib-foot { display: inline-flex; margin-top: 24px; font-size: 13px; color: var(--muted); }
+.lib-foot:hover { color: var(--brand); }
+.trash-row .row-acts { grid-row: 1 / span 2; grid-column: 2; align-self: center; display: flex; gap: 6px; }
+.row-meta .soon { color: var(--warning); font-weight: 500; }
+
+@media (max-width: 960px) {
+  .doc-wrap { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .toc { display: none; }
+  .toc-m { display: block; }
+}
+@media (max-width: 640px) {
+  body { font-size: 15px; }
+  .topbar-in { padding: 0 16px; height: 52px; }
+  .page { padding: 4px 16px 72px; }
+  .omni { margin-top: 12px; }
+  .omni-box { border-radius: 16px; min-height: 52px; padding-left: 12px; }
+  .omni-hint .desk { display: none; }
+  .row { grid-template-columns: minmax(0,1fr); }
+  .row-side { grid-row: auto; grid-column: 1; text-align: left; display: none; }
+  .hit { grid-template-columns: minmax(0,1fr); gap: 2px; }
+  .hit .src b { display: inline; margin-right: 6px; }
+  .doc-title { font-size: 24px; }
+  .doc-sticky { top: 52px; }
+  .job { padding: 18px; border-radius: 16px; }
+  .detect .acts { width: 100%; }
+  .m-only { display: flex !important; }
+  #omni-submit { display: none !important; }
+  .detect .acts .btn-primary { margin-left: auto; }
+  .nav-link .lbl { display: none; }
+  .trash-row .row-acts { grid-row: auto; grid-column: 1; margin-top: 8px; }
+}
+</style>
+</head>
+<body>
+<header class="topbar" id="topbar">
+  <div class="topbar-in">
+    <a class="brand" href="#/" aria-label="笔哩 首页">
+      <svg viewBox="0 0 512 512" aria-hidden="true"><rect x="16" y="16" width="480" height="480" rx="120" fill="#B33F66"/><rect x="168" y="56" width="66" height="180" rx="33" fill="#FBF7F2"/><rect x="278" y="56" width="66" height="180" rx="33" fill="#FBF7F2"/><ellipse cx="256" cy="282" rx="124" ry="106" fill="#FBF7F2"/><circle cx="208" cy="262" r="22" fill="#B33F66"/><circle cx="304" cy="262" r="22" fill="#B33F66"/><path d="M64 330 Q160 296 256 332 Q352 296 448 330 L448 452 Q352 420 256 456 Q160 420 64 452 Z" fill="#FBF7F2" stroke="#B33F66" stroke-width="24" stroke-linejoin="round"/><path d="M256 332 V456" stroke="#B33F66" stroke-width="18"/></svg>
+      笔哩
+    </a>
+    <span class="spacer"></span>
+    <a class="nav-link" id="nav-notes" href="#/"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M9 10h6M9 14h6"/></svg><span class="lbl">笔记</span></a>
+    <a class="nav-link" id="nav-tasks" href="#/tasks"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span class="lbl">任务</span><span class="badge" id="task-badge">2</span></a>
+    <button class="btn btn-ghost btn-sm btn-icon" id="theme" aria-label="切换深浅色"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg></button>
+  </div>
+</header>
+<main id="app"></main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<dialog class="dlg" id="dlg"></dialog>
+
+<script>
+const DOCS = [
+  { id: 'd1', bvid: 'BV1Ab4y1Q7aZ', title: '把注意力还给自己：一套可以练习的深度学习方法', author: '慢学实验室', mid: 3001, duration: '24:18', saved: '10-18', group: '本周', tags: ['学习方法', '注意力', '费曼'],
+    sections: [
+      { h: '核心观点', p: ['注意力不是意志力的竞赛，而是减少切换成本。先把今天唯一要交付的输出写下来，再安排输入。', '作者把学习拆成「明确问题 → 有限输入 → 输出检验」三步，每一步都可以单独练习。'] },
+      { h: '怎么练习', p: ['给每段学习时间设一个小问题，让注意力有明确落点：今天需要交付什么，而不是还要看多少资料。', '用自己的话解释卡住的概念，写成一句问题。解释不通的地方，回到原始材料对照上下文。', '环境比决心更可靠：关掉与当前任务无关的入口，注意力就不必每次从零恢复。'] },
+      { h: '带走一件事', p: ['明天开始前，花两分钟写下「这一段结束时我能解释什么」。'] }
+    ],
+    transcript: [[12, '今天想聊一个很多人都有的困扰，就是坐下来学习，但脑子一直在别处。'], [58, '我以前也觉得是自己意志力不够，后来发现不是。'], [131, '真正消耗你的是切换，每切一次，注意力都要重新爬坡。'], [247, '所以第一步不是逼自己专注，而是先回答一个问题：今天结束时我要交出什么。'], [378, '当环境减少打断，注意力就不必每次从零恢复。先关掉不参与当前任务的入口。'], [512, '第二步是把输入限制住，资料不是越多越好。'], [655, '第三步是输出，用自己的话讲一遍，讲不出来的地方就是你还没懂的地方。'], [801, '这个方法其实就是费曼技巧的一个日常版本。'], [1290, '最后留一个小作业：明天开始之前写下你想解释清楚的一件事。']] },
+  { id: 'd2', bvid: 'BV1Cd4y1R8bY', title: '费曼技巧：如何确认自己真的学会了', author: '理解力电台', mid: 3002, duration: '15:02', saved: '10-16', group: '本周', tags: ['学习方法', '费曼'],
+    sections: [
+      { h: '方法概述', p: ['费曼练习需要短时、单点的注意力：一次只解释一个概念，再检查哪一步断了。'] },
+      { h: '常见误区', p: ['把复述当成理解。只换了说法、没有例子支撑的解释，往往是背下来的。', '一次解释太多概念，结果每个都只讲了一半。'] }
+    ],
+    transcript: [[20, '费曼技巧说起来就四步，但大部分人卡在第二步。'], [306, '你会发现讲到一半，注意力开始飘，这通常说明这里你没真正理解。'], [740, '找一个完全不懂的朋友，讲给他听。']] },
+  { id: 'd3', bvid: 'BV1Ef4y1S9cX', title: '做笔记之前，先搭一个能回看的系统', author: '纸上工作室', mid: 3003, duration: '31:45', saved: '10-12', group: '本周', tags: ['笔记', '复盘'],
+    sections: [ { h: '为什么回看比记录重要', p: ['大部分笔记写完就再也没打开过。系统的价值在于下次能找到并用上。'] }, { h: '三个回看入口', p: ['按项目、按问题、按时间。每条笔记至少挂在一个入口下。'] } ],
+    transcript: [[45, '我先展示一下我五年前的笔记，基本都是收藏，没有回看。'], [912, '每周五花十五分钟，只做一件事：把这周的笔记挂到问题下面。']] },
+  { id: 'd4', bvid: 'BV1Gh4y1T1dW', title: '城市夜跑十公里：心率区间与配速怎么定', author: '跑步不累', mid: 3004, duration: '18:30', saved: '10-03', group: '更早', tags: ['跑步'],
+    sections: [ { h: '心率区间', p: ['新手先在二区跑满四周，再加入少量节奏跑。'] } ],
+    transcript: [[88, '很多人一开始就冲配速，结果心率直接拉满。']] },
+  { id: 'd5', bvid: 'BV1Jk4y1U2eV', title: '一口气看懂注意力机制（Transformer 第 2 讲）', author: '图解机器学习', mid: 3005, duration: '42:10', saved: '09-27', group: '更早', tags: ['机器学习', 'Transformer'],
+    sections: [ { h: '从查表说起', p: ['注意力机制可以理解为一次软查表：Query 去匹配 Key，再按权重取 Value。'] }, { h: '多头的意义', p: ['多头让模型在不同子空间里分别关注不同关系。'] } ],
+    transcript: [[140, '注意力这个词在这里和心理学里的注意力，其实是两回事。'], [1503, '多头注意力你可以想象成好几组人同时在查表。']] },
+  { id: 'd6', bvid: 'BV1Lm4y1V3fU', title: '【旧版记录】手冲咖啡入门：研磨度与水温', author: '一杯咖啡', mid: null, duration: '12:40', saved: '2025-06-02', group: '更早', tags: [], legacy: true,
+    sections: [ { h: '研磨度', p: ['中细研磨更适合 V60，偏酸就磨细一点。'] } ], transcript: [] },
+  { id: 't1', bvid: 'BV1Np4y1W4gT', title: '番茄工作法真的有用吗？我坚持了 30 天', author: '效率小站', mid: 3006, duration: '11:20', saved: '09-30', group: '更早', tags: ['效率', '注意力'], deleted: { at: '10-19', left: 28 },
+    sections: [ { h: '结论', p: ['25 分钟不是关键，关键是每一轮开始前写下这一轮要完成的事，注意力才有落点。'] } ], transcript: [[30, '先说结论，有用，但和你想的不太一样。']] },
+  { id: 't2', bvid: 'BV1Qr4y1X5hS', title: '2025 年显卡选购指南（价格已过时）', author: '硬件老张', mid: 3007, duration: '27:05', saved: '08-14', group: '更早', tags: ['硬件'], deleted: { at: '09-23', left: 2 },
+    sections: [ { h: '预算分档', p: ['按 2025 年的价格分了三档，现在已经不适用。'] } ], transcript: [] }
+];
+const JOBS = [
+  { id: 'j1', title: '为什么你总是拖延：行为科学的三个解释', author: '心理学漫游', status: 'run', step: 2, note: '正在生成笔记 · 已用 1 分 12 秒', started: '刚刚' },
+  { id: 'j2', title: '机械键盘轴体科普：线性、段落与提前段落', author: '键盘研究所', status: 'fail', step: 1, reason: '该视频没有平台字幕；转为语音转写时，连接本机转写服务失败。', code: 'ASR_UNAVAILABLE', started: '10 分钟前' },
+  { id: 'j3', title: '把注意力还给自己：一套可以练习的深度学习方法', author: '慢学实验室', status: 'ok', doc: 'd1', started: '10-18' },
+  { id: 'j4', title: '费曼技巧：如何确认自己真的学会了', author: '理解力电台', status: 'ok', doc: 'd2', started: '10-16' }
+];
+const STEPS = ['识别视频', '获取字幕 / 转写', '生成笔记'];
+
+const app = document.getElementById('app');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const re = q => new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+const hl = (text, q) => q ? esc(text).replace(re(esc(q)), m => `<mark>${m}</mark>`) : esc(text);
+const has = (text, q) => !!q && String(text).toLowerCase().includes(q.toLowerCase());
+const mmss = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+const docById = id => DOCS.find(d => d.id === id);
+const isLink = v => /(BV[0-9A-Za-z]{10})|bilibili\.com\/video|b23\.tv/i.test(v);
+const bvOf = v => (v.match(/BV[0-9A-Za-z]{10}/i) || [])[0];
+const scrollMemo = {};
+let lastKey = '';
+
+function parse() {
+  const h = location.hash.slice(1) || '/';
+  const [path, qs] = h.split('?');
+  return { path, params: new URLSearchParams(qs || ''), key: h };
+}
+function href(path, params) {
+  const s = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v !== '' && v != null)).toString();
+  return '#' + path + (s ? '?' + s : '');
+}
+function toast(msg, action) {
+  const t = document.getElementById('toast');
+  t.innerHTML = `<span>${esc(msg)}</span>${action ? `<button type="button">${esc(action.label)}</button>` : ''}`;
+  t.classList.toggle('has-act', !!action);
+  if (action) t.querySelector('button').onclick = () => { t.classList.remove('is-on'); action.fn(); };
+  t.classList.add('is-on');
+  clearTimeout(toast.tm); toast.tm = setTimeout(() => t.classList.remove('is-on'), action ? 5000 : 1800);
+}
+function openDialog({ title, body, confirm, match }) {
+  const dlg = document.getElementById('dlg');
+  dlg.innerHTML = `
+    <form method="dialog" class="dlg-in">
+      <h3>${esc(title)}</h3>
+      <p>${body}</p>
+      ${match ? `<label class="dlg-field"><span>输入 BV 号 <b>${esc(match)}</b> 确认</span><input id="dlg-input" autocomplete="off" autocapitalize="off" spellcheck="false" /></label>` : ''}
+      <div class="dlg-acts"><button type="button" class="btn btn-ghost" id="dlg-cancel">取消</button><button value="ok" class="btn btn-danger-solid" id="dlg-ok" ${match ? 'disabled' : ''}>${esc(confirm)}</button></div>
+    </form>`;
+  const input = dlg.querySelector('#dlg-input'), ok = dlg.querySelector('#dlg-ok');
+  if (input) input.addEventListener('input', () => { ok.disabled = input.value.trim() !== match; });
+  dlg.querySelector('#dlg-cancel').onclick = () => dlg.close('');
+  dlg.returnValue = '';
+  return new Promise(resolve => { dlg.onclose = () => resolve(dlg.returnValue === 'ok'); dlg.showModal(); (input || ok).focus(); });
+}
+const live = () => DOCS.filter(d => !d.deleted);
+const trashed = () => DOCS.filter(d => d.deleted);
+const short = t => t.length > 14 ? t.slice(0, 14) + '…' : t;
+
+const ICON_SEARCH = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>';
+const ICON_LINK = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>';
+const ICON_BACK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
+const ICON_EXT = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M14 5h5v5M19 5l-8 8M18 14v5H5V6h5"/></svg>';
+
+function omni(value, opts = {}) {
+  return `
+  <form class="omni" id="omni-form" role="search">
+    <label class="visually-hidden" for="omni">粘贴视频链接或搜索笔记</label>
+    <div class="omni-box">
+      <span class="lead" id="omni-lead">${isLink(value) ? ICON_LINK : ICON_SEARCH}</span>
+      <input id="omni" type="search" enterkeyhint="${isLink(value) ? 'go' : 'search'}" autocomplete="off" value="${esc(value)}" placeholder="粘贴 B 站链接生成笔记，或搜索已保存的内容" />
+      ${value ? `<button type="button" class="btn btn-ghost btn-sm btn-icon" id="omni-clear" aria-label="清空">✕</button>` : ''}
+      <button type="submit" class="btn btn-primary" id="omni-submit" ${isLink(value) ? '' : 'hidden'}>生成笔记</button>
+    </div>
+    <div id="omni-detect">${detectPanel(value)}</div>
+    ${opts.hint === false ? '' : `<p class="omni-hint" id="omni-hint" ${value ? 'hidden' : ''}><span>可搜标题、UP 主、BV 号、标签、笔记正文和字幕</span><span class="desk">按 <kbd>/</kbd> 聚焦 · <kbd>Enter</kbd> 搜索</span></p>`}
+  </form>`;
+}
+function detectPanel(value) {
+  if (!isLink(value)) return '';
+  const bv = bvOf(value);
+  const existing = bv && DOCS.find(d => d.bvid.toLowerCase() === bv.toLowerCase());
+  if (existing && existing.deleted) return `
+    <div class="detect">
+      <div class="t"><div class="k">这个视频的笔记在最近删除里 · ${existing.deleted.left} 天后永久删除</div><div class="v">${esc(existing.title)}</div></div>
+      <div class="acts"><button type="button" class="btn btn-secondary" data-act="regen">重新生成</button><button type="button" class="btn btn-primary" data-act="restore" data-id="${existing.id}">恢复笔记</button></div>
+    </div>`;
+  if (existing) return `
+    <div class="detect">
+      <div class="t"><div class="k">这个视频已经有笔记 · ${esc(existing.saved)} 保存</div><div class="v">${esc(existing.title)}</div></div>
+      <div class="acts"><button type="button" class="btn btn-secondary" data-act="regen">重新生成</button><a class="btn btn-primary" href="${href('/doc/' + existing.id)}">阅读笔记</a></div>
+    </div>`;
+  return `
+    <div class="detect">
+      <div class="t"><div class="k">识别到 B 站视频${bv ? ' · ' + esc(bv) : ''}</div><div class="v">生成后会出现在列表顶部，可以离开页面</div></div>
+      <div class="acts m-only"><button type="submit" form="omni-form" class="btn btn-primary">生成笔记</button></div>
+    </div>`;
+}
+
+function activeStrips() {
+  const run = JOBS.filter(j => j.status === 'run');
+  const fail = JOBS.filter(j => j.status === 'fail');
+  return run.map(j => `
+    <div class="strip run"><span class="dot"></span><span class="txt">正在生成 <b>${esc(j.title)}</b> · ${esc(STEPS[j.step])}</span><a class="more" href="${href('/jobs/' + j.id)}">查看进度</a></div>`).join('')
+    + (fail.length ? `<div class="strip warn"><span class="dot"></span><span class="txt">${fail.length} 个任务没有完成：<b>${esc(fail[0].title)}</b></span><a class="more" href="${href('/jobs/' + fail[0].id)}">处理</a></div>` : '');
+}
+
+function rowHTML(d, ctx) {
+  return `
+  <li class="row">
+    <a class="row-title" href="${href('/doc/' + d.id, ctx)}">${esc(d.title)}</a>
+    <div class="row-meta">
+      ${d.mid ? `<a class="up" href="${href('/', { up: d.mid })}">${esc(d.author)}</a>` : `<span class="up">${esc(d.author)}</span>`}
+      <span>${esc(d.duration)}</span>
+      ${d.tags.map(t => `<a class="tag" href="${href('/', { tag: t })}">#${esc(t)}</a>`).join('')}
+      ${d.legacy ? '<span class="legacy" title="早期版本生成，尚未入库：可阅读，暂不支持正文搜索">旧版 · 仅支持标题搜索</span>' : ''}
+    </div>
+    <span class="row-side">${esc(d.saved)}</span>
+  </li>`;
+}
+
+function viewLibrary(params) {
+  const up = params.get('up'), tag = params.get('tag');
+  const upDoc = up && DOCS.find(d => String(d.mid) === up);
+  let docs = live().filter(d => (!up || String(d.mid) === up) && (!tag || d.tags.includes(tag)));
+  const ctx = up ? { from: 'up', up } : tag ? { from: 'tag', tag } : {};
+  const groups = [...new Set(docs.map(d => d.group))];
+  const filtered = up || tag;
+  return `
+  <div class="page"><div class="narrow">
+    ${omni(params.get('paste') || '')}
+    ${filtered ? '' : activeStrips()}
+    <div class="toolbar">
+      <span class="count">${filtered ? '' : '全部 · '}${docs.length} 篇笔记</span>
+      <div class="filters">
+        ${upDoc ? `<a class="chip is-on" href="#/">UP 主：${esc(upDoc.author)}<span class="x" aria-label="移除">×</span></a>` : ''}
+        ${tag ? `<a class="chip is-on" href="#/">#${esc(tag)}<span class="x" aria-label="移除">×</span></a>` : ''}
+      </div>
+    </div>
+    ${upDoc ? `<p class="sub" style="margin:4px 0 0">只显示已保存的笔记。<a href="#/up-online" style="color:var(--brand)" data-act="online">浏览 TA 的全部投稿 →</a></p>` : ''}
+    ${groups.map(g => `<div class="group-h">${filtered ? '' : g}</div><ul class="list">${docs.filter(d => d.group === g).map(d => rowHTML(d, ctx)).join('')}</ul>`).join('')}
+    ${!filtered && trashed().length ? `<a class="lib-foot" href="#/trash">最近删除 · ${trashed().length} 篇</a>` : ''}
+  </div></div>`;
+}
+
+function searchDocs(q, scope) {
+  const out = [];
+  for (const d of live()) {
+    const meta = [];
+    if (has(d.title, q)) meta.push('标题');
+    if (has(d.author, q)) meta.push('UP 主');
+    if (has(d.bvid, q)) meta.push('BV 号');
+    if (d.tags.some(t => has(t, q))) meta.push('标签');
+    const notes = [], subs = [];
+    if (!d.legacy) {
+      d.sections.forEach((s, si) => s.p.forEach((p, pi) => { if (has(p, q) || has(s.h, q)) notes.push({ si, pi, h: s.h, text: p }); }));
+      d.transcript.forEach(([t, text], li) => { if (has(text, q)) subs.push({ li, t, text }); });
+    }
+    const n = scope === 'notes' ? notes.length : scope === 'subs' ? subs.length : notes.length + subs.length;
+    if (scope !== 'all' && n === 0) continue;
+    if (scope === 'all' && !meta.length && !n) continue;
+    const tier = has(d.bvid, q) && q.length >= 6 ? 0 : meta.includes('标题') ? 1 : 2;
+    out.push({ d, meta, notes, subs, tier, n });
+  }
+  out.sort((a, b) => a.tier - b.tier || b.n - a.n);
+  return out;
+}
+
+function viewSearch(params) {
+  const q = (params.get('q') || '').trim();
+  const scope = params.get('scope') || 'all';
+  const sim = params.get('sim');
+  const all = searchDocs(q, 'all');
+  const cNotes = all.reduce((s, r) => s + r.notes.length, 0);
+  const cSubs = sim === 'partial' ? 0 : all.reduce((s, r) => s + r.subs.length, 0);
+  let res = searchDocs(q, scope);
+  if (sim === 'partial') res = res.map(r => ({ ...r, subs: [] })).filter(r => scope !== 'subs' && (r.meta.length || r.notes.length));
+  const hitTotal = res.reduce((s, r) => s + (scope !== 'subs' ? r.notes.length : 0) + (scope !== 'notes' ? r.subs.length : 0), 0);
+  const ctx = { from: 'search', q, scope };
+  const expanded = params.get('open') || '';
+  return `
+  <div class="page"><div class="narrow">
+    ${omni(q, { hint: false })}
+    <div class="toolbar">
+      <div class="seg" role="tablist" aria-label="搜索范围">
+        ${[['all', '全部', all.length + ' 个视频'], ['notes', '笔记', cNotes], ['subs', '字幕', cSubs]].map(([k, l, n]) => `<button role="tab" aria-selected="${scope === k}" class="${scope === k ? 'is-on' : ''}" data-scope="${k}">${l}<span class="n">${k === 'all' ? '' : n}</span></button>`).join('')}
+      </div>
+      <span class="count" style="margin:0 0 0 auto">${res.length} 个视频 · ${hitTotal} 处正文命中</span>
+    </div>
+    ${sim === 'partial' ? `<div class="banner"><span class="txt">字幕索引暂时不可用，下面只包含标题和笔记的结果。</span><a class="btn btn-secondary btn-sm" href="${href('/search', { q, scope })}">重试</a></div>` : ''}
+    ${res.length ? res.map(r => resultHTML(r, q, scope, ctx, expanded === r.d.id)).join('') : emptyHTML(q)}
+  </div></div>`;
+}
+function resultHTML({ d, meta, notes, subs }, q, scope, ctx, open) {
+  let hits = [];
+  if (scope !== 'subs') hits = hits.concat(notes.map(n => ({ kind: 'n', ...n })));
+  if (scope !== 'notes') hits = hits.concat(subs.map(s => ({ kind: 's', ...s })));
+  const shown = open ? hits : hits.slice(0, 2);
+  const rest = hits.length - shown.length;
+  return `
+  <article class="result">
+    <div class="result-head">
+      <a class="result-title" href="${href('/doc/' + d.id, ctx)}">${hl(d.title, q)}</a>
+    </div>
+    <div class="result-meta">
+      <span>${hl(d.author, q)}</span><span>${esc(d.duration)}</span><span>${esc(d.saved)}</span>
+      ${meta.length ? `<span class="metahit">${meta.join('、')}匹配</span>` : ''}
+      ${d.legacy ? '<span class="legacy">旧版 · 正文未入库</span>' : ''}
+    </div>
+    ${shown.length ? `<ul class="hits">${shown.map(h => h.kind === 'n'
+      ? `<li><a class="hit" href="${href('/doc/' + d.id, { ...ctx, tab: 'notes', at: h.si + '-' + h.pi })}"><span class="src"><b>笔记</b>${esc(h.h)}</span><span class="snip">${hl(h.text, q)}</span></a></li>`
+      : `<li><a class="hit" href="${href('/doc/' + d.id, { ...ctx, tab: 'subs', at: h.li })}"><span class="src"><b>字幕</b>${mmss(h.t)}</span><span class="snip">${hl(h.text, q)}</span></a></li>`).join('')}</ul>` : ''}
+    ${rest > 0 ? `<a class="btn btn-ghost btn-sm expand" href="${href('/search', { q, scope, open: d.id })}">再显示 ${rest} 处命中</a>` : ''}
+  </article>`;
+}
+function emptyHTML(q) {
+  return `<div class="empty"><h3>没有找到「${esc(q)}」</h3><p>已在标题、UP 主、BV 号、标签、笔记和字幕中查找。<br>换个更短的关键词试试；如果它是一个视频链接，直接粘贴就能生成笔记。</p><div class="acts"><a class="btn btn-secondary" href="#/">查看全部笔记</a></div></div>`;
+}
+
+function backTarget(params) {
+  const from = params.get('from');
+  if (from === 'search') return { label: `搜索「${params.get('q')}」`, to: href('/search', { q: params.get('q'), scope: params.get('scope') }) };
+  if (from === 'up') { const d = DOCS.find(x => String(x.mid) === params.get('up')); return { label: `${d ? d.author : 'UP 主'} 的笔记`, to: href('/', { up: params.get('up') }) }; }
+  if (from === 'tag') return { label: `#${params.get('tag')}`, to: href('/', { tag: params.get('tag') }) };
+  if (from === 'tasks') return { label: '任务', to: '#/tasks' };
+  if (from === 'trash') return { label: '最近删除', to: '#/trash' };
+  return { label: '全部笔记', to: '#/' };
+}
+
+function viewDoc(id, params) {
+  const d = docById(id);
+  if (!d) return `<div class="page"><div class="empty"><h3>这篇笔记不存在或已移除</h3><div class="acts"><a class="btn btn-secondary" href="#/">返回全部笔记</a></div></div></div>`;
+  const tab = params.get('tab') || 'notes';
+  const q = params.get('from') === 'search' ? params.get('q') : '';
+  const at = params.get('at');
+  const back = backTarget(params);
+  const keep = Object.fromEntries([...params.entries()].filter(([k]) => !['tab', 'at'].includes(k)));
+  const sectionsHTML = d.sections.map((s, si) => `
+    <h2 id="s${si}">${hl(s.h, q)}</h2>
+    ${s.p.map((p, pi) => `<p id="p${si}-${pi}">${hl(p, q)}</p>`).join('')}`).join('');
+  const linesHTML = d.transcript.length ? `<ul class="lines">${d.transcript.map(([t, text], li) => `
+    <li class="line ${tab === 'subs' && String(li) === at ? 'is-hit' : ''}" id="l${li}"><a class="ts" href="https://www.bilibili.com/video/${d.bvid}?t=${t}" target="_blank" rel="noreferrer" title="在 B 站从 ${mmss(t)} 播放">${mmss(t)}</a><span>${hl(text, q)}</span></li>`).join('')}</ul>`
+    : `<div class="empty" style="padding:32px 0"><h3>这篇笔记没有保存字幕</h3><p>早期版本生成的笔记只保留了正文。</p></div>`;
+  const tocHTML = d.sections.map((s, si) => `<a href="#" data-jump="s${si}" class="${q && (has(s.h, q) || s.p.some(p => has(p, q))) ? 'has-hit' : ''}">${esc(s.h)}</a>`).join('');
+  return `
+  <div class="page">
+    <div class="doc-wrap">
+      <article>
+        <a class="back" href="${back.to}">${ICON_BACK}<span>${esc(back.label)}</span></a>
+        <h1 class="doc-title">${esc(d.title)}</h1>
+        <div class="doc-meta">
+          ${d.mid ? `<a href="${href('/', { up: d.mid })}">${esc(d.author)}</a>` : `<span>${esc(d.author)}</span>`}
+          <span>${esc(d.duration)}</span>
+          <span>${esc(d.saved)} 保存</span>
+          <a href="https://www.bilibili.com/video/${d.bvid}" target="_blank" rel="noreferrer">在 B 站打开 ${ICON_EXT}</a>
+        </div>
+        ${d.tags.length ? `<div class="doc-tags">${d.tags.map(t => `<a class="tag" href="${href('/', { tag: t })}">#${esc(t)}</a>`).join('')}</div>` : ''}
+        ${d.deleted ? `<div class="banner"><span class="txt">这篇笔记在最近删除里，${d.deleted.left} 天后永久删除。恢复后会重新出现在笔记列表和搜索结果里。</span><button class="btn btn-secondary btn-sm" data-act="restore" data-id="${d.id}">恢复</button></div>` : ''}
+        ${params.get('sim') === 'stale' ? `<div class="stale">笔记在你搜索之后重新生成过，原来命中的段落已不存在。下面是当前版本。</div>` : ''}
+        <div class="doc-sticky">
+        <div class="doc-bar">
+          <div class="seg" role="tablist">
+            <button role="tab" class="${tab === 'notes' ? 'is-on' : ''}" data-tab="notes">笔记</button>
+            <button role="tab" class="${tab === 'subs' ? 'is-on' : ''}" data-tab="subs">字幕</button>
+          </div>
+          <span class="spacer"></span>
+          <button class="btn btn-secondary btn-sm" data-act="copy">复制${tab === 'notes' ? '笔记' : '字幕'}</button>
+          <div class="menu" id="more">
+            <button class="btn btn-ghost btn-sm btn-icon" aria-haspopup="menu" aria-label="更多操作" data-act="menu">⋯</button>
+            <div class="menu-pop" role="menu">
+              <button data-act="regen">重新生成笔记<span class="sub">复用已保存的字幕，会产生模型费用</span></button>
+              <button data-act="mail">发送到邮箱</button>
+              <a href="${href('/jobs/j3', { from: 'doc', doc: d.id })}">处理记录</a>
+              <hr />
+              ${d.deleted ? `<button class="danger" data-act="purge" data-id="${d.id}">永久删除<span class="sub">笔记、字幕和历史版本都会删除</span></button>` : `<button class="danger" data-act="remove" data-id="${d.id}">从笔记中移除<span class="sub">30 天内可以在「最近删除」恢复</span></button>`}
+            </div>
+          </div>
+        </div>
+        ${q ? `<div class="findbar"><span class="q">本篇中的「${esc(q)}」</span><span class="pos" id="find-pos"></span><button class="btn btn-ghost btn-sm btn-icon" data-find="-1" aria-label="上一处">‹</button><button class="btn btn-ghost btn-sm btn-icon" data-find="1" aria-label="下一处">›</button></div>` : ''}
+        </div>
+        <details class="toc-m" ${tab === 'notes' ? '' : 'hidden'}><summary>目录 · ${d.sections.length} 节</summary>${tocHTML}</details>
+        <div class="prose" id="doc-body" data-keep='${esc(JSON.stringify(keep))}'>
+          ${tab === 'notes' ? sectionsHTML : linesHTML}
+        </div>
+        <div class="doc-foot"><span>${esc(d.bvid)}</span><span>字幕来源：${d.transcript.length ? '平台字幕' : '无'}</span><a href="${href('/', { up: d.mid || '' })}" ${d.mid ? '' : 'hidden'}>${esc(d.author)} 的其他笔记</a></div>
+      </article>
+      <aside class="toc" ${tab === 'notes' ? '' : 'style="visibility:hidden"'}><h4>目录</h4>${tocHTML}</aside>
+    </div>
+  </div>`;
+}
+
+function viewJob(id, params) {
+  const j = JOBS.find(x => x.id === id) || JOBS[0];
+  const from = params.get('from');
+  const back = from === 'doc' ? { label: '返回笔记', to: href('/doc/' + params.get('doc')) } : from === 'tasks' ? { label: '任务', to: '#/tasks' } : { label: '全部笔记', to: '#/' };
+  const state = params.get('sim') || j.status;
+  const stepCls = i => state === 'ok' ? 'done' : i < j.step ? 'done' : i === j.step ? (state === 'fail' ? 'fail' : 'cur') : 'todo';
+  const desc = i => {
+    if (state === 'ok') return ['标题与分 P 已获取', '平台字幕 · 412 行', '用时 1 分 48 秒'][i];
+    if (i < j.step) return ['标题与分 P 已获取', '平台字幕 · 388 行'][i];
+    if (i === j.step) return state === 'fail' ? j.reason : j.note;
+    return '';
+  };
+  return `
+  <div class="page"><div class="narrow">
+    <a class="back" href="${back.to}">${ICON_BACK}<span>${esc(back.label)}</span></a>
+    <section class="job">
+      <p class="job-title">${esc(j.title)}</p>
+      <div class="job-meta"><span>${esc(j.author)}</span><span>开始于 ${esc(j.started)}</span></div>
+      <ol class="steps">
+        ${STEPS.map((s, i) => `<li class="step ${stepCls(i)}"><span class="ic">${stepCls(i) === 'done' ? '✓' : stepCls(i) === 'fail' ? '!' : ''}</span><div><div class="lb">${s}</div>${desc(i) ? `<div class="ds">${esc(desc(i))}</div>` : ''}</div></li>`).join('')}
+      </ol>
+      ${state === 'run' ? `<p class="sub">可以离开这个页面，完成后笔记会出现在列表顶部。</p><div class="job-acts" style="margin-top:14px"><a class="btn btn-secondary" href="#/">回到笔记</a><button class="btn btn-ghost" data-act="cancel">取消任务</button></div>` : ''}
+      ${state === 'fail' ? `<p class="sub">确认转写服务已启动后重试；已获取的视频信息会复用。</p><div class="job-acts" style="margin-top:14px"><button class="btn btn-primary" data-act="retry">重试</button><button class="btn btn-ghost" data-act="dismiss">忽略</button></div>
+        <details class="errbox"><summary>错误详情</summary><pre>stage=subtitle  code=${esc(j.code)}\nASR provider sensevoice_mlx: connection refused (127.0.0.1:9000)</pre></details>` : ''}
+      ${state === 'ok' ? `<div class="job-acts"><a class="btn btn-primary" href="${href('/doc/' + (j.doc || 'd1'))}">阅读笔记</a></div>` : ''}
+    </section>
+  </div></div>`;
+}
+
+function viewTasks() {
+  const lbl = { run: ['进行中', 'run'], fail: ['未完成', 'fail'], ok: ['已完成', 'ok'] };
+  return `
+  <div class="page"><div class="narrow">
+    <h1 class="h1">任务</h1>
+    <p class="sub">每次生成都是一条任务。删除任务记录不会删除已保存的笔记。</p>
+    <ul class="list tasklist" style="margin-top:16px">
+      ${JOBS.map(j => `<li class="row"><a class="row-title" href="${j.status === 'ok' ? href('/doc/' + j.doc, { from: 'tasks' }) : href('/jobs/' + j.id, { from: 'tasks' })}">${esc(j.title)}</a><div class="row-meta"><span>${esc(j.author)}</span><span>${esc(j.started)}</span>${j.status === 'fail' ? `<span style="color:var(--danger)">${esc(STEPS[j.step])}失败</span>` : ''}</div><span class="row-side"><span class="st ${lbl[j.status][1]}">${lbl[j.status][0]}</span></span></li>`).join('')}
+    </ul>
+    <div style="margin-top:20px"><button class="btn btn-ghost btn-sm" data-act="manage">管理任务记录…</button></div>
+  </div></div>`;
+}
+
+function viewTrash() {
+  const items = trashed();
+  return `
+  <div class="page"><div class="narrow">
+    <a class="back" href="#/">${ICON_BACK}<span>全部笔记</span></a>
+    <h1 class="h1">最近删除</h1>
+    <p class="sub">移除的笔记在这里保留 30 天，之后自动永久删除。恢复后笔记、字幕和标签都会回到原来的位置。</p>
+    ${items.length ? `<ul class="list" style="margin-top:16px">${items.map(d => `
+      <li class="row trash-row">
+        <a class="row-title" href="${href('/doc/' + d.id, { from: 'trash' })}">${esc(d.title)}</a>
+        <div class="row-meta"><span>${esc(d.author)}</span><span>${esc(d.deleted.at)} 移除</span><span class="${d.deleted.left <= 3 ? 'soon' : ''}">${d.deleted.left} 天后永久删除</span></div>
+        <div class="row-acts"><button class="btn btn-secondary btn-sm" data-act="restore" data-id="${d.id}">恢复</button><button class="btn btn-ghost btn-sm" data-act="purge" data-id="${d.id}">永久删除</button></div>
+      </li>`).join('')}</ul>` : `<div class="empty"><h3>最近删除是空的</h3><p>从笔记中移除的内容会在这里保留 30 天。</p><div class="acts"><a class="btn btn-secondary" href="#/">返回全部笔记</a></div></div>`}
+  </div></div>`;
+}
+
+async function doRemove(id) {
+  const d = docById(id);
+  if (!d || d.deleted) return;
+  const ok = await openDialog({ title: '移除这篇笔记？', body: `「${esc(d.title)}」会从笔记列表和搜索结果里消失，30 天内可以在「最近删除」里恢复。任务记录和 B 站上的视频不受影响。`, confirm: '移除' });
+  if (!ok) return;
+  const back = backTarget(parse().params).to;
+  d.deleted = { at: '刚刚', left: 30 };
+  location.hash = back;
+  toast(`已移除「${short(d.title)}」`, { label: '撤销', fn: () => { delete d.deleted; render(); } });
+}
+function doRestore(id) {
+  const d = docById(id);
+  if (!d || !d.deleted) return;
+  delete d.deleted;
+  render();
+  toast(`已恢复「${short(d.title)}」`);
+}
+async function doPurge(id) {
+  const d = docById(id);
+  if (!d) return;
+  const ok = await openDialog({ title: '永久删除这篇笔记？', body: `「${esc(d.title)}」的笔记、字幕和所有历史版本都会删除，不能恢复。以后再粘贴这个视频的链接，可以重新生成。`, confirm: '永久删除', match: d.bvid });
+  if (!ok) return;
+  DOCS.splice(DOCS.indexOf(d), 1);
+  if (parse().path.startsWith('/doc/')) location.hash = '#/trash'; else render();
+  toast('已永久删除');
+}
+
+function viewSystem() {
+  return `
+  <div class="page"><div class="narrow sys">
+    <h1 class="h1">组件与文案</h1>
+    <p class="sub">所有按钮来自同一个 Button 组件：3 种样式 × 2 种尺寸，宽度跟随文字。一个区域最多一个主按钮。</p>
+    <h2>Button</h2>
+    <div class="demo"><button class="btn btn-primary">生成笔记</button><button class="btn btn-secondary">重新生成</button><button class="btn btn-ghost">取消任务</button><button class="btn btn-danger">从笔记中移除</button></div>
+    <div class="demo" style="margin-top:8px"><button class="btn btn-primary btn-sm">阅读笔记</button><button class="btn btn-secondary btn-sm">复制笔记</button><button class="btn btn-ghost btn-sm">再显示 3 处命中</button><button class="btn btn-ghost btn-sm btn-icon" aria-label="更多">⋯</button></div>
+    <h2>Segmented / Chip</h2>
+    <div class="demo"><div class="seg"><button class="is-on">全部</button><button>笔记<span class="n">7</span></button><button>字幕<span class="n">5</span></button></div><span class="chip is-on">UP 主：慢学实验室<span class="x">×</span></span><span class="chip">#学习方法</span></div>
+    <h2>文案</h2>
+    <div class="tbl"><table>
+      <tr><th>现在</th><th>改为</th><th>说明</th></tr>
+      <tr><td>哔哩要約</td><td>笔哩</td><td>产品名</td></tr>
+      <tr><td>开始总结</td><td>生成笔记</td><td>只在输入框识别到链接时出现</td></tr>
+      <tr><td>历史 / 搜索笔记</td><td>笔记</td><td>合并为一个页面，顶栏只有「笔记」「任务」</td></tr>
+      <tr><td>再贴一条 / 粘贴新链接</td><td>（移除）</td><td>首页输入框直接粘贴，不需要单独入口</td></tr>
+      <tr><td>重新总结</td><td>重新生成笔记</td><td>收进「⋯」，说明会产生费用</td></tr>
+      <tr><td>展开全文</td><td>再显示 N 处命中</td><td>展开的是命中，不是全文</td></tr>
+      <tr><td>返回</td><td>搜索「注意力」/ 慢学实验室 的笔记</td><td>写明返回到哪里</td></tr>
+      <tr><td>视频源</td><td>在 B 站打开 ↗</td><td>站外动作带外链标记</td></tr>
+      <tr><td>清理历史</td><td>管理任务记录</td><td>不会删除笔记</td></tr>
+      <tr><td>删除</td><td>从笔记中移除</td><td>30 天内可以在「最近删除」恢复；提示条里可以直接撤销</td></tr>
+      <tr><td>（无）</td><td>永久删除</td><td>只在「最近删除」里出现，需要输入 BV 号确认</td></tr>
+    </table></div>
+  </div></div>`;
+}
+
+function viewUpOnline() {
+  return `<div class="page"><div class="narrow"><a class="back" href="${href('/', { up: 3001 })}">${ICON_BACK}<span>慢学实验室 的笔记</span></a><div class="empty"><h3>在线投稿列表</h3><p>沿用现有 UP 页（/up/:mid）：缩略图列表、已生成的标记、批量生成。原型不展开。</p></div></div></div>`;
+}
+
+function render() {
+  const { path, params, key } = parse();
+  if (lastKey) scrollMemo[lastKey] = scrollY;
+  let html, nav = 'notes';
+  if (path === '/' ) html = viewLibrary(params);
+  else if (path === '/search') html = (params.get('q') || '').trim() ? viewSearch(params) : viewLibrary(params);
+  else if (path.startsWith('/doc/')) html = viewDoc(path.slice(5), params);
+  else if (path.startsWith('/jobs/')) { html = viewJob(path.slice(6), params); nav = 'tasks'; }
+  else if (path === '/tasks') { html = viewTasks(); nav = 'tasks'; }
+  else if (path === '/trash') html = viewTrash();
+  else if (path === '/system') html = viewSystem();
+  else if (path === '/up-online') html = viewUpOnline();
+  else html = viewLibrary(params);
+  app.innerHTML = html;
+  document.getElementById('nav-notes').classList.toggle('is-on', nav === 'notes');
+  document.getElementById('nav-tasks').classList.toggle('is-on', nav === 'tasks');
+  const badge = document.getElementById('task-badge');
+  const pending = JOBS.filter(j => j.status !== 'ok').length;
+  badge.textContent = pending; badge.hidden = !pending;
+  badge.classList.toggle('is-warn', !JOBS.some(j => j.status === 'run'));
+  bind(path, params);
+  const restore = scrollMemo[key];
+  if (path.startsWith('/doc/') && params.get('at') && restore == null) focusHit(params);
+  else window.scrollTo(0, restore || 0);
+  lastKey = key;
+  const dlg = params.get('dialog');
+  if (dlg === 'remove') setTimeout(() => doRemove(path.slice(5)), 0);
+  if (dlg === 'purge') setTimeout(() => doPurge(params.get('id')), 0);
+}
+
+let hitIdx = 0;
+function marks() { return [...document.querySelectorAll('#doc-body mark')]; }
+function showHit(i) {
+  const ms = marks(); if (!ms.length) return;
+  hitIdx = (i + ms.length) % ms.length;
+  ms.forEach((m, k) => m.classList.toggle('is-cur', k === hitIdx));
+  ms[hitIdx].scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  const pos = document.getElementById('find-pos'); if (pos) pos.textContent = `${hitIdx + 1} / ${ms.length}`;
+}
+function focusHit(params) {
+  const tab = params.get('tab') || 'notes', at = params.get('at');
+  const el = document.getElementById(tab === 'notes' ? 'p' + at : 'l' + at);
+  const ms = marks();
+  const i = el ? ms.findIndex(m => el.contains(m)) : 0;
+  requestAnimationFrame(() => { showHit(Math.max(0, i)); });
+}
+
+function bind(path, params) {
+  const input = document.getElementById('omni');
+  if (input) {
+    const form = document.getElementById('omni-form');
+    input.addEventListener('input', () => {
+      const v = input.value;
+      const link = isLink(v);
+      document.getElementById('omni-lead').innerHTML = link ? ICON_LINK : ICON_SEARCH;
+      document.getElementById('omni-submit').hidden = !link;
+      document.getElementById('omni-detect').innerHTML = detectPanel(v);
+      input.setAttribute('enterkeyhint', link ? 'go' : 'search');
+      const hint = document.getElementById('omni-hint'); if (hint) hint.hidden = !!v;
+    });
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      if (e.isComposing) return;
+      const v = input.value.trim();
+      if (!v) return;
+      if (isLink(v)) {
+        const bv = bvOf(v);
+        const existing = bv && DOCS.find(d => d.bvid.toLowerCase() === bv.toLowerCase());
+        if (existing) { location.hash = href('/doc/' + existing.id, existing.deleted ? { from: 'trash' } : {}); return; }
+        toast('已开始生成，完成后会出现在列表顶部');
+        location.hash = '#/jobs/j1';
+        return;
+      }
+      location.hash = href('/search', { q: v, scope: params.get('scope') || 'all' });
+    });
+    const clear = document.getElementById('omni-clear');
+    if (clear) clear.addEventListener('click', () => { location.hash = '#/'; setTimeout(() => document.getElementById('omni')?.focus(), 0); });
+  }
+  app.querySelectorAll('[data-scope]').forEach(b => b.addEventListener('click', () => {
+    location.hash = href('/search', { q: params.get('q'), scope: b.dataset.scope, sim: params.get('sim') });
+  }));
+  app.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
+    const keep = Object.fromEntries([...params.entries()].filter(([k]) => !['tab', 'at'].includes(k)));
+    location.replace(href(path, { ...keep, tab: b.dataset.tab }));
+  }));
+  app.querySelectorAll('[data-jump]').forEach(a => a.addEventListener('click', e => {
+    e.preventDefault();
+    document.getElementById(a.dataset.jump)?.scrollIntoView({ block: 'start' });
+    a.closest('details')?.removeAttribute('open');
+  }));
+  app.querySelectorAll('[data-find]').forEach(b => b.addEventListener('click', () => showHit(hitIdx + Number(b.dataset.find))));
+  if (path.startsWith('/doc/') && params.get('q') && !params.get('at')) {
+    const pos = document.getElementById('find-pos'); const n = marks().length;
+    if (pos) pos.textContent = n ? `共 ${n} 处` : '当前标签页没有命中';
+  }
+}
+
+app.addEventListener('click', e => {
+  const more = document.getElementById('more');
+  const t = e.target.closest('[data-act]');
+  if (more && !e.target.closest('#more')) more.classList.remove('is-open');
+  if (!t) return;
+  const act = t.dataset.act;
+  if (act === 'remove') { more?.classList.remove('is-open'); doRemove(t.dataset.id); return; }
+  if (act === 'restore') { doRestore(t.dataset.id); return; }
+  if (act === 'purge') { more?.classList.remove('is-open'); doPurge(t.dataset.id); return; }
+  const msgs = { copy: '已复制', regen: '原型：会弹出确认，说明复用字幕并产生费用', mail: '原型：发送到配置的邮箱', cancel: '原型：任务已取消', retry: '原型：重新开始任务', dismiss: '原型：任务移到已忽略', manage: '原型：进入选择模式，批量删除任务记录' };
+  if (act === 'menu') { more.classList.toggle('is-open'); return; }
+  if (act === 'online') return;
+  toast(msgs[act] || '原型操作');
+});
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) {
+    const i = document.getElementById('omni');
+    if (i) { e.preventDefault(); i.focus(); }
+  }
+  if (e.key === 'Escape') document.getElementById('more')?.classList.remove('is-open');
+});
+addEventListener('scroll', () => document.getElementById('topbar').classList.toggle('is-scrolled', scrollY > 4), { passive: true });
+const qsTheme = new URLSearchParams(location.search).get('theme');
+const setTheme = t => { document.documentElement.dataset.theme = t; };
+setTheme(qsTheme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+document.getElementById('theme').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
+addEventListener('message', e => { if (e.data && e.data.theme) setTheme(e.data.theme); if (e.data && e.data.route) location.hash = e.data.route; });
+history.scrollRestoration = 'manual';
+addEventListener('hashchange', render);
+render();
+</script>
+</body>
+</html>

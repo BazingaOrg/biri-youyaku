@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>笔哩 · 图标方案</title>
+<style>
+:root { --bg: #fbf7f2; --panel: #fff; --fg: #2b2a33; --muted: #746e7b; --line: #ece3d6; --brand: #b33f66; --serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", ui-serif, serif; --sans: "Inter", "PingFang SC", system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 var(--sans); }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 20px 80px; }
+h1 { font-family: var(--serif); font-size: 32px; margin: 0; letter-spacing: .04em; }
+.lead { color: var(--muted); margin: 6px 0 0; max-width: 720px; }
+.concept { margin-top: 40px; padding: 28px; background: var(--panel); border: 1px solid var(--line); border-radius: 24px; }
+.concept.rec { border-color: var(--brand); box-shadow: 0 0 0 3px #fbe7ee; }
+.head { display: flex; gap: 8px 16px; align-items: baseline; flex-wrap: wrap; }
+.head h2 { margin: 0; font-size: 20px; }
+.head .tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #fbe7ee; color: var(--brand); }
+.desc { color: var(--muted); margin: 6px 0 0; max-width: 760px; font-size: 14px; }
+.grid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 28px; margin-top: 22px; align-items: start; }
+.hero svg { width: 220px; height: 220px; display: block; filter: drop-shadow(0 10px 24px rgba(43,42,51,.12)); }
+.side { display: grid; gap: 18px; min-width: 0; }
+.sizes { display: flex; gap: 18px; align-items: flex-end; flex-wrap: wrap; }
+.sizes figure { margin: 0; text-align: center; font-size: 11px; color: var(--muted); }
+.sizes svg { display: block; margin: 0 auto 4px; }
+.tiles { display: flex; gap: 12px; flex-wrap: wrap; }
+.tile { width: 132px; height: 132px; border-radius: 18px; display: grid; place-items: center; }
+.tile.dark { background: #15131a; }
+.tile.paper { background: #f2ece4; }
+.tile.photo { background: linear-gradient(135deg, #6b8fb5, #c99bb5 60%, #e8c39e); }
+.tile .ico { width: 64px; text-align: center; color: #fff; font-size: 11px; }
+.tile .ico svg { width: 64px; height: 64px; display: block; margin-bottom: 4px; }
+.tile.paper .ico { color: var(--fg); }
+.lockup { display: flex; gap: 24px; flex-wrap: wrap; align-items: center; }
+.lock { display: inline-flex; align-items: center; gap: 12px; padding: 14px 20px; border-radius: 16px; border: 1px solid var(--line); }
+.lock svg { width: 40px; height: 40px; }
+.lock b { font-family: var(--serif); font-size: 26px; letter-spacing: .06em; }
+.lock small { display: block; font-size: 12px; color: var(--muted); letter-spacing: .02em; font-weight: 400; font-family: var(--sans); }
+.lock.dark { background: #15131a; border-color: #15131a; color: #ede7db; }
+.lock.dark small { color: #9b95a4; }
+.hero .blink { transform-box: fill-box; transform-origin: center; animation: blink 4.2s infinite; }
+.hero .peek { animation: peek 3.6s ease-in-out infinite; }
+.hero .feed { animation: feed 3.2s ease-in-out infinite; }
+.hero .drip { transform-box: fill-box; transform-origin: top; animation: drip 2.8s ease-in infinite; }
+@keyframes blink { 0%, 90%, 100% { transform: scaleY(1); } 94% { transform: scaleY(.1); } }
+@keyframes peek { 0%, 100% { transform: translateY(0); } 45%, 60% { transform: translateY(34px); } }
+@keyframes feed { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-110px); } }
+@keyframes drip { 0%, 40% { transform: scale(.4); opacity: 0; } 60% { transform: scale(1); opacity: 1; } 100% { transform: translateY(12px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .hero * { animation: none !important; } }
+.notes { font-size: 13px; color: var(--muted); margin: 0; padding-left: 1.2em; }
+.name { margin-top: 32px; padding: 20px 24px; border-radius: 20px; background: #fbe7ee; }
+.name h3 { margin: 0 0 6px; font-size: 16px; }
+.name p { margin: 0; font-size: 14px; }
+@media (max-width: 720px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .hero svg { width: 160px; height: 160px; }
+  .concept { padding: 20px; border-radius: 20px; }
+  .tile { width: 100px; height: 100px; }
+  .tile .ico, .tile .ico svg { width: 52px; }
+  .tile .ico svg { height: 52px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>笔哩 · 图标方案</h1>
+  <p class="lead">重新画的四个方向：每个都是一个有动作、有小故事的角色，全部左右对称，保留樱红 #B33F66 和和纸米 #FBF7F2。大图带轻微动画（眨眼、探头、吐纸条），表示它也可以用作加载状态。每个方向都展示了小尺寸、深色和照片桌面上的效果，以及横排字标。定稿方案带描边。</p>
+  <div class="name">
+    <h3>为什么选「笔哩」而不是「哔记」</h3>
+    <p>「笔」直接说明在做笔记，「哩」保留了 哔哩 的读音，和旧名「哔哩要約」一脉相承；不用「哔」字，离 B 站商标远一点。拼音 bǐlī，英文写作 Bili Notes。日文没有自然对应：「哩」在日文里是英里（マイル）的意思，「筆哩」读起来别扭；「ビリ」单独用是「最后一名」。日文场景建议写「ビリノート」（读作 bilibili 的笔记）或直接用 Bili Notes。</p>
+  </div>
+  <div id="concepts"></div>
+</div>
+<script>
+const LIGHT = { bg: '#B33F66', fg: '#FBF7F2', ink: '#B33F66', soft: '#E6A4B8' };
+const DARK = { bg: '#A94164', fg: '#F5EDE3', ink: '#A94164', soft: '#E39AB1' };
+const MONO = { bg: 'none', fg: '#2B2A33', ink: '#FBF7F2', soft: '#2B2A33' };
+
+const plate = (c, inner) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">${c.bg === 'none' ? '' : `<rect x="16" y="16" width="480" height="480" rx="120" fill="${c.bg}"/>`}${inner}</svg>`;
+
+const CONCEPTS = [
+  {
+    key: 'A', name: '墨滴兔',
+    desc: '笔尖滴下的一滴墨，落到纸上长出了一对耳朵。整个图标就是一个形状：上面两个尖是耳朵，下面圆圆的是身子，底下还挂着一颗正要落下的小墨点。「笔」和「哩」都在里面：墨来自笔，墨点像念「哩」时的尾音。',
+    notes: ['只有一个外形，16px 下依然是「两只耳朵 + 一颗水滴」的剪影', '眨眼动画可以直接用作加载状态', '单色版可以当印章、贴纸用'],
+    svg: c => plate(c, `
+      <path d="M256 438 C184 438 132 388 132 322 C132 258 170 214 182 152 C188 118 196 90 210 84 C226 78 238 124 244 168 Q256 184 268 168 C274 124 286 78 302 84 C316 90 324 118 330 152 C342 214 380 258 380 322 C380 388 328 438 256 438 Z" fill="${c.fg}"/>
+      <path d="M210 112 C204 132 200 150 198 168" stroke="${c.soft}" stroke-width="14" stroke-linecap="round" fill="none"/>
+      <path d="M302 112 C308 132 312 150 314 168" stroke="${c.soft}" stroke-width="14" stroke-linecap="round" fill="none"/>
+      <g class="blink"><circle cx="216" cy="306" r="15" fill="${c.ink}"/><circle cx="296" cy="306" r="15" fill="${c.ink}"/></g>
+      <ellipse cx="190" cy="342" rx="20" ry="11" fill="${c.soft}"/>
+      <ellipse cx="322" cy="342" rx="20" ry="11" fill="${c.soft}"/>
+      <path d="M244 336 Q250 346 256 336 Q262 346 268 336" stroke="${c.ink}" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M256 448 C268 462 270 474 256 476 C242 474 244 462 256 448 Z" fill="${c.fg}" class="drip"/>`)
+  },
+  {
+    key: 'B', name: '书里探头', rec: true,
+    desc: '一只兔子从摊开的笔记本后面探出头，两只爪子扒着书页。意思是：你的笔记里住着一只帮你看视频的兔子。动起来时兔子会一缩一探。',
+    notes: ['已定稿。最有性格，可以延伸出一套表情（睡着、找东西、举手），用在空状态和引导页', '32px 及以下自动换成简化版：去掉爪子和书页横线，眼睛放大、描边加粗', '加载状态用「一缩一探」动画'],
+    svg: (c, mini) => mini ? plate(c, `
+      <rect x="168" y="56" width="66" height="180" rx="33" fill="${c.fg}"/>
+      <rect x="278" y="56" width="66" height="180" rx="33" fill="${c.fg}"/>
+      <ellipse cx="256" cy="282" rx="124" ry="106" fill="${c.fg}"/>
+      <circle cx="208" cy="262" r="22" fill="${c.ink}"/><circle cx="304" cy="262" r="22" fill="${c.ink}"/>
+      <path d="M64 330 Q160 296 256 332 Q352 296 448 330 L448 452 Q352 420 256 456 Q160 420 64 452 Z" fill="${c.fg}" stroke="${c.ink}" stroke-width="24" stroke-linejoin="round"/>
+      <path d="M256 332 V456" stroke="${c.ink}" stroke-width="18"/>`) : plate(c, `
+      <g class="peek">
+        <rect x="178" y="72" width="54" height="160" rx="27" fill="${c.fg}"/>
+        <rect x="280" y="72" width="54" height="160" rx="27" fill="${c.fg}"/>
+        <rect x="194" y="96" width="22" height="104" rx="11" fill="${c.soft}"/>
+        <rect x="296" y="96" width="22" height="104" rx="11" fill="${c.soft}"/>
+        <ellipse cx="256" cy="282" rx="116" ry="100" fill="${c.fg}"/>
+        <g class="blink"><circle cx="212" cy="264" r="15" fill="${c.ink}"/><circle cx="300" cy="264" r="15" fill="${c.ink}"/></g>
+        <path d="M244 292 L268 292 L256 304 Z" fill="${c.soft}"/>
+      </g>
+      <path d="M72 320 Q164 288 256 322 Q348 288 440 320 L440 444 Q348 414 256 448 Q164 414 72 444 Z" fill="${c.fg}" stroke="${c.ink}" stroke-width="14" stroke-linejoin="round"/>
+      <path d="M256 322 V448" stroke="${c.ink}" stroke-width="10"/>
+      <path d="M112 360 Q172 342 226 362 M112 396 Q172 378 226 398 M286 362 Q340 342 400 360 M286 398 Q340 378 400 396" stroke="${c.soft}" stroke-width="10" fill="none" stroke-linecap="round"/>
+      <path d="M134 330 Q134 290 166 290 Q198 290 198 330 Z" fill="${c.fg}" stroke="${c.ink}" stroke-width="10" stroke-linejoin="round"/>
+      <path d="M314 330 Q314 290 346 290 Q378 290 378 330 Z" fill="${c.fg}" stroke="${c.ink}" stroke-width="10" stroke-linejoin="round"/>
+      <path d="M156 306 V322 M176 306 V322 M336 306 V322 M356 306 V322" stroke="${c.soft}" stroke-width="7" stroke-linecap="round"/>`)
+  },
+  {
+    key: 'C', name: '吐笔记的小电视',
+    desc: '一台长着兔耳朵的小电视，看完视频就从嘴里「吐」出一张写好的笔记，像小票机一样。把「视频进去、笔记出来」这件事演出来。没有天线，和 B 站的小电视拉开距离。',
+    notes: ['故事最完整，第一次看到就知道这个应用做什么', '纸条伸缩可以直接做成「生成中」的动画', '形状比 A 复杂，32px 以下纸条上的字会消失'],
+    svg: c => plate(c, `
+      <g class="feed">
+        <path d="M196 300 H316 V452 L296 440 L276 452 L256 440 L236 452 L216 440 L196 452 Z" fill="${c.fg}"/>
+        <rect x="216" y="384" width="80" height="14" rx="7" fill="${c.soft}"/>
+        <rect x="226" y="410" width="60" height="14" rx="7" fill="${c.soft}"/>
+      </g>
+      <rect x="150" y="44" width="62" height="124" rx="31" fill="${c.fg}" transform="rotate(-16 181 150)"/>
+      <rect x="300" y="44" width="62" height="124" rx="31" fill="${c.fg}" transform="rotate(16 331 150)"/>
+      <rect x="168" y="66" width="26" height="76" rx="13" fill="${c.soft}" transform="rotate(-16 181 150)"/>
+      <rect x="318" y="66" width="26" height="76" rx="13" fill="${c.soft}" transform="rotate(16 331 150)"/>
+      <rect x="84" y="118" width="344" height="236" rx="72" fill="${c.fg}"/>
+      <rect x="120" y="150" width="272" height="150" rx="44" fill="${c.soft}" opacity=".5"/>
+      <path d="M176 236 Q204 202 232 236 M280 236 Q308 202 336 236" stroke="${c.ink}" stroke-width="20" fill="none" stroke-linecap="round"/>
+      <rect x="184" y="322" width="144" height="16" rx="8" fill="${c.ink}"/>`)
+  },
+  {
+    key: 'D', name: '书签兔',
+    desc: '一条丝带书签，燕尾剪口朝上，正好是一对兔耳；书签下半截夹在笔记本里。书签的意思是「回看」：这个应用就是帮你在视频里夹书签。',
+    notes: ['构图最简洁，有点像日式文具的感觉', '书签 + 笔记本的含义需要稍微解释一下', '竖向构图，放在横向的顶栏里显得窄'],
+    svg: c => plate(c, `
+      <path d="M180 80 L256 168 L332 80 V380 H180 Z" fill="${c.fg}" stroke-linejoin="round"/>
+      <g class="blink"><circle cx="224" cy="262" r="14" fill="${c.ink}"/><circle cx="288" cy="262" r="14" fill="${c.ink}"/></g>
+      <ellipse cx="206" cy="296" rx="16" ry="9" fill="${c.soft}"/>
+      <ellipse cx="306" cy="296" rx="16" ry="9" fill="${c.soft}"/>
+      <path d="M248 292 Q256 302 264 292" stroke="${c.ink}" stroke-width="8" fill="none" stroke-linecap="round"/>
+      <path d="M84 352 Q170 322 256 356 Q342 322 428 352 L428 440 Q342 412 256 446 Q170 412 84 440 Z" fill="${c.soft}"/>
+      <path d="M256 356 V446" stroke="${c.ink}" stroke-width="10"/>`)
+  }
+];
+
+document.getElementById('concepts').innerHTML = CONCEPTS.map(k => `
+  <section class="concept ${k.rec ? 'rec' : ''}">
+    <div class="head"><h2>${k.key} · ${k.name}</h2>${k.rec ? '<span class="tag">定稿</span>' : ''}</div>
+    <p class="desc">${k.desc}</p>
+    <div class="grid">
+      <div class="hero">${k.svg(LIGHT)}</div>
+      <div class="side">
+        <div class="sizes">
+          ${[96, 64, 48, 32, 16].map(s => `<figure>${k.svg(LIGHT, s <= 32).replace('<svg ', `<svg width="${s}" height="${s}" `)}${s}px</figure>`).join('')}
+          <figure>${k.svg(MONO).replace('<svg ', '<svg width="64" height="64" ')}单色</figure>
+        </div>
+        <div class="tiles">
+          <div class="tile dark"><div class="ico">${k.svg(DARK)}笔哩</div></div>
+          <div class="tile photo"><div class="ico">${k.svg(LIGHT)}笔哩</div></div>
+          <div class="tile paper"><div class="ico">${k.svg(LIGHT)}笔哩</div></div>
+        </div>
+        <div class="lockup">
+          <span class="lock">${k.svg(LIGHT, true)}<b>笔哩<small>把视频变成能回看的笔记</small></b></span>
+          <span class="lock dark">${k.svg(DARK, true)}<b>笔哩<small>Bili Notes</small></b></span>
+        </div>
+        <ul class="notes">${k.notes.map(n => `<li>${n}</li>`).join('')}</ul>
+      </div>
+    </div>
+  </section>`).join('');
+</script>
+</body>
+</html>
