@@ -7,6 +7,7 @@ import {isRunning} from '../lib/jobStatus'
 import {BackButton} from '../components/BackButton'
 import {Button} from '../components/Button'
 import {ConfirmDialog} from '../components/ConfirmDialog'
+import {RabbitScene} from '../components/Rabbit'
 import {Skeleton} from '../components/Skeleton'
 import {useToast} from '../components/ToastProvider'
 import {IconTooltip} from './history/IconTooltip'
@@ -339,15 +340,15 @@ export function TasksPage() {
       <div className="mt-2">
         {loading ? <Skeleton count={6} /> : null}
         {!loading && loadError === 'initial' ? (
-          <div className="grid justify-items-center gap-3 py-12 text-center">
-            <p className="text-sm text-muted">加载失败，请检查网络后重试</p>
+          <RabbitScene mood="error" title="加载失败">
+            <p className="text-sm text-muted">请检查网络后重试</p>
             <Button variant="secondary" onClick={() => void loadFirstPage()}>
               重试
             </Button>
-          </div>
+          </RabbitScene>
         ) : null}
         {!loading && loadError !== 'initial' && jobs.length === 0 ? (
-          <p className="py-16 text-center text-sm text-muted">还没有任务记录</p>
+          <RabbitScene mood="asleep" title="还没有任务记录" />
         ) : null}
         {!loading && jobs.length > 0 ? (
           <ul>

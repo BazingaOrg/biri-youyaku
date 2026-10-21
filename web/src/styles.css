@@ -173,6 +173,26 @@ kbd {
   font-weight: 600;
 }
 
+.rabbit-blink {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: rabbit-blink 4.2s infinite;
+}
+
+.rabbit-peek {
+  animation: rabbit-peek 3.6s ease-in-out infinite;
+}
+
+@keyframes rabbit-blink {
+  0%, 90%, 100% { transform: scaleY(1); }
+  94% { transform: scaleY(0.12); }
+}
+
+@keyframes rabbit-peek {
+  0%, 100% { transform: translateY(0); }
+  45%, 60% { transform: translateY(0.9rem); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

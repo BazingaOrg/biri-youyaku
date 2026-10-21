@@ -3,6 +3,7 @@ import {Link} from 'wouter'
 import {searchLibrary, type LibrarySearchGroup, type LibrarySearchResponse} from '../lib/api'
 import {formatClock, formatDuration, formatSavedDay} from '../lib/format'
 import {Button} from '../components/Button'
+import {RabbitScene} from '../components/Rabbit'
 import {OmniBar} from '../components/OmniBar'
 import {Segmented} from '../components/Segmented'
 import {SearchHighlight} from '../components/SearchHighlight'
@@ -165,15 +166,22 @@ export function SearchPage() {
           </Button>
         </div>
       ) : null}
-      {error ? <p className="mt-4 text-sm text-danger">{error}</p> : null}
+      {error && !result ? (
+        <RabbitScene mood="error" title="检索失败">
+          <p className="text-sm text-muted">{error}</p>
+          <Button variant="secondary" onClick={() => setRetryNonce((nonce) => nonce + 1)}>
+            重试
+          </Button>
+        </RabbitScene>
+      ) : null}
+      {error && result ? <p className="mt-4 text-sm text-danger">{error}</p> : null}
       {loading ? <div className="mt-4"><Skeleton count={5} /></div> : null}
       {!loading && !error && !q.trim() ? (
         <p className="py-12 text-center text-sm text-muted">输入关键词，按 Enter 搜索</p>
       ) : null}
       {!loading && !error && q.trim() && result && result.groups.length === 0 && partial.length === 0 ? (
-        <div className="py-16 text-center">
-          <h2 className="text-[17px] font-semibold text-ink">没有找到「{q}」</h2>
-          <p className="mt-2 text-sm leading-6 text-muted">
+        <RabbitScene mood="search" title={`没有找到「${q}」`}>
+          <p className="text-sm leading-6 text-muted">
             {scopedEmptyHint}
             <br />
             换个更短的关键词试试；如果它是一个视频链接，直接粘贴就能生成笔记。
@@ -183,7 +191,7 @@ export function SearchPage() {
               查看全部笔记
             </Button>
           </div>
-        </div>
+        </RabbitScene>
       ) : null}
       {!loading && result
         ? result.groups.map((group) => (

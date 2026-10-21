@@ -4,6 +4,7 @@ import {listLibraryTrash, purgeDocument, restoreDocument, type TrashItem} from '
 import {formatDate} from '../lib/format'
 import {BackButton} from '../components/BackButton'
 import {Button} from '../components/Button'
+import {RabbitScene} from '../components/Rabbit'
 import {ConfirmDialog} from '../components/ConfirmDialog'
 import {Skeleton} from '../components/Skeleton'
 import {useToast} from '../components/ToastProvider'
@@ -71,15 +72,15 @@ export function TrashPage() {
       <div className="mt-6">
         {loading ? <Skeleton count={4} /> : null}
         {error ? (
-          <div className="grid justify-items-center gap-3 py-12 text-center">
+          <RabbitScene mood="error" title="加载失败">
             <p className="text-sm text-muted">{error}</p>
             <Button variant="secondary" onClick={() => void load()}>
               重试
             </Button>
-          </div>
+          </RabbitScene>
         ) : null}
         {!loading && !error && items.length === 0 ? (
-          <p className="py-16 text-center text-sm text-muted">最近删除是空的</p>
+          <RabbitScene mood="asleep" title="最近删除是空的" />
         ) : null}
         {!loading && items.length > 0 ? (
           <ul>

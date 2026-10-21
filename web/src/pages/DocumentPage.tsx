@@ -27,6 +27,7 @@ import {MarkdownContent} from '../components/MarkdownContent'
 import {SearchHighlight} from '../components/SearchHighlight'
 import {PROSE} from '../lib/prose'
 import {Segmented} from '../components/Segmented'
+import {Rabbit} from '../components/Rabbit'
 import {PageLoading} from '../components/Spinner'
 import {includesSearchQuery} from '../lib/searchHighlight'
 import {writeActive} from '../lib/activeJob'
@@ -267,6 +268,7 @@ export function DocumentPage({id}: {id: string}) {
   if (error || (!content && !legacyJob)) {
     return (
       <div className="mx-auto grid max-w-xl justify-items-center gap-3 py-16 text-center">
+        <Rabbit mood="error" />
         <h1 className="text-lg font-semibold">这篇笔记不存在或已移除</h1>
         <p className="text-sm text-muted">{error}</p>
         <Button variant="secondary" onClick={() => navigate('/')}>

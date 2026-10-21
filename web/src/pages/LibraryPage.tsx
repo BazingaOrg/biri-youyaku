@@ -5,6 +5,7 @@ import {formatDuration, formatSavedDay} from '../lib/format'
 import {Chip} from '../components/Chip'
 import {OmniBar} from '../components/OmniBar'
 import {Button} from '../components/Button'
+import {RabbitScene} from '../components/Rabbit'
 import {Skeleton} from '../components/Skeleton'
 import {TaskStrips} from '../components/TaskStrips'
 import {useOmniComposer} from '../hooks/useOmniComposer'
@@ -189,16 +190,15 @@ export function LibraryPage() {
       <div className="mt-3">
         {loading ? <Skeleton count={6} /> : null}
         {!loading && error === 'initial' ? (
-          <div className="grid justify-items-center gap-3 py-12 text-center">
-            <p className="text-sm text-muted">加载失败，请检查网络后重试</p>
+          <RabbitScene mood="error" title="加载失败">
+            <p className="text-sm text-muted">请检查网络后重试</p>
             <Button variant="secondary" onClick={() => setRetryNonce((nonce) => nonce + 1)}>
               重试
             </Button>
-          </div>
+          </RabbitScene>
         ) : null}
         {!loading && error !== 'initial' && items.length === 0 ? (
-          <div className="grid justify-items-center gap-3 py-16 text-center">
-            <h2 className="text-[17px] font-semibold text-ink">{filtered ? '没有匹配的笔记' : '还没有笔记'}</h2>
+          <RabbitScene mood={filtered ? 'search' : 'wave'} title={filtered ? '没有匹配的笔记' : '还没有笔记'}>
             <p className="text-sm text-muted">
               {filtered ? '试试去掉筛选条件。' : '粘贴一条 B 站链接，生成第一篇能回看的笔记。'}
             </p>
@@ -207,7 +207,7 @@ export function LibraryPage() {
                 查看全部笔记
               </Button>
             ) : null}
-          </div>
+          </RabbitScene>
         ) : null}
         {!loading && error === 'partial' ? (
           <p role="alert" className="mb-3 text-center text-sm text-muted">
