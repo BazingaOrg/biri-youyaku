@@ -13,6 +13,7 @@ RECONCILE_PENDING = "pending"
 RECONCILE_REGISTERED = "registered"
 RECONCILE_FAILED = "failed"
 RECONCILE_SKIPPED = "skipped"
+RECONCILE_PURGED = "purged"
 
 # task_type values that must never enter the knowledge registry.
 SKIP_TASK_TYPES = frozenset({"distill", "audio"})

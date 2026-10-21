@@ -260,6 +260,10 @@ def serialize_job(job: Job, *, lite: bool = False) -> dict:
         "email_error": job.email_error,
         "tags": job.tags or [],
     }
+    if not lite:
+        from biri_youyaku.knowledge.repo import active_document_id_for_job
+
+        payload["document_id"] = active_document_id_for_job(job.id)
     if lite:
         payload["summary_available"] = job.summary_path is not None
     return payload

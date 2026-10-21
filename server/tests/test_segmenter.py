@@ -1,3 +1,4 @@
+from biri_youyaku.modules.asr.formatter import transcript_to_text
 from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
 from biri_youyaku.modules.llm.segmenter import estimate_tokens, should_chunk, split_transcript
 
@@ -20,6 +21,7 @@ def test_split_transcript_keeps_order_and_budget():
 
 def test_should_chunk_uses_full_transcript_text():
     items = [TranscriptItem(start=0, end=1, text="abc"), TranscriptItem(start=1, end=2, text="def")]
+    length = estimate_tokens(transcript_to_text(items))
 
-    assert should_chunk(items, threshold_tokens=5) is True
-    assert should_chunk(items, threshold_tokens=10) is False
+    assert should_chunk(items, threshold_tokens=length - 1) is True
+    assert should_chunk(items, threshold_tokens=length + 1) is False

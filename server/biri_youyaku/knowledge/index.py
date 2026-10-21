@@ -61,9 +61,7 @@ def _delete_chunks_for_document(connection: Any, document_id: str) -> None:
     )
 
 
-def _delete_transcript_chunks_for_revision(
-    connection: Any, content_revision_id: str
-) -> None:
+def _delete_transcript_chunks_for_revision(connection: Any, content_revision_id: str) -> None:
     rows = connection.execute(
         "SELECT id FROM knowledge_transcript_chunks WHERE content_revision_id = ?",
         (content_revision_id,),
@@ -128,9 +126,9 @@ def index_summary_revision(
                 """
                 INSERT INTO knowledge_rag_chunks (
                   id, document_id, summary_revision_id, source_level,
-                  heading_path, chunk_text, chunk_ord, created_at
+                  heading_path, chunk_text, chunk_ord, start_sec, created_at
                 )
-                VALUES (?, ?, ?, 'summary', ?, ?, ?, ?)
+                VALUES (?, ?, ?, 'summary', ?, ?, ?, ?, ?)
                 """,
                 (
                     chunk_id,
@@ -139,6 +137,7 @@ def index_summary_revision(
                     chunk.heading_path,
                     chunk.chunk_text,
                     chunk.chunk_ord,
+                    chunk.start_sec,
                     timestamp,
                 ),
             )
@@ -516,9 +515,7 @@ def rebuild_all() -> int:
 def count_chunks() -> int:
     """Total summary + transcript FTS chunks."""
     with connect() as connection:
-        row_s = connection.execute(
-            "SELECT COUNT(*) AS n FROM knowledge_rag_chunks"
-        ).fetchone()
+        row_s = connection.execute("SELECT COUNT(*) AS n FROM knowledge_rag_chunks").fetchone()
         try:
             row_t = connection.execute(
                 "SELECT COUNT(*) AS n FROM knowledge_transcript_chunks"
@@ -531,9 +528,7 @@ def count_chunks() -> int:
 
 def count_summary_chunks() -> int:
     with connect() as connection:
-        row = connection.execute(
-            "SELECT COUNT(*) AS n FROM knowledge_rag_chunks"
-        ).fetchone()
+        row = connection.execute("SELECT COUNT(*) AS n FROM knowledge_rag_chunks").fetchone()
     return int(row["n"])
 
 

@@ -1,7 +1,7 @@
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from threading import Lock
+from threading import Lock, RLock
 from typing import Iterator
 
 from biri_youyaku.config import settings
@@ -123,6 +123,9 @@ CREATE TABLE IF NOT EXISTS knowledge_documents (
   author TEXT,
   mid INTEGER,
   source_url TEXT,
+  tags_json TEXT,
+  duration REAL,
+  tldr TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   deleted_at INTEGER,
@@ -171,6 +174,8 @@ CREATE TABLE IF NOT EXISTS knowledge_job_links (
   linked_at INTEGER NOT NULL,
   unlinked_at INTEGER
 );
+CREATE INDEX IF NOT EXISTS idx_knowledge_job_links_document
+  ON knowledge_job_links(document_id);
 
 CREATE TABLE IF NOT EXISTS knowledge_reconcile (
   job_id TEXT PRIMARY KEY,
@@ -191,6 +196,7 @@ CREATE TABLE IF NOT EXISTS knowledge_rag_chunks (
   heading_path TEXT NOT NULL,
   chunk_text TEXT NOT NULL,
   chunk_ord INTEGER NOT NULL,
+  start_sec REAL,
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_knowledge_rag_chunks_doc ON knowledge_rag_chunks(document_id);
@@ -252,6 +258,14 @@ _LEGACY_INDEXES = ("idx_jobs_content_hash", "idx_jobs_bvid_cid")
 _connection: sqlite3.Connection | None = None
 _connection_path: Path | None = None
 _connection_lock = Lock()
+_write_lock = RLock()
+
+
+@contextmanager
+def exclusive_write() -> Iterator[None]:
+    """Serialize register and purge. They share one SQLite connection."""
+    with _write_lock:
+        yield
 
 
 def connect() -> sqlite3.Connection:
@@ -270,6 +284,156 @@ def connect() -> sqlite3.Connection:
             _connection.execute("PRAGMA synchronous=NORMAL")
             _connection.execute("PRAGMA busy_timeout=5000")
         return _connection
+
+
+def _backfill_knowledge_document_meta(
+    connection: sqlite3.Connection, *, tldr_limit: int = 200
+) -> None:
+    """Copy tags/duration from latest completed jobs; parse tldr from summary files.
+
+    Only fills empty document columns. Safe to re-run. tldr file reads are capped.
+    """
+    knowledge_doc_columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(knowledge_documents)").fetchall()
+    }
+    if not knowledge_doc_columns:
+        return
+    jobs_columns = {row["name"] for row in connection.execute("PRAGMA table_info(jobs)").fetchall()}
+    if "bvid" not in jobs_columns:
+        return
+    if "tags_json" in knowledge_doc_columns and "tags_json" in jobs_columns:
+        connection.execute(
+            """
+            UPDATE knowledge_documents
+            SET tags_json = (
+              SELECT j.tags_json FROM jobs j
+              WHERE j.bvid = knowledge_documents.external_bvid
+                AND j.cid = knowledge_documents.external_cid
+                AND j.status = 'COMPLETED'
+                AND IFNULL(j.summary_path, '') != ''
+                AND IFNULL(j.tags_json, '') != ''
+              ORDER BY j.completed_at DESC, j.created_at DESC
+              LIMIT 1
+            )
+            WHERE provider = 'bilibili'
+              AND (tags_json IS NULL OR tags_json = '')
+              AND EXISTS (
+                SELECT 1 FROM jobs j
+                WHERE j.bvid = knowledge_documents.external_bvid
+                  AND j.cid = knowledge_documents.external_cid
+                  AND j.status = 'COMPLETED'
+                  AND IFNULL(j.summary_path, '') != ''
+                  AND IFNULL(j.tags_json, '') != ''
+              )
+            """
+        )
+    if "duration" in knowledge_doc_columns and "duration" in jobs_columns:
+        connection.execute(
+            """
+            UPDATE knowledge_documents
+            SET duration = (
+              SELECT j.duration FROM jobs j
+              WHERE j.bvid = knowledge_documents.external_bvid
+                AND j.cid = knowledge_documents.external_cid
+                AND j.status = 'COMPLETED'
+                AND IFNULL(j.summary_path, '') != ''
+                AND j.duration IS NOT NULL
+              ORDER BY j.completed_at DESC, j.created_at DESC
+              LIMIT 1
+            )
+            WHERE provider = 'bilibili'
+              AND duration IS NULL
+              AND EXISTS (
+                SELECT 1 FROM jobs j
+                WHERE j.bvid = knowledge_documents.external_bvid
+                  AND j.cid = knowledge_documents.external_cid
+                  AND j.status = 'COMPLETED'
+                  AND IFNULL(j.summary_path, '') != ''
+                  AND j.duration IS NOT NULL
+              )
+            """
+        )
+    if "tldr" not in knowledge_doc_columns:
+        return
+    from biri_youyaku.knowledge.summary_meta import extract_tldr
+    from biri_youyaku.modules.storage import summary as summary_storage
+
+    connection.commit()
+    rows = connection.execute(
+        """
+        SELECT id, external_bvid, external_cid
+        FROM knowledge_documents
+        WHERE provider = 'bilibili'
+          AND tldr IS NULL
+        LIMIT ?
+        """,
+        (int(tldr_limit),),
+    ).fetchall()
+    for row in rows:
+        job = connection.execute(
+            """
+            SELECT summary_path FROM jobs
+            WHERE bvid = ? AND cid = ?
+              AND status = 'COMPLETED'
+              AND IFNULL(summary_path, '') != ''
+            ORDER BY completed_at DESC, created_at DESC
+            LIMIT 1
+            """,
+            (row["external_bvid"], row["external_cid"]),
+        ).fetchone()
+        tldr = ""
+        if job is not None:
+            path = summary_storage.resolve_stored_path(job["summary_path"])
+            try:
+                if path.is_file():
+                    tldr = extract_tldr(path.read_text(encoding="utf-8")) or ""
+            except OSError:
+                tldr = ""
+        connection.execute(
+            """
+            UPDATE knowledge_documents
+            SET tldr = ?
+            WHERE id = ? AND tldr IS NULL
+            """,
+            (tldr, row["id"]),
+        )
+        connection.commit()
+
+
+def _backfill_rag_chunk_start_sec(connection: sqlite3.Connection, *, limit: int = 100) -> None:
+    rag_columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(knowledge_rag_chunks)").fetchall()
+    }
+    if "start_sec" not in rag_columns:
+        return
+    from biri_youyaku.knowledge.chunker import parse_chunk_start_sec
+
+    rows = connection.execute(
+        """
+        SELECT c.id AS id, c.heading_path AS heading_path, c.chunk_text AS chunk_text
+        FROM knowledge_rag_chunks c
+        JOIN knowledge_summary_revisions sr
+          ON sr.id = c.summary_revision_id AND sr.is_active = 1
+        WHERE c.start_sec IS NULL
+          AND (
+            c.heading_path GLOB '[0-9]*:[0-9][0-9]*'
+            OR c.chunk_text GLOB '*## [0-9]*:[0-9][0-9]*'
+            OR c.chunk_text GLOB '*### [0-9]*:[0-9][0-9]*'
+          )
+        LIMIT ?
+        """,
+        (int(limit),),
+    ).fetchall()
+    for row in rows:
+        start_sec = parse_chunk_start_sec(row["heading_path"], row["chunk_text"])
+        if start_sec is None:
+            continue
+        connection.execute(
+            "UPDATE knowledge_rag_chunks SET start_sec = ? WHERE id = ? AND start_sec IS NULL",
+            (float(start_sec), row["id"]),
+        )
 
 
 @contextmanager
@@ -332,19 +496,33 @@ def init_db() -> None:
             )
         knowledge_doc_columns = {
             row["name"]
-            for row in connection.execute(
-                "PRAGMA table_info(knowledge_documents)"
-            ).fetchall()
+            for row in connection.execute("PRAGMA table_info(knowledge_documents)").fetchall()
         }
         if knowledge_doc_columns:
             if "deleted_at" not in knowledge_doc_columns:
-                connection.execute(
-                    "ALTER TABLE knowledge_documents ADD COLUMN deleted_at INTEGER"
-                )
+                connection.execute("ALTER TABLE knowledge_documents ADD COLUMN deleted_at INTEGER")
             if "delete_reason" not in knowledge_doc_columns:
-                connection.execute(
-                    "ALTER TABLE knowledge_documents ADD COLUMN delete_reason TEXT"
-                )
+                connection.execute("ALTER TABLE knowledge_documents ADD COLUMN delete_reason TEXT")
+            if "tags_json" not in knowledge_doc_columns:
+                connection.execute("ALTER TABLE knowledge_documents ADD COLUMN tags_json TEXT")
+            if "duration" not in knowledge_doc_columns:
+                connection.execute("ALTER TABLE knowledge_documents ADD COLUMN duration REAL")
+            if "tldr" not in knowledge_doc_columns:
+                connection.execute("ALTER TABLE knowledge_documents ADD COLUMN tldr TEXT")
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_knowledge_job_links_document
+              ON knowledge_job_links(document_id)
+            """
+        )
+        rag_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(knowledge_rag_chunks)").fetchall()
+        }
+        if rag_columns and "start_sec" not in rag_columns:
+            connection.execute("ALTER TABLE knowledge_rag_chunks ADD COLUMN start_sec REAL")
+        _backfill_knowledge_document_meta(connection)
+        _backfill_rag_chunk_start_sec(connection, limit=100)
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS knowledge_audit_events (

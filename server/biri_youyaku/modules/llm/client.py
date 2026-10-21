@@ -18,7 +18,7 @@ from biri_youyaku.jobs.model import JobOptions
 from biri_youyaku.modules._http import openai_client
 from biri_youyaku.modules.bilibili.meta import VideoMeta
 from biri_youyaku.modules.transcript import TranscriptItem
-from biri_youyaku.modules.asr.formatter import transcript_to_text
+from biri_youyaku.modules.asr.formatter import format_timestamp, transcript_to_text
 from biri_youyaku.modules.llm.prompts import (
     SUMMARY_MARKDOWN_PROMPT,
     SUMMARY_MERGE_MARKDOWN_PROMPT,
@@ -103,7 +103,9 @@ def _thinking_kwargs(model: str) -> dict:
 def _format_llm_error(exc: Exception) -> str:
     """把 openai/httpx 异常里通常被吞掉的 response body 拼到日志里。"""
     body = getattr(exc, "body", None) or getattr(getattr(exc, "response", None), "text", None)
-    status = getattr(getattr(exc, "response", None), "status_code", None) or getattr(exc, "status_code", None)
+    status = getattr(getattr(exc, "response", None), "status_code", None) or getattr(
+        exc, "status_code", None
+    )
     parts = [type(exc).__name__]
     if status is not None:
         parts.append(f"HTTP {status}")
@@ -383,12 +385,21 @@ async def _summarize_chunked(
     if on_segment is not None:
         await on_segment(0, total)
 
+    def _segment_abs_range(segment: list[TranscriptItem]) -> str:
+        if not segment:
+            return ""
+        start = format_timestamp(segment[0].start)
+        end = format_timestamp(segment[-1].end)
+        return f"{start}–{end}"
+
     async def _one_segment(index: int, segment: list[TranscriptItem]) -> tuple[int, str]:
         nonlocal done_count
+        abs_range = _segment_abs_range(segment)
+        title_suffix = f"分段 {index}" if not abs_range else f"分段 {index}，{abs_range}"
         prompt = render_prompt(
             SUMMARY_MARKDOWN_PROMPT,
             language=language,
-            title=f"{meta.title}（分段 {index}）",
+            title=f"{meta.title}（{title_suffix}）",
             author=meta.author,
             url=meta.url,
             transcript=transcript_to_text(segment),
@@ -408,8 +419,7 @@ async def _summarize_chunked(
     # 某段抛错时取消其它分段并 drain，避免孤儿协程继续占用 semaphore / 烧 token /
     # 在 job 已 FAILED 后回调 on_usage。
     tasks = [
-        asyncio.create_task(_one_segment(idx, seg))
-        for idx, seg in enumerate(segments, start=1)
+        asyncio.create_task(_one_segment(idx, seg)) for idx, seg in enumerate(segments, start=1)
     ]
     try:
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
@@ -430,7 +440,11 @@ async def _summarize_chunked(
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
         raise
-    segment_summaries = [f"### 分段 {idx}\n{text}" for idx, text in pairs]
+    segment_summaries = []
+    for idx, text in pairs:
+        abs_range = _segment_abs_range(segments[idx - 1])
+        header = f"### 分段 {idx}" if not abs_range else f"### 分段 {idx}（{abs_range}）"
+        segment_summaries.append(f"{header}\n{text}")
 
     merge_prompt = render_prompt(
         SUMMARY_MERGE_MARKDOWN_PROMPT if on_chunk is not None else SUMMARY_MERGE_PROMPT,

@@ -1,9 +1,7 @@
 """Split markdown AI summaries into retrieval chunks with heading paths.
 
-Rules (Phase B):
-- Parse `##` / `###` headings only; never invent headings not in the text.
-- Heading path labels: `AI 总结：…` (no mm:ss timestamps).
-- No usable `##` headings → single chunk `AI 总结：全文`.
+Legacy notes use `AI 总结：…` paths and leave start_sec empty.
+Timed notes (`## mm:ss 主题`) strip the clock from the path and store start_sec.
 """
 
 from __future__ import annotations
@@ -12,6 +10,9 @@ import re
 from dataclasses import dataclass
 
 _HEADING_RE = re.compile(r"^(#{2,3})\s+(.+?)\s*$")
+_TIMED_H2_RE = re.compile(r"^##\s+(\d+):([0-5]\d)\b")
+_TIME_PREFIX_RE = re.compile(r"^(\d+):([0-5]\d)(?:\s+|$)")
+_HEADING_TIME_LINE_RE = re.compile(r"^#{2,3}\s+(\d+):([0-5]\d)\b")
 # Exported for search phrase heuristics (same CJK ranges as fts_prepare_text).
 _CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 
@@ -21,6 +22,7 @@ class SummaryChunk:
     heading_path: str
     chunk_text: str
     chunk_ord: int
+    start_sec: float | None = None
 
 
 @dataclass(frozen=True)
@@ -61,11 +63,49 @@ def _label_for_stack(stack: list[str]) -> str:
     return "AI 总结：" + " / ".join(stack)
 
 
+def _seconds_from_mmss(minutes: str, seconds: str) -> float:
+    return float(int(minutes) * 60 + int(seconds))
+
+
+def parse_heading_start_sec(title: str) -> float | None:
+    match = _TIME_PREFIX_RE.match((title or "").strip())
+    if match is None:
+        return None
+    return _seconds_from_mmss(match.group(1), match.group(2))
+
+
+def parse_chunk_start_sec(heading_path: str | None, chunk_text: str | None) -> float | None:
+    """Recover start_sec from heading_path or the chunk's first heading line."""
+    from_path = parse_heading_start_sec(heading_path or "")
+    if from_path is not None:
+        return from_path
+    first_line = (chunk_text or "").replace("\r\n", "\n").split("\n", 1)[0].strip()
+    match = _HEADING_TIME_LINE_RE.match(first_line)
+    if match is not None:
+        return _seconds_from_mmss(match.group(1), match.group(2))
+    return parse_heading_start_sec(first_line)
+
+
+def _strip_time_prefix(title: str) -> str:
+    stripped = (title or "").strip()
+    match = _TIME_PREFIX_RE.match(stripped)
+    if match is None:
+        return stripped
+    rest = stripped[match.end() :].strip()
+    return rest or stripped
+
+
+def _is_timed_format(body: str) -> bool:
+    return any(_TIMED_H2_RE.match(line) for line in body.split("\n"))
+
+
 def chunk_summary_markdown(text: str) -> list[SummaryChunk]:
     """Chunk a summary markdown body into section-level pieces."""
     body = (text or "").replace("\r\n", "\n").replace("\r", "\n")
     if not body.strip():
         return []
+    if _is_timed_format(body):
+        return _chunk_timed_markdown(body)
 
     lines = body.split("\n")
     has_h2 = any(_HEADING_RE.match(line) and line.startswith("## ") for line in lines)
@@ -172,10 +212,129 @@ def chunk_summary_markdown(text: str) -> list[SummaryChunk]:
                 heading_path=c.heading_path,
                 chunk_text=c.chunk_text,
                 chunk_ord=i,
+                start_sec=c.start_sec,
             )
             for i, c in enumerate(chunks)
         ]
     return chunks
+
+
+def _chunk_timed_markdown(body: str) -> list[SummaryChunk]:
+    lines = body.split("\n")
+    stack: list[str] = []
+    stack_starts: list[float | None] = []
+    section_lines: list[str] = []
+    section_start: float | None = None
+    chunks: list[SummaryChunk] = []
+    preamble: list[str] = []
+    started = False
+
+    def path_label() -> str:
+        if not stack:
+            return "全文"
+        return " / ".join(stack)
+
+    def flush() -> None:
+        nonlocal section_lines
+        content = "\n".join(section_lines).strip()
+        section_lines = []
+        if not content:
+            return
+        chunks.append(
+            SummaryChunk(
+                heading_path=path_label(),
+                chunk_text=content,
+                chunk_ord=len(chunks),
+                start_sec=section_start,
+            )
+        )
+
+    for line in lines:
+        match = _HEADING_RE.match(line)
+        if match is None:
+            if not started:
+                preamble.append(line)
+            else:
+                section_lines.append(line)
+            continue
+
+        title_raw = match.group(2).strip()
+        if not title_raw:
+            if started:
+                section_lines.append(line)
+            else:
+                preamble.append(line)
+            continue
+
+        if not started:
+            quote_text = "\n".join(preamble).strip()
+            if quote_text:
+                chunks.append(
+                    SummaryChunk(
+                        heading_path="TL;DR",
+                        chunk_text=quote_text,
+                        chunk_ord=0,
+                        start_sec=None,
+                    )
+                )
+            started = True
+            preamble = []
+        else:
+            flush()
+
+        level = len(match.group(1))
+        start_sec = parse_heading_start_sec(title_raw)
+        title = _strip_time_prefix(title_raw)
+        if level == 2:
+            stack = [title]
+            stack_starts = [start_sec]
+            section_start = start_sec
+        elif stack:
+            stack = [stack[0], title]
+            inherited = start_sec if start_sec is not None else stack_starts[0]
+            stack_starts = [stack_starts[0], start_sec]
+            section_start = inherited
+        else:
+            stack = [title]
+            stack_starts = [start_sec]
+            section_start = start_sec
+        section_lines = [line]
+
+    if started:
+        flush()
+    elif preamble:
+        stripped = "\n".join(preamble).strip()
+        if stripped:
+            chunks.append(
+                SummaryChunk(
+                    heading_path="全文",
+                    chunk_text=stripped,
+                    chunk_ord=0,
+                    start_sec=None,
+                )
+            )
+
+    if not chunks:
+        stripped = body.strip()
+        if stripped:
+            return [
+                SummaryChunk(
+                    heading_path="全文",
+                    chunk_text=stripped,
+                    chunk_ord=0,
+                    start_sec=None,
+                )
+            ]
+        return []
+    return [
+        SummaryChunk(
+            heading_path=c.heading_path,
+            chunk_text=c.chunk_text,
+            chunk_ord=i,
+            start_sec=c.start_sec,
+        )
+        for i, c in enumerate(chunks)
+    ]
 
 
 def window_transcript_segments(
@@ -249,9 +408,7 @@ def window_transcript_segments(
         would_segs = seg_count + 1
 
         if buf_texts and (
-            would_chars > max_chars
-            or would_span > max_span_sec
-            or would_segs > max_segments
+            would_chars > max_chars or would_span > max_span_sec or would_segs > max_segments
         ):
             flush()
             win_start = start

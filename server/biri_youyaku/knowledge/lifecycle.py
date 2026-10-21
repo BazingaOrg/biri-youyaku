@@ -7,7 +7,7 @@ import logging
 import shutil
 from typing import Any
 
-from biri_youyaku.db import connect
+from biri_youyaku.db import connect, exclusive_write
 from biri_youyaku.jobs.repo import now_ms
 from biri_youyaku.knowledge import artifacts as art
 from biri_youyaku.knowledge.index import (
@@ -214,12 +214,55 @@ def purge_permanent(
             status_code=400,
         )
 
-    with connect() as connection:
+    summary_paths: list[str] = []
+    with exclusive_write(), connect() as connection:
         artifact_rows = connection.execute(
             "SELECT storage_path FROM knowledge_artifacts WHERE document_id = ?",
             (document_id,),
         ).fetchall()
         storage_paths = [row["storage_path"] for row in artifact_rows]
+        job_rows = connection.execute(
+            "SELECT job_id FROM knowledge_job_links WHERE document_id = ?",
+            (document_id,),
+        ).fetchall()
+        job_ids = [row["job_id"] for row in job_rows if row["job_id"]]
+        timestamp = now_ms()
+        for job_id in job_ids:
+            existing = connection.execute(
+                "SELECT job_id FROM knowledge_reconcile WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            if existing is None:
+                connection.execute(
+                    """
+                    INSERT INTO knowledge_reconcile (
+                      job_id, status, reason, attempts, last_error, created_at, updated_at
+                    )
+                    VALUES (?, 'purged', 'purged', 0, NULL, ?, ?)
+                    """,
+                    (job_id, timestamp, timestamp),
+                )
+            else:
+                connection.execute(
+                    """
+                    UPDATE knowledge_reconcile
+                    SET status = 'purged', reason = 'purged', last_error = NULL, updated_at = ?
+                    WHERE job_id = ?
+                    """,
+                    (timestamp, job_id),
+                )
+            job_row = connection.execute(
+                "SELECT summary_path FROM jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+            if job_row is not None and job_row["summary_path"]:
+                summary_paths.append(job_row["summary_path"])
+        if job_ids:
+            placeholders = ",".join("?" for _ in job_ids)
+            connection.execute(
+                f"UPDATE jobs SET summary_path = NULL WHERE id IN ({placeholders})",
+                job_ids,
+            )
 
         _delete_chunks_for_document(connection, document_id)
         _delete_transcript_chunks_for_document(connection, document_id)
@@ -244,6 +287,16 @@ def purge_permanent(
             "DELETE FROM knowledge_documents WHERE id = ?",
             (document_id,),
         )
+
+    from biri_youyaku.modules.storage import summary as summary_storage
+
+    for stored in summary_paths:
+        path = summary_storage.resolve_stored_path(stored)
+        try:
+            if path.is_file():
+                path.unlink()
+        except OSError:
+            logger.warning("Failed to remove job summary file %s", path, exc_info=True)
 
     # Disk: individual files then document directory if empty/remaining.
     for path_str in storage_paths:

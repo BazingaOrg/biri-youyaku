@@ -5,9 +5,11 @@ Failures are recorded in knowledge_reconcile and never raised to job callers.
 
 from __future__ import annotations
 
+import json
 import logging
 
 from biri_youyaku.config import settings
+from biri_youyaku.db import exclusive_write
 from biri_youyaku.jobs import repo as jobs_repo
 from biri_youyaku.jobs.model import Job, JobStatus
 from biri_youyaku.knowledge import artifacts as art
@@ -19,10 +21,12 @@ from biri_youyaku.knowledge.model import (
     PERMANENT_SKIP_REASONS,
     PROVIDER_BILIBILI,
     RECONCILE_FAILED,
+    RECONCILE_PURGED,
     RECONCILE_REGISTERED,
     RECONCILE_SKIPPED,
     SKIP_TASK_TYPES,
 )
+from biri_youyaku.knowledge.summary_meta import extract_tldr
 
 logger = logging.getLogger("biri_youyaku.knowledge.register")
 
@@ -89,6 +93,8 @@ def _register_job(job: Job) -> str:
     # Idempotent success path.
     existing = knowledge_repo.get_reconcile(job_id)
     link = knowledge_repo.get_job_link(job_id)
+    if existing is not None and existing.status == RECONCILE_PURGED:
+        return RECONCILE_PURGED
     if (
         existing is not None
         and existing.status == RECONCILE_REGISTERED
@@ -175,6 +181,39 @@ def _register_job(job: Job) -> str:
     transcript_bytes = art.encode_transcript_bytes(transcript_payload)
     transcript_hash = art.sha256_bytes(transcript_bytes)
 
+    try:
+        summary_text = summary_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        summary_text = summary_bytes.decode("utf-8", errors="replace")
+    tags_json = json.dumps(job.tags, ensure_ascii=False) if job.tags is not None else None
+    with exclusive_write():
+        fresh = knowledge_repo.get_reconcile(job_id)
+        if fresh is not None and fresh.status == RECONCILE_PURGED:
+            return RECONCILE_PURGED
+        return _write_registered_document(
+            job,
+            summary_bytes=summary_bytes,
+            summary_hash=summary_hash,
+            transcript_bytes=transcript_bytes,
+            transcript_hash=transcript_hash,
+            summary_text=summary_text,
+            tags_json=tags_json,
+            bvid=bvid,
+        )
+
+
+def _write_registered_document(
+    job: Job,
+    *,
+    summary_bytes: bytes,
+    summary_hash: str,
+    transcript_bytes: bytes,
+    transcript_hash: str,
+    summary_text: str,
+    tags_json: str | None,
+    bvid: str,
+) -> str:
+    job_id = job.id
     document_id = knowledge_repo.upsert_document(
         provider=PROVIDER_BILIBILI,
         external_bvid=bvid,
@@ -183,6 +222,9 @@ def _register_job(job: Job) -> str:
         author=job.author,
         mid=job.mid,
         source_url=job.url,
+        tags_json=tags_json,
+        duration=job.duration,
+        tldr=extract_tldr(summary_text),
     )
 
     # Transcript artifact + content revision (reuse by hash).
@@ -228,12 +270,19 @@ def _register_job(job: Job) -> str:
         content_revision_id=content_revision_id,
     )
 
-    knowledge_repo.set_reconcile(
+    applied = knowledge_repo.set_reconcile(
         job_id,
         status=RECONCILE_REGISTERED,
         reason=None,
         last_error=None,
     )
+    if not applied:
+        knowledge_repo.unlink_job(job_id)
+        if knowledge_repo.count_active_links(document_id) == 0:
+            from biri_youyaku.knowledge.lifecycle import purge_permanent
+
+            purge_permanent(document_id, force=True, actor="register-rollback")
+        return RECONCILE_PURGED
     # Phase B/C: index active summary + transcript for FTS (best-effort).
     try:
         from biri_youyaku.knowledge import index as knowledge_index

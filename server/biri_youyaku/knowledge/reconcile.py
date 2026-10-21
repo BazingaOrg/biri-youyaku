@@ -11,6 +11,7 @@ from biri_youyaku.knowledge.model import (
     MAX_RECONCILE_ATTEMPTS,
     PERMANENT_SKIP_REASONS,
     RECONCILE_FAILED,
+    RECONCILE_PURGED,
     RECONCILE_REGISTERED,
     RECONCILE_SKIPPED,
 )
@@ -23,6 +24,8 @@ def _should_attempt(job_id: str) -> bool:
     row = knowledge_repo.get_reconcile(job_id)
     if row is None:
         return True
+    if row.status == RECONCILE_PURGED:
+        return False
     if row.status == RECONCILE_REGISTERED:
         # Still try if job_link missing (partial failure recovery).
         link = knowledge_repo.get_job_link(job_id)

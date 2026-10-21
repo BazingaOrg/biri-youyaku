@@ -13,6 +13,7 @@ from biri_youyaku.knowledge.model import (
     JobLink,
     MAX_RECONCILE_ATTEMPTS,
     PROVIDER_BILIBILI,
+    RECONCILE_PURGED,
     ReconcileRow,
 )
 
@@ -47,6 +48,9 @@ def upsert_document(
     author: str | None,
     mid: int | None,
     source_url: str | None,
+    tags_json: str | None = None,
+    duration: float | None = None,
+    tldr: str | None = None,
 ) -> str:
     """Insert or refresh a knowledge document by (provider, bvid, cid).
 
@@ -67,12 +71,25 @@ def upsert_document(
                     author = COALESCE(?, author),
                     mid = COALESCE(?, mid),
                     source_url = COALESCE(?, source_url),
+                    tags_json = COALESCE(?, tags_json),
+                    duration = COALESCE(?, duration),
+                    tldr = COALESCE(?, tldr),
                     updated_at = ?,
                     deleted_at = NULL,
                     delete_reason = NULL
                 WHERE id = ?
                 """,
-                (title, author, mid, source_url, timestamp, existing),
+                (
+                    title,
+                    author,
+                    mid,
+                    source_url,
+                    tags_json,
+                    duration,
+                    tldr,
+                    timestamp,
+                    existing,
+                ),
             )
         return existing
 
@@ -82,14 +99,18 @@ def upsert_document(
             """
             INSERT INTO knowledge_documents (
               id, provider, external_bvid, external_cid, title, author, mid,
-              source_url, created_at, updated_at, deleted_at, delete_reason
+              source_url, tags_json, duration, tldr,
+              created_at, updated_at, deleted_at, delete_reason
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
             ON CONFLICT(provider, external_bvid, external_cid) DO UPDATE SET
               title = COALESCE(excluded.title, knowledge_documents.title),
               author = COALESCE(excluded.author, knowledge_documents.author),
               mid = COALESCE(excluded.mid, knowledge_documents.mid),
               source_url = COALESCE(excluded.source_url, knowledge_documents.source_url),
+              tags_json = COALESCE(excluded.tags_json, knowledge_documents.tags_json),
+              duration = COALESCE(excluded.duration, knowledge_documents.duration),
+              tldr = COALESCE(excluded.tldr, knowledge_documents.tldr),
               updated_at = excluded.updated_at,
               deleted_at = NULL,
               delete_reason = NULL
@@ -103,6 +124,9 @@ def upsert_document(
                 author,
                 mid,
                 source_url,
+                tags_json,
+                duration,
+                tldr,
                 timestamp,
                 timestamp,
             ),
@@ -118,9 +142,7 @@ def upsert_document(
     return document_id
 
 
-def get_artifact_id(
-    document_id: str, kind: str, content_hash: str
-) -> str | None:
+def get_artifact_id(document_id: str, kind: str, content_hash: str) -> str | None:
     with connect() as connection:
         row = connection.execute(
             """
@@ -210,9 +232,7 @@ def upsert_content_revision(
     return revision_id
 
 
-def find_summary_revision_by_hash(
-    document_id: str, content_hash: str
-) -> tuple[str, int] | None:
+def find_summary_revision_by_hash(document_id: str, content_hash: str) -> tuple[str, int] | None:
     """Return (revision_id, is_active) for the newest revision with this hash."""
     with connect() as connection:
         row = connection.execute(
@@ -371,6 +391,18 @@ def upsert_job_link(
         )
 
 
+def count_active_links(document_id: str) -> int:
+    with connect() as connection:
+        row = connection.execute(
+            """
+            SELECT COUNT(*) AS n FROM knowledge_job_links
+            WHERE document_id = ? AND unlinked_at IS NULL
+            """,
+            (document_id,),
+        ).fetchone()
+    return int(row["n"])
+
+
 def unlink_job(job_id: str, *, connection: Any | None = None) -> None:
     """Soft-unlink: set unlinked_at where still linked. Never touches artifacts."""
     timestamp = now_ms()
@@ -432,6 +464,20 @@ def get_reconcile(job_id: str) -> ReconcileRow | None:
     )
 
 
+def active_document_id_for_job(job_id: str) -> str | None:
+    with connect() as connection:
+        row = connection.execute(
+            """
+            SELECT document_id FROM knowledge_job_links
+            WHERE job_id = ? AND unlinked_at IS NULL
+            """,
+            (job_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return str(row["document_id"])
+
+
 def set_reconcile(
     job_id: str,
     *,
@@ -439,9 +485,11 @@ def set_reconcile(
     reason: str | None = None,
     last_error: str | None = None,
     increment_attempts: bool = False,
-) -> None:
+) -> bool:
     timestamp = now_ms()
     existing = get_reconcile(job_id)
+    if existing is not None and existing.status == RECONCILE_PURGED and status != RECONCILE_PURGED:
+        return False
     if existing is None:
         with connect() as connection:
             connection.execute(
@@ -461,7 +509,7 @@ def set_reconcile(
                     timestamp,
                 ),
             )
-        return
+        return True
     attempts = existing.attempts + (1 if increment_attempts else 0)
     with connect() as connection:
         connection.execute(
@@ -472,6 +520,7 @@ def set_reconcile(
             """,
             (status, reason, attempts, last_error, timestamp, job_id),
         )
+    return True
 
 
 def count_documents(*, include_deleted: bool = False) -> int:
@@ -572,8 +621,9 @@ def list_reconcilable_completed_jobs(*, limit: int = 50) -> list[str]:
                     )
                   )
                 )
-                OR r.status NOT IN ('registered', 'skipped', 'failed')
+                OR r.status NOT IN ('registered', 'skipped', 'failed', 'purged')
               )
+              AND (r.job_id IS NULL OR r.status != 'purged')
             ORDER BY j.completed_at DESC, j.created_at DESC
             LIMIT ?
             """,

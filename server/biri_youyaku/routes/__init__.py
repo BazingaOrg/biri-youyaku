@@ -5,6 +5,7 @@ from biri_youyaku.routes.distill import router as distill_router
 from biri_youyaku.routes.healthz import router as healthz_router
 from biri_youyaku.routes.jobs import router as jobs_router
 from biri_youyaku.routes.knowledge import router as knowledge_router
+from biri_youyaku.routes.library import router as library_router
 from biri_youyaku.routes.up import router as up_router
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "healthz_router",
     "jobs_router",
     "knowledge_router",
+    "library_router",
     "up_router",
 ]

@@ -33,6 +33,7 @@ from biri_youyaku.routes import (
     healthz_router,
     jobs_router,
     knowledge_router,
+    library_router,
     up_router,
 )
 
@@ -202,6 +203,7 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["ETag"],
     )
     app.include_router(config_public_router)
     app.include_router(config_router)
@@ -210,6 +212,7 @@ def create_app() -> FastAPI:
     app.include_router(healthz_router)
     app.include_router(jobs_router)
     app.include_router(knowledge_router)
+    app.include_router(library_router)
     app.include_router(up_router)
     return app
 
