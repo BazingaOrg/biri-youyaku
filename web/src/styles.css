@@ -124,6 +124,12 @@
   outline-offset: 2px;
 }
 
+input[type='search']:focus,
+input[type='search']:focus-visible {
+  outline: none;
+  outline-offset: 0;
+}
+
 input[type='search']::-webkit-search-cancel-button,
 input[type='search']::-webkit-search-decoration {
   -webkit-appearance: none;
