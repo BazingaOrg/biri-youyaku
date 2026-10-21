@@ -6,6 +6,7 @@ import {formatDate, formatStatus} from '../lib/format'
 import {isRunning} from '../lib/jobStatus'
 import {BackButton} from '../components/BackButton'
 import {Button} from '../components/Button'
+import {ConfirmDialog} from '../components/ConfirmDialog'
 import {Skeleton} from '../components/Skeleton'
 import {useToast} from '../components/ToastProvider'
 import {IconTooltip} from './history/IconTooltip'
@@ -26,6 +27,9 @@ export function TasksPage() {
   const [loadError, setLoadError] = useState<'initial' | 'partial' | null>(null)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const pendingDeletes = useRef<Map<string, {timer: number; job: Job}>>(new Map())
   const loadGenerationRef = useRef(0)
   const activeLoadRef = useRef<{controller: AbortController; generation: number} | null>(null)
@@ -124,6 +128,20 @@ export function TasksPage() {
   }, [loading])
 
   const activeJobs = useMemo(() => jobs.filter((job) => isRunning(job.status)), [jobs])
+  const deletableJobs = useMemo(() => jobs.filter((job) => !isRunning(job.status)), [jobs])
+  const selectedJobs = useMemo(
+    () => deletableJobs.filter((job) => selected.has(job.id)),
+    [deletableJobs, selected],
+  )
+  const allDeletableSelected = deletableJobs.length > 0 && selectedJobs.length === deletableJobs.length
+
+  useEffect(() => {
+    const visible = new Set(jobs.map((job) => job.id))
+    setSelected((current) => {
+      const next = new Set([...current].filter((id) => visible.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [jobs])
 
   useEffect(() => {
     const refresh = () => {
@@ -216,6 +234,51 @@ export function TasksPage() {
     [restoreJob, toast],
   )
 
+  const toggleSelected = (jobId: string) => {
+    setSelected((current) => {
+      const next = new Set(current)
+      if (next.has(jobId)) next.delete(jobId)
+      else next.add(jobId)
+      return next
+    })
+  }
+
+  const toggleAllDeletable = () => {
+    setSelected(allDeletableSelected ? new Set() : new Set(deletableJobs.map((job) => job.id)))
+  }
+
+  const handleBatchDelete = async () => {
+    const targets = selectedJobs
+    if (targets.length === 0 || deleting) return
+    setDeleting(true)
+    const outcomes = await Promise.all(
+      targets.map(async (job) => {
+        const pending = pendingDeletes.current.get(job.id)
+        if (pending) {
+          window.clearTimeout(pending.timer)
+          pendingDeletes.current.delete(job.id)
+        }
+        try {
+          await deleteJob(job.id)
+          return {id: job.id, ok: true as const}
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 404) return {id: job.id, ok: true as const}
+          return {id: job.id, ok: false as const, message: err instanceof Error ? err.message : '请重试'}
+        }
+      }),
+    )
+    const failed = new Set(outcomes.filter((item) => !item.ok).map((item) => item.id))
+    setJobs((current) => current.filter((job) => !targets.some((item) => item.id === job.id) || failed.has(job.id)))
+    setSelected(failed)
+    setDeleting(false)
+    setConfirmOpen(false)
+    if (failed.size === 0) {
+      toast.success(`已删除 ${targets.length} 条任务记录`, '笔记还在，不受影响')
+      return
+    }
+    toast.error('部分任务删除失败', `${failed.size} 条仍保留在列表中`)
+  }
+
   const handleDelete = (jobId: string) => {
     const job = jobs.find((item) => item.id === jobId)
     if (!job) return
@@ -247,7 +310,33 @@ export function TasksPage() {
       <BackButton href="/" label="全部笔记" />
       <h1 className="mt-3 text-2xl font-semibold tracking-[-0.012em]">管理任务记录</h1>
       <p className="mt-1 text-sm text-muted">删除任务只去掉这条处理记录，已经生成的笔记还在。</p>
-      <div className="mt-6">
+      {!loading && deletableJobs.length > 0 ? (
+        <div className="mt-4 flex min-h-11 items-center justify-between gap-3">
+          <label className="inline-flex items-center gap-2 text-sm text-muted">
+            <input
+              type="checkbox"
+              className="size-4 accent-brand"
+              checked={allDeletableSelected}
+              ref={(node) => {
+                if (node) node.indeterminate = selectedJobs.length > 0 && !allDeletableSelected
+              }}
+              onChange={toggleAllDeletable}
+              aria-label="全选当前列表"
+            />
+            <span>{selectedJobs.length > 0 ? `已选 ${selectedJobs.length} 条` : '全选当前列表'}</span>
+          </label>
+          {selectedJobs.length > 0 ? (
+            <Button
+              size="sm"
+              onClick={() => setConfirmOpen(true)}
+              className="bg-dangerSolid text-onDanger hover:brightness-105"
+            >
+              删除所选
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="mt-2">
         {loading ? <Skeleton count={6} /> : null}
         {!loading && loadError === 'initial' ? (
           <div className="grid justify-items-center gap-3 py-12 text-center">
@@ -266,7 +355,15 @@ export function TasksPage() {
               const running = isRunning(job.status)
               const failed = job.status === 'FAILED'
               return (
-                <li key={job.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-line py-3">
+                <li key={job.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-line py-3">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-brand disabled:opacity-30"
+                    checked={selected.has(job.id)}
+                    disabled={running}
+                    aria-label={running ? '进行中的任务请先取消再删除' : `选择 ${job.title || job.url}`}
+                    onChange={() => toggleSelected(job.id)}
+                  />
                   <div className="min-w-0">
                     <Link href={`/jobs/${job.id}`} className="block truncate text-sm font-medium hover:text-brand">
                       {job.title || job.url}
@@ -309,6 +406,18 @@ export function TasksPage() {
           </div>
         ) : null}
       </div>
+      <ConfirmDialog
+        open={confirmOpen}
+        danger
+        loading={deleting}
+        title={`删除 ${selectedJobs.length} 条任务记录`}
+        description="只会删除当前勾选的处理记录，已经生成的笔记还在。"
+        confirmLabel="删除所选"
+        onCancel={() => {
+          if (!deleting) setConfirmOpen(false)
+        }}
+        onConfirm={() => void handleBatchDelete()}
+      />
     </div>
   )
 }
