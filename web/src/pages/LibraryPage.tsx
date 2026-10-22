@@ -3,13 +3,11 @@ import {Link} from 'wouter'
 import {listLibrary, listLibraryTrash, type LibraryListItem} from '../lib/api'
 import {formatDuration, formatSavedDay} from '../lib/format'
 import {Chip} from '../components/Chip'
-import {OmniBar} from '../components/OmniBar'
 import {Button} from '../components/Button'
 import {ClampText} from '../components/ClampText'
 import {RabbitScene} from '../components/Rabbit'
 import {Skeleton} from '../components/Skeleton'
 import {TaskStrips} from '../components/TaskStrips'
-import {useOmniComposer} from '../hooks/useOmniComposer'
 import {useTaskAlerts} from '../hooks/useTaskAlerts'
 import {useUrlState} from '../hooks/useUrlState'
 import {libraryItemHref} from '../lib/docNav'
@@ -24,11 +22,9 @@ function groupLabel(savedAt?: number | null) {
 }
 
 export function LibraryPage() {
-  const {get, setParams, pathname, search, navigate} = useUrlState()
+  const {get, setParams, pathname, search} = useUrlState()
   const up = get('up')
   const tag = get('tag')
-  const paste = get('paste')
-  const omni = useOmniComposer(paste)
   const {running, failed} = useTaskAlerts()
   const [items, setItems] = useState<LibraryListItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -154,16 +150,6 @@ export function LibraryPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <OmniBar
-        value={omni.value}
-        onChange={omni.setValue}
-        onSubmit={() => void omni.submit()}
-        action={omni.action}
-        busy={omni.busy}
-        onGenerate={() => void omni.generate()}
-        onRead={(id) => navigate(`/doc/${id}`)}
-        onRestore={(id) => void omni.restore(id)}
-      />
       {!filtered ? <TaskStrips running={running} failed={failed} /> : null}
       <div className="mt-7 flex flex-wrap items-center gap-2">
         <p className="mr-auto text-[13px] text-muted">

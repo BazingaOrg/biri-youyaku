@@ -1,6 +1,7 @@
 import {lazy, Suspense} from 'react'
 import {Redirect, Route, Switch, useSearch} from 'wouter'
 import {AppShell} from './components/AppShell'
+import {BrowseOmni} from './components/BrowseOmni'
 import {ErrorBoundary} from './components/ErrorBoundary'
 import {Workspace} from './pages/Workspace'
 import {ToastProvider} from './components/ToastProvider'
@@ -25,6 +26,7 @@ export default function App() {
     <ErrorBoundary>
       <ToastProvider>
         <AppShell>
+          <BrowseOmni />
           <Switch>
             <Route path="/history">
               <Redirect to="/" />

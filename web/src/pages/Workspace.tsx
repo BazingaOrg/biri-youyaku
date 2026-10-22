@@ -312,7 +312,12 @@ export function Workspace({jobId}: WorkspaceProps) {
   }
 
   if (!job) {
-    return <PageLoading label="加载任务…" />
+    return (
+      <>
+        <BackButton href="/tasks" label="任务" />
+        <PageLoading label="加载任务…" />
+      </>
+    )
   }
 
   // 流式总结时的跳到底浮标。放在 AppShell 工具区上方，避免同位置重叠。

@@ -4,11 +4,9 @@ import {searchLibrary, type LibrarySearchGroup, type LibrarySearchResponse} from
 import {formatClock, formatDuration, formatSavedDay} from '../lib/format'
 import {Button} from '../components/Button'
 import {RabbitScene} from '../components/Rabbit'
-import {OmniBar} from '../components/OmniBar'
 import {Segmented} from '../components/Segmented'
 import {SearchHighlight} from '../components/SearchHighlight'
 import {Skeleton} from '../components/Skeleton'
-import {useOmniComposer} from '../hooks/useOmniComposer'
 import {useUrlState} from '../hooks/useUrlState'
 import {docHref} from '../lib/docNav'
 import {parseSearchScope, type SearchScope} from '../lib/urlState'
@@ -18,7 +16,6 @@ export function SearchPage() {
   const {get, setParams, pathname, search, navigate} = useUrlState()
   const q = get('q')
   const scope = parseSearchScope(get('scope'))
-  const omni = useOmniComposer(q)
   const [result, setResult] = useState<LibrarySearchResponse | null>(null)
   const [loading, setLoading] = useState(Boolean(q.trim()))
   const [loadingMore, setLoadingMore] = useState(false)
@@ -124,23 +121,11 @@ export function SearchPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <OmniBar
-        value={omni.value}
-        onChange={omni.setValue}
-        onClear={() => navigate('/')}
-        onSubmit={() => void omni.submit()}
-        action={omni.action}
-        busy={omni.busy}
-        hint={false}
-        onGenerate={() => void omni.generate()}
-        onRead={(id) => navigate(`/doc/${id}`)}
-        onRestore={(id) => void omni.restore(id)}
-      />
       <div className="mt-5 flex flex-wrap items-center gap-2">
         <Segmented
           ariaLabel="搜索范围"
           value={scope}
-          onChange={(next) => setParams({scope: next, q: q || omni.value.trim()})}
+          onChange={(next) => setParams({scope: next, q})}
           options={[
             {value: 'all', label: '全部'},
             {value: 'notes', label: '笔记', count: result && !nextCursor ? pageCounts.notes : null},

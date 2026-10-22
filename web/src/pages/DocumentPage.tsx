@@ -264,16 +264,26 @@ export function DocumentPage({id}: {id: string}) {
       .map((text, index) => ({id: `h-${index}`, text, hit: q ? includesSearchQuery(text, q) : false}))
   }, [chunks, markdown, q])
 
-  if (loading) return <PageLoading label="加载笔记…" />
+  if (loading) {
+    return (
+      <div>
+        <BackButton href={back.href} label={back.label} />
+        <PageLoading label="加载笔记…" />
+      </div>
+    )
+  }
   if (error || (!content && !legacyJob)) {
     return (
-      <div className="mx-auto grid max-w-xl justify-items-center gap-3 py-16 text-center">
-        <Rabbit mood="error" />
-        <h1 className="text-lg font-semibold">这篇笔记不存在或已移除</h1>
-        <p className="text-sm text-muted">{error}</p>
-        <Button variant="secondary" onClick={() => navigate('/')}>
-          返回全部笔记
-        </Button>
+      <div>
+        <BackButton href={back.href} label={back.label} />
+        <div className="mx-auto grid max-w-xl justify-items-center gap-3 py-16 text-center">
+          <Rabbit mood="error" />
+          <h1 className="text-lg font-semibold">这篇笔记不存在或已移除</h1>
+          <p className="text-sm text-muted">{error}</p>
+          <Button variant="secondary" onClick={() => navigate('/')}>
+            返回全部笔记
+          </Button>
+        </div>
       </div>
     )
   }
