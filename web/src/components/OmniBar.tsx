@@ -146,9 +146,9 @@ export function OmniBar({
         </div>
       ) : null}
       {hint && !value ? (
-        <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 px-1 text-[13px] text-muted">
+        <p className="mt-2 flex items-baseline justify-between gap-3 px-1 text-[13px] text-muted">
           <span>可搜标题、UP 主、BV 号、标签、笔记正文和字幕</span>
-          <span className="hidden sm:inline">
+          <span className="hidden shrink-0 sm:inline">
             按 <kbd>/</kbd> 聚焦 · <kbd>Enter</kbd> 搜索
           </span>
         </p>
