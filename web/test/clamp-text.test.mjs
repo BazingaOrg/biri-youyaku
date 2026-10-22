@@ -22,6 +22,11 @@ test('clamped titles use one line and a panel tooltip', async () => {
   assert.match(clamp, /line-clamp-1/)
   assert.match(clamp, /bg-panel/)
   assert.match(clamp, /role="tooltip"/)
+  assert.match(clamp, /clientX/)
+  assert.match(clamp, /space\.below/)
+  assert.match(clamp, /space\.above/)
+  assert.match(clamp, /space\.left/)
+  assert.match(clamp, /space\.right/)
   for (const source of pages) {
     assert.match(source, /ClampText/)
     assert.doesNotMatch(source, /line-clamp-2/)
