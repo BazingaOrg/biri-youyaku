@@ -16,6 +16,7 @@ test('search page scopes and highlights without inventing library-wide totals', 
   assert.match(searchSource, /已在标题、UP 主、BV 号、标签、笔记和字幕中查找/)
   assert.doesNotMatch(searchSource, /搜索笔记或字幕/)
   assert.match(omniSource, /生成笔记/)
+  assert.match(searchSource, /onClear=\{\(\) => navigate\('\/'\)\}/)
   assert.match(librarySource, /OmniBar/)
   assert.match(librarySource, /grid min-w-0 gap-1/)
   assert.match(librarySource, /\$\{total\} 篇笔记/)

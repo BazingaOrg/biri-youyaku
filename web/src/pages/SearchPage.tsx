@@ -127,6 +127,7 @@ export function SearchPage() {
       <OmniBar
         value={omni.value}
         onChange={omni.setValue}
+        onClear={() => navigate('/')}
         onSubmit={() => void omni.submit()}
         action={omni.action}
         busy={omni.busy}

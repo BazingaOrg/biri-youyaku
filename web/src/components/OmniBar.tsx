@@ -14,6 +14,7 @@ interface OmniBarProps {
   onRead?: (documentId: string) => void
   onRestore?: (documentId: string) => void
   onGenerate?: () => void
+  onClear?: () => void
 }
 
 export function OmniBar({
@@ -26,6 +27,7 @@ export function OmniBar({
   onRead,
   onRestore,
   onGenerate,
+  onClear,
 }: OmniBarProps) {
   const isLink = action.kind !== 'text'
   const showGenerate = action.primary === 'generate'
@@ -73,7 +75,10 @@ export function OmniBar({
           <button
             type="button"
             aria-label="清空"
-            onClick={() => onChange('')}
+            onClick={() => {
+              onChange('')
+              onClear?.()
+            }}
             className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] text-muted hover:bg-lift hover:text-ink"
           >
             <X size={16} />
