@@ -66,7 +66,7 @@ export function ClampText({
   }
   const hide = () => setBubble(null)
 
-  const clamped = `block line-clamp-1 break-words ${className}`
+  const clamped = `min-w-0 line-clamp-1 break-words ${className}`
   let body: ReactNode
   if (href && external) {
     body = (
