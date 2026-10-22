@@ -1,6 +1,7 @@
 import {Check, RotateCw} from 'lucide-react'
 import {Link} from 'wouter'
 import {Button, buttonClassName} from '../../components/Button'
+import {ClampText} from '../../components/ClampText'
 import {type JobStatus, type UpVideo} from '../../lib/api'
 import {formatDay, formatDuration} from '../../lib/format'
 import {isRunning} from '../../lib/jobStatus'
@@ -48,14 +49,12 @@ export function VideoRow({
       </div>
 
       <div className="min-w-0">
-        <a
+        <ClampText
           href={video.url}
-          target="_blank"
-          rel="noreferrer"
-          className="line-clamp-2 break-words text-sm font-medium text-ink hover:text-brand"
-        >
-          {video.title}
-        </a>
+          external
+          text={video.title}
+          className="text-sm font-medium text-ink hover:text-brand"
+        />
         <p className="mt-1 truncate text-xs text-muted">{formatDay(video.pubdate * 1000)}</p>
       </div>
 

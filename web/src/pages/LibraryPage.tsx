@@ -5,6 +5,7 @@ import {formatDuration, formatSavedDay} from '../lib/format'
 import {Chip} from '../components/Chip'
 import {OmniBar} from '../components/OmniBar'
 import {Button} from '../components/Button'
+import {ClampText} from '../components/ClampText'
 import {RabbitScene} from '../components/Rabbit'
 import {Skeleton} from '../components/Skeleton'
 import {TaskStrips} from '../components/TaskStrips'
@@ -259,9 +260,7 @@ function LibraryRow({
   return (
     <li className="grid grid-cols-1 gap-1 border-b border-line py-3.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-x-4">
       <div className="grid min-w-0 gap-1">
-        <Link href={href} className="line-clamp-2 text-base font-semibold leading-snug break-words hover:text-brand">
-          {item.title}
-        </Link>
+        <ClampText href={href} text={item.title} className="text-base font-semibold leading-snug hover:text-brand" />
         {item.tldr ? <p className="line-clamp-1 text-sm text-muted">{item.tldr}</p> : null}
         <p className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-muted">
           {item.mid ? (

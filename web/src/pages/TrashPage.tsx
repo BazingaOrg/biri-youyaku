@@ -1,9 +1,9 @@
 import {useCallback, useEffect, useState} from 'react'
-import {Link} from 'wouter'
 import {listLibraryTrash, purgeDocument, restoreDocument, type TrashItem} from '../lib/api'
 import {formatDate} from '../lib/format'
 import {BackButton} from '../components/BackButton'
 import {Button} from '../components/Button'
+import {ClampText} from '../components/ClampText'
 import {RabbitScene} from '../components/Rabbit'
 import {ConfirmDialog} from '../components/ConfirmDialog'
 import {Skeleton} from '../components/Skeleton'
@@ -92,9 +92,11 @@ export function TrashPage() {
                   className="grid grid-cols-1 gap-2 border-b border-line py-3.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                 >
                   <div className="min-w-0">
-                    <Link href={`/doc/${item.document_id}?from=trash`} className="line-clamp-2 font-semibold hover:text-brand">
-                      {item.title || '未命名'}
-                    </Link>
+                    <ClampText
+                      href={`/doc/${item.document_id}?from=trash`}
+                      text={item.title || '未命名'}
+                      className="font-semibold hover:text-brand"
+                    />
                     <p className="mt-0.5 flex flex-wrap gap-x-2.5 text-[13px] text-muted">
                       <span>{item.author || '未知 UP'}</span>
                       {item.deleted_at ? <span>{formatDate(item.deleted_at)} 移除</span> : null}

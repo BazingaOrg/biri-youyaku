@@ -2,6 +2,7 @@ import {ExternalLink} from 'lucide-react'
 import type {Job} from '../../lib/api'
 import {formatDuration} from '../../lib/format'
 import {AuthorLink} from '../../components/AuthorLink'
+import {ClampText} from '../../components/ClampText'
 
 export function MetaBar({job}: {job: Job}) {
   return (
@@ -17,9 +18,7 @@ export function MetaBar({job}: {job: Job}) {
           视频源 <ExternalLink size={12} />
         </a>
       </div>
-      <p className="line-clamp-2 break-words text-base font-semibold leading-snug text-ink">
-        {job.title || '识别中…'}
-      </p>
+      <ClampText text={job.title || '识别中…'} className="text-base font-semibold leading-snug text-ink" />
       <AuthorLink job={job} variant="chip" />
     </div>
   )
