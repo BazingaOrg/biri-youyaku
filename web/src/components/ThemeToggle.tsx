@@ -12,6 +12,7 @@ declare global {
 const STORAGE_KEY = 'theme'
 const MODES: ThemeMode[] = ['system', 'light', 'dark']
 const LABEL: Record<ThemeMode, string> = {system: '跟随系统', light: '白天', dark: '黑夜'}
+const SHORT: Record<ThemeMode, string> = {system: '系统', light: '白天', dark: '黑夜'}
 const THEME_COLOR = {light: '#B33F66', dark: '#15131A'} as const
 
 function readMode(): ThemeMode {
@@ -80,9 +81,10 @@ export function ThemeToggle() {
       type="button"
       onClick={cycleMode}
       aria-label={`当前${LABEL[mode]}，点击切换为${LABEL[nextMode]}`}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] text-muted hover:bg-lift hover:text-ink"
+      className="inline-flex h-9 items-center gap-1.5 rounded-[10px] px-3 text-sm text-muted hover:bg-lift hover:text-ink"
     >
       <Icon size={18} strokeWidth={1.8} />
+      <span className="hidden sm:inline">{SHORT[mode]}</span>
     </button>
   )
 }
