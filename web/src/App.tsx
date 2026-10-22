@@ -4,6 +4,7 @@ import {AppShell} from './components/AppShell'
 import {ErrorBoundary} from './components/ErrorBoundary'
 import {Workspace} from './pages/Workspace'
 import {ToastProvider} from './components/ToastProvider'
+import {Skeleton} from './components/Skeleton'
 import {PageLoading} from './components/Spinner'
 
 const LibraryPage = lazy(() => import('./pages/LibraryPage').then((m) => ({default: m.LibraryPage})))
@@ -32,13 +33,13 @@ export default function App() {
               <KnowledgeRedirect />
             </Route>
             <Route path="/search">
-              <Suspense fallback={<PageLoading />}>
+              <Suspense fallback={<Skeleton count={5} />}>
                 <SearchPage />
               </Suspense>
             </Route>
             <Route path="/doc/:id">
               {(params) => (
-                <Suspense fallback={<PageLoading />}>
+                <Suspense fallback={<PageLoading label="加载笔记…" />}>
                   <DocumentPage id={params.id} />
                 </Suspense>
               )}
@@ -47,24 +48,24 @@ export default function App() {
               {(params) => <Workspace jobId={params.jobId} />}
             </Route>
             <Route path="/tasks">
-              <Suspense fallback={<PageLoading />}>
+              <Suspense fallback={<Skeleton count={6} />}>
                 <TasksPage />
               </Suspense>
             </Route>
             <Route path="/trash">
-              <Suspense fallback={<PageLoading />}>
+              <Suspense fallback={<Skeleton count={4} />}>
                 <TrashPage />
               </Suspense>
             </Route>
             <Route path="/up/:mid">
               {(params) => (
-                <Suspense fallback={<PageLoading />}>
+                <Suspense fallback={<Skeleton count={6} />}>
                   <UpPage mid={params.mid} />
                 </Suspense>
               )}
             </Route>
             <Route path="/">
-              <Suspense fallback={<PageLoading />}>
+              <Suspense fallback={<Skeleton count={6} />}>
                 <LibraryPage />
               </Suspense>
             </Route>
