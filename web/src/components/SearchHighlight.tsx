@@ -5,10 +5,12 @@ export function SearchHighlight({
   text,
   query,
   mode = 'literal',
+  navigable = false,
 }: {
   text: string
   query: string
   mode?: SearchHighlightMode
+  navigable?: boolean
 }) {
   const parts = splitSearchHighlights(text, query, mode)
 
@@ -17,7 +19,7 @@ export function SearchHighlight({
       {parts.map((part, index) => (
         <Fragment key={`${part.highlighted ? 'h' : 't'}-${index}`}>
           {part.highlighted ? (
-            <mark className="rounded-sm bg-warning/30 px-0.5 text-inherit">
+            <mark className="search-highlight" data-find-hit={navigable ? '' : undefined}>
               {part.text}
             </mark>
           ) : (

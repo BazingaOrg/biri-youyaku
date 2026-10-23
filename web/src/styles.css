@@ -179,6 +179,28 @@ kbd {
   font-weight: 600;
 }
 
+.search-highlight {
+  border-radius: 0.15em;
+  background-color: rgb(var(--color-warning-rgb) / 0.2);
+  color: inherit;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  scroll-margin-block: 13rem 5rem;
+}
+
+.search-highlight[data-current='true'] {
+  background-color: rgb(var(--color-warning-rgb) / 0.42);
+  box-shadow: inset 0 -2px rgb(var(--color-warning-rgb) / 0.8);
+}
+
+:root[data-theme='dark'] .search-highlight {
+  background-color: rgb(var(--color-warning-rgb) / 0.18);
+}
+
+:root[data-theme='dark'] .search-highlight[data-current='true'] {
+  background-color: rgb(var(--color-warning-rgb) / 0.32);
+}
+
 .rabbit-blink {
   transform-box: fill-box;
   transform-origin: center;

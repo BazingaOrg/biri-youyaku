@@ -29,7 +29,7 @@ import {PROSE} from '../lib/prose'
 import {Segmented} from '../components/Segmented'
 import {Rabbit} from '../components/Rabbit'
 import {PageLoading} from '../components/Spinner'
-import {includesSearchQuery} from '../lib/searchHighlight'
+import {includesSearchQuery, splitSearchHighlights} from '../lib/searchHighlight'
 import {writeActive} from '../lib/activeJob'
 
 type Tab = 'notes' | 'subs'
@@ -54,6 +54,7 @@ export function DocumentPage({id}: {id: string}) {
   const findIndexRef = useRef(0)
   const [findIndex, setFindIndex] = useState(0)
   const [findTotal, setFindTotal] = useState(0)
+  const searchContentRef = useRef<HTMLDivElement>(null)
 
   const loadGeneration = useRef(0)
   const loadAbort = useRef<AbortController | null>(null)
@@ -141,22 +142,30 @@ export function DocumentPage({id}: {id: string}) {
       setFindTotal(0)
       return
     }
-    const nodes = [...document.querySelectorAll<HTMLElement>('[data-find-hit]')]
+    const nodes = [...(searchContentRef.current?.querySelectorAll<HTMLElement>('[data-find-hit]') ?? [])]
     setFindTotal(nodes.length)
-    const currentAt = nodes.findIndex((node) => node.id === (tab === 'subs' ? `cue-${at}` : `chunk-${at}`))
+    const blocks = [...(searchContentRef.current?.querySelectorAll<HTMLElement>('[data-search-block]') ?? [])]
+    const targetBlock = blocks.find((block) => block.id === (tab === 'subs' ? `cue-${at}` : `chunk-${at}`))
+      ?? (tab === 'subs' ? blocks.find((block) => block.dataset.sec === at) : undefined)
+    const currentAt = nodes.findIndex((node) => node.closest('[data-search-block]') === targetBlock)
     const index = currentAt >= 0 ? currentAt : 0
     findIndexRef.current = index
     setFindIndex(index)
-    nodes.forEach((node, i) => node.classList.toggle('ring-2', i === index))
+    nodes.forEach((node, i) => {
+      node.dataset.current = String(i === index)
+    })
+    nodes[index]?.scrollIntoView({block: 'center'})
   }, [at, q, tab, markdown, cues.length, chunks.length, loading])
 
   const jumpFind = (delta: number) => {
-    const nodes = [...document.querySelectorAll<HTMLElement>('[data-find-hit]')]
+    const nodes = [...(searchContentRef.current?.querySelectorAll<HTMLElement>('[data-find-hit]') ?? [])]
     if (nodes.length === 0) return
     const next = (findIndexRef.current + delta + nodes.length) % nodes.length
     findIndexRef.current = next
     setFindIndex(next)
-    nodes.forEach((node, i) => node.classList.toggle('ring-2', i === next))
+    nodes.forEach((node, i) => {
+      node.dataset.current = String(i === next)
+    })
     nodes[next]?.scrollIntoView({block: 'center'})
   }
 
@@ -452,7 +461,7 @@ export function DocumentPage({id}: {id: string}) {
             </details>
           ) : null}
 
-          <div className="mt-4">
+          <div ref={searchContentRef} className="mt-4">
             {tab === 'notes' ? (
               chunks.length > 0 ? (
                 <div className={PROSE}>
@@ -460,15 +469,19 @@ export function DocumentPage({id}: {id: string}) {
                     <section
                       key={chunk.chunk_ord}
                       id={`chunk-${chunk.chunk_ord}`}
-                      data-find-hit={q && includesSearchQuery(chunk.text, q) ? '' : undefined}
+                      data-search-block=""
                       className="scroll-mt-48"
                     >
-                      <MarkdownContent markdown={chunk.text} />
+                      <MarkdownContent markdown={chunk.text} query={q} />
                     </section>
                   ))}
                 </div>
               ) : markdown ? (
-                <LazyMarkdown markdown={markdown} />
+                q ? (
+                  <div className={PROSE}>
+                    <MarkdownContent markdown={markdown} query={q} />
+                  </div>
+                ) : <LazyMarkdown markdown={markdown} />
               ) : (
                 <p className="py-10 text-center text-sm text-muted">没有笔记内容</p>
               )
@@ -478,17 +491,17 @@ export function DocumentPage({id}: {id: string}) {
                   const hit =
                     String(index) === at ||
                     ((cue as {index?: number}).index != null && String((cue as {index?: number}).index) === at)
-                  const secHit = at !== '' && Math.floor(cue.start) === Number(at)
+                  const secHit = at != null && at !== '' && Math.floor(cue.start) === Number(at)
                   const href = biliPlayUrl(sourceUrl, bvid, cue.start)
-                  const matches = Boolean(q && includesSearchQuery(cue.text, q))
+                  const matches = Boolean(q && splitSearchHighlights(cue.text, q, 'fts').some((part) => part.highlighted))
                   return (
                     <li
                       key={index}
                       id={`cue-${index}`}
                       data-sec={Math.floor(cue.start)}
-                      data-find-hit={matches ? '' : undefined}
+                      data-search-block=""
                       className={`grid scroll-mt-52 grid-cols-[3.5rem_minmax(0,1fr)] gap-3 rounded-lg px-2 py-1.5 ${
-                        hit || secHit ? 'bg-brandSoft' : ''
+                        !q && (hit || secHit) ? 'bg-brandSoft' : ''
                       }`}
                     >
                       {href ? (
@@ -505,7 +518,7 @@ export function DocumentPage({id}: {id: string}) {
                         <span className="pt-0.5 text-[13px] tabular-nums text-muted">{formatClock(cue.start)}</span>
                       )}
                       <span className="text-[15px] leading-7 break-words">
-                        {q ? <SearchHighlight text={cue.text} query={q} mode="fts" /> : cue.text}
+                        {q ? <SearchHighlight text={cue.text} query={q} mode="fts" navigable /> : cue.text}
                         {href && (hit || secHit || matches) ? (
                           <a
                             href={href}
