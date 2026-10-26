@@ -51,7 +51,7 @@ curl -sS http://127.0.0.1:17821/v1/config/runtime | python3 -m json.tool
 | LLM | `OPENROUTER_MANAGEMENT_API_KEY` | 空 | OpenRouter 管理 Key，用于读取账户 credits；普通推理 Key 只看自身限额 |
 | LLM | `USAGE_FINGERPRINT_SECRET` | 空 | 稳定指纹密钥（不存原始 Key）；空则从本实例已有密钥安全派生 |
 | 总结 | `SUMMARY_LANGUAGE` | `中文简体` | 输出语言 |
-| 邮件 | `EMAIL_ENABLED` | `false` | |
+| 邮件 | `EMAIL_ENABLED` | `false` | 邮件总开关；关闭后新旧任务均跳过自动发送，手动重发不可用，请求参数不能覆盖。修改后重启后端并刷新前端 |
 | 邮件 | `EMAIL_WEBHOOK_URL` | 空 | 收 webhook 的 URL（如 Cloudflare Worker） |
 | 邮件 | `EMAIL_WEBHOOK_TOKEN` | 空 | 启用邮件时必填；后端 → Worker 的鉴权 token，与 Worker 端 `BIRI_YOUYAKU_TOKEN` 一致 |
 | 邮件 | `EMAIL_DEFAULT_RECIPIENT` | 空 | **唯一**收件人；后端永远只发到这里（无 per-job 收件人，防滥发） |

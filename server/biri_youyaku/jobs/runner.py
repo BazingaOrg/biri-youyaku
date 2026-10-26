@@ -575,7 +575,7 @@ async def _do_summarize(job_id: str, stage: _RunStage) -> None:
     # - 取消（CancelledError / CanceledError）必须 re-raise，让外层 lifecycle 走
     #   CANCELED 分支；否则会被静默吞掉变成「completed + email_error=取消」。
     email_error: str | None = None
-    if fresh_job.options.email_enabled:
+    if settings.email_enabled and fresh_job.options.email_enabled:
         stage.value = JobStatus.EMAILING.value
         await transition(job_id, JobStatus.EMAILING)
         try:

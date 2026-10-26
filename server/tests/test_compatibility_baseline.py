@@ -148,6 +148,7 @@ class _FakeAsyncClient:
 
 @pytest.mark.asyncio
 async def test_email_uses_full_markdown_body(monkeypatch):
+    monkeypatch.setattr(webhook.settings, "email_enabled", True)
     monkeypatch.setattr(webhook.settings, "email_webhook_url", "https://worker.example")
     monkeypatch.setattr(webhook.settings, "email_webhook_token", "secret")
     monkeypatch.setattr(webhook.settings, "email_default_recipient", "default@example.com")

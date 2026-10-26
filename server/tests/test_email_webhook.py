@@ -35,6 +35,7 @@ def video_meta() -> VideoMeta:
 
 @pytest.mark.asyncio
 async def test_send_uses_worker_payload_contract(monkeypatch, video_meta):
+    monkeypatch.setattr(webhook.settings, "email_enabled", True)
     monkeypatch.setattr(webhook.settings, "email_webhook_url", "https://worker.example")
     monkeypatch.setattr(webhook.settings, "email_webhook_token", "secret")
     monkeypatch.setattr(webhook.settings, "email_default_recipient", "default@example.com")
@@ -71,6 +72,7 @@ async def test_send_uses_worker_payload_contract(monkeypatch, video_meta):
 
 @pytest.mark.asyncio
 async def test_send_reports_webhook_error_body(monkeypatch, video_meta):
+    monkeypatch.setattr(webhook.settings, "email_enabled", True)
     monkeypatch.setattr(webhook.settings, "email_webhook_url", "https://worker.example")
     monkeypatch.setattr(webhook.settings, "email_webhook_token", "")
     monkeypatch.setattr(webhook.settings, "email_default_recipient", "default@example.com")

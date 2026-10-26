@@ -39,10 +39,10 @@ function pickStepState(idx: number, currentIdx: number, status: JobStatus): Step
   return 'pending'
 }
 
-export function buildSteps(job: Job): StepDef[] {
+export function buildSteps(job: Job, emailConfigured: boolean): StepDef[] {
   const status = job.status
   const currentIdx = statusToStepIndex(status)
-  const emailEnabled = job.options.email_enabled
+  const emailEnabled = emailConfigured && job.options.email_enabled
   const indices = emailEnabled ? [0, 1, 2, 3] : [0, 1, 2]
   const labels: Record<number, string> = {
     0: '识别视频',

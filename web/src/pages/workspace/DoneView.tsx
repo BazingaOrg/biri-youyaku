@@ -3,6 +3,7 @@ import {Link} from 'wouter'
 import {Plus, RotateCw} from 'lucide-react'
 import {resendEmail, type Job} from '../../lib/api'
 import {useToast} from '../../components/ToastProvider'
+import {useRuntimeConfig} from '../../hooks/useRuntimeConfig'
 import {Button, buttonClassName} from '../../components/Button'
 import {MetaBar} from './MetaBar'
 import {SummaryTabs} from './SummaryTabs'
@@ -24,6 +25,7 @@ export function DoneView({
 }: DoneViewProps) {
   const [resending, setResending] = useState(false)
   const toast = useToast()
+  const runtime = useRuntimeConfig()
   const resend = async () => {
     setResending(true)
     try {
@@ -66,7 +68,7 @@ export function DoneView({
         <p className="px-1 text-center text-sm text-muted">这篇笔记已经永久删除，任务记录还在。</p>
       ) : null}
       <MetaBar job={job} />
-      {job.email_error && (
+      {runtime?.email_configured && job.email_error && (
         <p className="px-1 text-xs text-warning">
           邮件未送达（{job.email_error}）
           {' · '}

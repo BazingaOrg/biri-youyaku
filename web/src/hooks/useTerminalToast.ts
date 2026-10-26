@@ -4,6 +4,7 @@ import {isTerminal} from '../lib/jobStatus'
 import {clearActive} from '../lib/activeJob'
 import {friendlyError} from '../lib/errorMap'
 import {useToast} from '../components/ToastProvider'
+import {useRuntimeConfig} from './useRuntimeConfig'
 
 /**
  * 终态 toast 与 localStorage 清理。
@@ -18,6 +19,8 @@ import {useToast} from '../components/ToastProvider'
  */
 export function useTerminalToast(job: Job | null, jobId: string | null) {
   const toast = useToast()
+  const runtime = useRuntimeConfig()
+  const emailConfigured = runtime?.email_configured === true
   const notifiedRef = useRef<string | null>(null)
   const sawRunningRef = useRef<string | null>(null)
 
@@ -42,7 +45,7 @@ export function useTerminalToast(job: Job | null, jobId: string | null) {
     if (sawRunningRef.current !== jobId) return
     const taskName = job.title || undefined
     if (job.status === 'COMPLETED') {
-      const detail = !job.options.email_enabled
+      const detail = !emailConfigured || !job.options.email_enabled
         ? '已生成'
         : job.email_error
           ? '总结已生成，邮件未送达'
@@ -54,5 +57,5 @@ export function useTerminalToast(job: Job | null, jobId: string | null) {
       toast.error(fe.title, fe.message, {taskName, dedupeKey: jobId})
     }
     // CANCELED 不弹 toast：按钮即时反馈已经在 cancel() 里以 info 形式发过
-  }, [job, jobId, toast])
+  }, [job, jobId, toast, emailConfigured])
 }

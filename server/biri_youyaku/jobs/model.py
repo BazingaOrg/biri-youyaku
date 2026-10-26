@@ -85,6 +85,8 @@ class JobOptions:
         overrides = {
             key: value for key, value in data.items() if key in allowed and value is not None
         }
+        if not settings.email_enabled:
+            overrides["email_enabled"] = False
         return cls.from_dict({**defaults, **overrides})
 
     def as_dict(self) -> dict[str, Any]:

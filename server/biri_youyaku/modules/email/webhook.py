@@ -24,6 +24,9 @@ def _response_error(response: httpx.Response) -> str:
 
 
 async def send(meta: VideoMeta, summary_md: str, options: JobOptions) -> None:
+    if not settings.email_enabled:
+        raise RuntimeError("邮件功能已关闭")
+
     if not settings.email_webhook_url:
         raise RuntimeError("EMAIL_WEBHOOK_URL 未配置")
 

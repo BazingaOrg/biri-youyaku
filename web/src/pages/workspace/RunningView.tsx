@@ -6,6 +6,7 @@ import {friendlyError} from '../../lib/errorMap'
 import {IconButton} from '../../components/IconButton'
 import {StepCarousel} from '../../components/StepCarousel'
 import {useToast} from '../../components/ToastProvider'
+import {useRuntimeConfig} from '../../hooks/useRuntimeConfig'
 import {MetaBar} from './MetaBar'
 import {buildSteps, statusToStepIndex} from './steps'
 
@@ -28,7 +29,9 @@ export function RunningView({
   busy,
   cancelPending,
 }: RunningViewProps) {
-  const steps = useMemo(() => buildSteps(job), [job])
+  const runtime = useRuntimeConfig()
+  const emailConfigured = runtime?.email_configured === true
+  const steps = useMemo(() => buildSteps(job, emailConfigured), [job, emailConfigured])
   const currentIdx = statusToStepIndex(job.status)
   // 只有 FAILED 才渲染失败卡。运行中（转写 / 总结）遇到一次 SSE 网络抖动时，
   // error_message 可能被瞬时写入；若不限定 status，会闪出一张假的红色失败卡。
