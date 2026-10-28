@@ -91,7 +91,7 @@ def get_document(document_id: str) -> dict[str, Any] | None:
         row = connection.execute(
             """
             SELECT
-              id, provider, external_bvid, external_cid, title, author, mid,
+              id, provider, source_id, source_part, external_bvid, external_cid, title, author, mid,
               source_url, created_at, updated_at, deleted_at, delete_reason
             FROM knowledge_documents
             WHERE id = ?
@@ -190,7 +190,8 @@ def _confirm_matches(doc: dict[str, Any], confirm_title: str) -> bool:
         return False
     title = (doc.get("title") or "").strip()
     bvid = (doc.get("external_bvid") or "").strip()
-    return token == title or token == bvid
+    source_id = (doc.get("source_id") or "").strip()
+    return token == title or token == bvid or token == source_id
 
 
 def purge_permanent(
@@ -210,11 +211,12 @@ def purge_permanent(
         raise LifecycleError("文档不存在", status_code=404)
     if not force and not _confirm_matches(doc, confirm_title or ""):
         raise LifecycleError(
-            "永久删除需二次确认：confirm_title 必须与文档标题或 bvid 完全一致",
+            "永久删除需二次确认：confirm_title 必须与文档标题或来源 ID 完全一致",
             status_code=400,
         )
 
     summary_paths: list[str] = []
+    input_targets: list[dict[str, str]] = []
     with exclusive_write(), connect() as connection:
         artifact_rows = connection.execute(
             "SELECT storage_path FROM knowledge_artifacts WHERE document_id = ?",
@@ -226,6 +228,16 @@ def purge_permanent(
             (document_id,),
         ).fetchall()
         job_ids = [row["job_id"] for row in job_rows if row["job_id"]]
+        from biri_youyaku.jobs import repo as job_repo
+        from biri_youyaku.jobs.cleanup import collect_job_file_cleanup_targets
+
+        for job_id in job_ids:
+            job = job_repo.get_job(job_id)
+            if job is not None:
+                input_targets.extend(
+                    target for target in collect_job_file_cleanup_targets(job)
+                    if target["file_type"] == "input"
+                )
         timestamp = now_ms()
         for job_id in job_ids:
             existing = connection.execute(
@@ -260,7 +272,7 @@ def purge_permanent(
         if job_ids:
             placeholders = ",".join("?" for _ in job_ids)
             connection.execute(
-                f"UPDATE jobs SET summary_path = NULL WHERE id IN ({placeholders})",
+                f"UPDATE jobs SET summary_path = NULL, input_path = NULL WHERE id IN ({placeholders})",
                 job_ids,
             )
 
@@ -289,6 +301,9 @@ def purge_permanent(
         )
 
     from biri_youyaku.modules.storage import summary as summary_storage
+    from biri_youyaku.jobs.cleanup import delete_job_file_targets_with_result, enqueue_pending_file_cleanup
+
+    enqueue_pending_file_cleanup(delete_job_file_targets_with_result(input_targets))
 
     for stored in summary_paths:
         path = summary_storage.resolve_stored_path(stored)

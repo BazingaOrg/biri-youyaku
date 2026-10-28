@@ -49,6 +49,9 @@ class _Group:
     job_id: str | None
     title: str | None
     author: str | None
+    provider: str
+    source_id: str | None
+    source_part: str
     mid: Any
     bvid: str | None
     cid: Any
@@ -62,6 +65,7 @@ class _Group:
     match_title: bool = False
     match_author: bool = False
     match_bvid: bool = False
+    match_source: bool = False
     match_tags: list[str] = field(default_factory=list)
     notes_hits: list[_Hit] = field(default_factory=list)
     subs_hits: list[_Hit] = field(default_factory=list)
@@ -70,7 +74,7 @@ class _Group:
 
     def sort_tuple(self) -> tuple:
         return (
-            0 if self.match_bvid else 1,
+            0 if self.match_bvid or self.match_source else 1,
             0 if self.match_title else 1,
             -self.notes_count,
             -self.subs_count,
@@ -208,7 +212,7 @@ def search_library(
             {
                 "id": last.document_id or last.job_id,
                 "k": "j" if last.legacy else "d",
-                "b": 0 if last.match_bvid else 1,
+                "b": 0 if last.match_bvid or last.match_source else 1,
                 "ti": 0 if last.match_title else 1,
                 "n": last.notes_count,
                 "s": last.subs_count,
@@ -236,6 +240,11 @@ def _apply_match(group: _Group, query: str) -> None:
     group.match_title = _contains(group.title, query)
     group.match_author = _contains(group.author, query)
     group.match_bvid = bvid_exact_match(query, group.bvid)
+    group.match_source = bool(
+        group.provider != "bilibili"
+        and group.source_id
+        and query.casefold() == group.source_id.casefold()
+    )
     group.match_tags = [tag for tag in group.tags if _contains(tag, query)]
 
 
@@ -247,6 +256,9 @@ def _group_from_document_row(row: Any, query: str) -> _Group:
         job_id=row["job_id"],
         title=row["title"],
         author=row["author"],
+        provider=row["provider"],
+        source_id=row["source_id"],
+        source_part=row["source_part"],
         mid=row["mid"],
         bvid=row["bvid"],
         cid=row["cid"],
@@ -273,6 +285,9 @@ def _group_from_job_row(row: Any, query: str) -> _Group:
         job_id=row["job_id"],
         title=row["title"],
         author=row["author"],
+        provider=row["provider"],
+        source_id=row["source_id"],
+        source_part=row["source_part"],
         mid=row["mid"],
         bvid=row["bvid"],
         cid=row["cid"],
@@ -297,6 +312,9 @@ def _load_documents(document_ids: list[str]) -> list[Any]:
           d.id AS id,
           d.title AS title,
           d.author AS author,
+          d.provider AS provider,
+          d.source_id AS source_id,
+          d.source_part AS source_part,
           d.mid AS mid,
           d.external_bvid AS bvid,
           d.external_cid AS cid,
@@ -331,6 +349,7 @@ def _query_document_metadata(query: str, *, include_deleted: bool) -> list[Any]:
             "IFNULL(d.title, '')",
             "IFNULL(d.author, '')",
             "IFNULL(d.external_bvid, '')",
+            "IFNULL(d.source_id, '')",
             "IFNULL(d.tags_json, '')",
         ]
     )
@@ -340,6 +359,9 @@ def _query_document_metadata(query: str, *, include_deleted: bool) -> list[Any]:
           d.id AS id,
           d.title AS title,
           d.author AS author,
+          d.provider AS provider,
+          d.source_id AS source_id,
+          d.source_part AS source_part,
           d.mid AS mid,
           d.external_bvid AS bvid,
           d.external_cid AS cid,
@@ -356,7 +378,7 @@ def _query_document_metadata(query: str, *, include_deleted: bool) -> list[Any]:
         FROM knowledge_documents d
         WHERE {' AND '.join(where)}
     """
-    params = [pattern, pattern, pattern, pattern]
+    params = [pattern, pattern, pattern, pattern, pattern]
     with connect() as connection:
         return list(connection.execute(sql, params).fetchall())
 
@@ -376,16 +398,20 @@ def _query_legacy_job_metadata(query: str, *, register_on: bool) -> list[Any]:
             "IFNULL(j.title, '')",
             "IFNULL(j.author, '')",
             "IFNULL(j.bvid, '')",
+            "IFNULL(j.source_id, '')",
             "IFNULL(j.tags_json, '')",
         ]
     )
     where.append(f"({like_sql})")
-    params.extend([pattern, pattern, pattern, pattern])
+    params.extend([pattern, pattern, pattern, pattern, pattern])
     sql = f"""
         SELECT
           j.id AS job_id,
           j.title AS title,
           j.author AS author,
+          j.source_provider AS provider,
+          j.source_id AS source_id,
+          j.source_part AS source_part,
           j.mid AS mid,
           j.bvid AS bvid,
           j.cid AS cid,
@@ -500,6 +526,9 @@ def _group_to_dict(group: _Group) -> dict[str, Any]:
         "job_id": group.job_id,
         "title": group.title,
         "author": group.author,
+        "provider": group.provider,
+        "source_id": group.source_id,
+        "source_part": group.source_part,
         "mid": group.mid,
         "bvid": group.bvid,
         "cid": group.cid,
@@ -514,6 +543,7 @@ def _group_to_dict(group: _Group) -> dict[str, Any]:
             "title": group.match_title,
             "author": group.match_author,
             "bvid": group.match_bvid,
+            "source_id": group.match_source,
             "tags": group.match_tags,
         },
         "hits": [

@@ -140,6 +140,7 @@ def build_transcript_payload(
     segments: list[dict[str, Any]] | None,
     *,
     subtitle_source: str | None,
+    subtitle_language: str | None = None,
 ) -> dict[str, Any]:
     """Build the durable transcript_raw JSON object (before canonical encode)."""
     source = subtitle_source
@@ -156,6 +157,7 @@ def build_transcript_payload(
     return {
         "segments": items,
         "subtitle_source": source,
+        **({"subtitle_language": subtitle_language} if subtitle_language else {}),
     }
 
 

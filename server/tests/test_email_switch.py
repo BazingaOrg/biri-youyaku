@@ -118,6 +118,10 @@ async def test_task_requests_cannot_override_disabled_email(monkeypatch, email_j
     options = job_routes.JobOptionsPayload(email_enabled=True)
 
     if action == "create":
+        from dataclasses import replace
+
+        media = replace(video_meta_from_job(email_job), bvid="BV123", cid=1)
+        monkeypatch.setattr(job_routes, "fetch_source_meta", AsyncMock(return_value=media))
         response = await job_routes.create_job(
             None, job_routes.CreateJobPayload(url=email_job.url, options=options, dedupe=False)
         )

@@ -15,6 +15,8 @@ interface OmniBarProps {
   onRestore?: (documentId: string) => void
   onGenerate?: () => void
   onClear?: () => void
+  sourceState?: 'idle' | 'resolving' | 'error'
+  activeJobId?: string | null
 }
 
 export function OmniBar({
@@ -28,6 +30,8 @@ export function OmniBar({
   onRestore,
   onGenerate,
   onClear,
+  sourceState = 'idle',
+  activeJobId = null,
 }: OmniBarProps) {
   const isLink = action.kind !== 'text'
   const showGenerate = action.primary === 'generate'
@@ -67,7 +71,7 @@ export function OmniBar({
           autoComplete="off"
           value={value}
           disabled={busy}
-          placeholder="粘贴 B 站链接生成笔记，或搜索已保存的内容"
+          placeholder="粘贴 B 站或 YouTube 链接，或搜索已保存的内容"
           onChange={(event) => onChange(event.target.value)}
           className="min-h-11 min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted/55 disabled:opacity-60"
         />
@@ -91,7 +95,7 @@ export function OmniBar({
             className="hidden shrink-0 sm:inline-flex"
             disabled={busy}
           >
-            生成笔记
+            {activeJobId ? '查看任务' : '生成笔记'}
           </Button>
         ) : null}
       </div>
@@ -140,16 +144,18 @@ export function OmniBar({
       {action.kind === 'new-link' ? (
         <div className="mt-2.5 flex flex-wrap items-center gap-3 rounded-[14px] border border-line bg-panel px-4 py-3.5">
           <div className="min-w-0 flex-1 basis-[260px]">
-            <p className="text-xs text-muted">识别到 B 站视频</p>
-            <p className="font-semibold break-words">生成后会出现在列表顶部，可以离开页面</p>
+            <p className="text-xs text-muted">识别到支持的视频来源</p>
+            <p className="font-semibold break-words">{activeJobId ? '这条内容正在处理，可以查看任务进度' : '生成后会出现在列表顶部，可以离开页面'}</p>
           </div>
           <div className="flex w-full sm:hidden">
             <Button type="submit" variant="primary" className="ml-auto" disabled={busy}>
-              生成笔记
+              {activeJobId ? '查看任务' : '生成笔记'}
             </Button>
           </div>
         </div>
       ) : null}
+      {isLink && sourceState === 'resolving' ? <p className="mt-2 px-1 text-xs text-muted" aria-live="polite">正在检查来源与已有笔记…</p> : null}
+      {isLink && sourceState === 'error' ? <p className="mt-2 px-1 text-xs text-warning" aria-live="polite">暂时无法检查已有内容；提交时服务端会再次确认。</p> : null}
       {hint && !value ? (
         <p className="mt-2 flex items-baseline justify-between gap-3 px-1 text-[13px] text-muted">
           <span>可搜标题、UP 主、BV 号、标签、笔记正文和字幕</span>

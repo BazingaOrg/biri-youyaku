@@ -39,10 +39,10 @@ def _should_attempt(job_id: str) -> bool:
     if row.status == RECONCILE_FAILED:
         if row.attempts < MAX_RECONCILE_ATTEMPTS:
             return True
-        if row.reason != "missing_bvid_or_cid":
+        if row.reason not in {"missing_bvid_or_cid", "missing_source_identity"}:
             return False
         job = jobs_repo.get_job(job_id)
-        return job is not None and bool((job.bvid or "").strip()) and job.cid is not None
+        return job is not None and (bool(job.source_id) or (bool((job.bvid or "").strip()) and job.cid is not None))
     # pending or unknown
     return True
 

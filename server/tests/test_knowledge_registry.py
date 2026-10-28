@@ -153,6 +153,20 @@ def test_missing_cid_fails_no_document(monkeypatch, tmp_path):
     assert knowledge_repo.count_documents() == 0
 
 
+def test_register_non_bilibili_source_identity(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    job, _ = _make_completed_job(bvid="", cid=None, url="https://youtu.be/video123")
+    jobs_repo.set_source(job.id, "youtube", "video123", "")
+
+    assert try_register_job(job.id) == RECONCILE_REGISTERED
+    document = knowledge_repo.find_document_by_source(
+        provider="youtube", source_id="video123", source_part=""
+    )
+    assert document is not None
+    assert document["external_bvid"] is None
+    assert document["external_cid"] is None
+
+
 def test_skip_distill_and_audio(monkeypatch, tmp_path):
     _setup(monkeypatch, tmp_path)
     distill_job, _ = _make_completed_job(task_type="distill", bvid="BV1distill001")

@@ -12,6 +12,7 @@ import {useTaskAlerts} from '../hooks/useTaskAlerts'
 import {useUrlState} from '../hooks/useUrlState'
 import {libraryItemHref} from '../lib/docNav'
 import {readViewState, saveViewState} from '../lib/sessionRestore'
+import {sourceLabel} from '../lib/sourceUrl'
 
 const PAGE_SIZE = 40
 
@@ -190,7 +191,7 @@ export function LibraryPage() {
         {!loading && error !== 'initial' && items.length === 0 ? (
           <RabbitScene mood={filtered ? 'search' : 'wave'} title={filtered ? '没有匹配的笔记' : '还没有笔记'}>
             <p className="text-sm text-muted">
-              {filtered ? '试试去掉筛选条件。' : '粘贴一条 B 站链接，生成第一篇能回看的笔记。'}
+              {filtered ? '试试去掉筛选条件。' : '粘贴链接或导入文件，生成第一篇能回看的笔记。'}
             </p>
             {filtered ? (
               <Button variant="secondary" onClick={() => setParams({up: null, tag: null})}>
@@ -251,12 +252,13 @@ function LibraryRow({
         <p className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-muted">
           {item.mid ? (
             <Link href={`/?up=${item.mid}`} className="text-ink/80 hover:text-brand">
-              {item.author || '未知 UP'}
+              {item.author || '未注明作者'}
             </Link>
           ) : (
-            <span>{item.author || '未知 UP'}</span>
+            <span>{item.author || '未注明作者'}</span>
           )}
           <span>{formatDuration(item.duration ?? undefined)}</span>
+          {sourceLabel(item.provider) ? <span>{sourceLabel(item.provider)}</span> : null}
           {item.tags.map((tag) => (
             <Link key={tag} href={`/?tag=${encodeURIComponent(tag)}`} className="hover:text-brand">
               #{tag}

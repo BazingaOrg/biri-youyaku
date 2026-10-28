@@ -6,6 +6,7 @@ import {formatDuration} from '../../lib/format'
 import {transcriptToPlainText} from '../../lib/subtitle'
 import {PROSE} from '../../lib/prose'
 import {useToast} from '../../components/ToastProvider'
+import {playbackUrl, sourceLabel} from '../../lib/sourceUrl'
 
 type Tab = 'notes' | 'transcript'
 
@@ -78,7 +79,6 @@ function NotesView({markdown}: {markdown: string}) {
   )
 }
 
-/** 字幕原文 + 时间戳点击跳 B 站 ?t=秒。 */
 function TranscriptList({job}: {job: Job}) {
   const lines = job.transcript ?? []
   const [query, setQuery] = useState('')
@@ -88,8 +88,8 @@ function TranscriptList({job}: {job: Job}) {
     return lines.filter((line) => (line.text ?? '').toLowerCase().includes(q))
   }, [lines, query])
 
-  const linkFor = (start: number) =>
-    job.bvid ? `https://www.bilibili.com/video/${job.bvid}?t=${Math.floor(start)}` : undefined
+  const linkFor = (start: number) => playbackUrl(job.url, job.provider, start) ?? undefined
+  const label = sourceLabel(job.provider) || '原页面'
 
   return (
     <div className="grid gap-3">
@@ -117,7 +117,7 @@ function TranscriptList({job}: {job: Job}) {
                   href={href}
                   target="_blank"
                   rel="noreferrer"
-                  title="在 B 站跳到该时间"
+                  title={`在${label}跳到该时间`}
                   className="tabular-nums text-xs font-medium text-brand underline-offset-2 hover:underline"
                 >
                   {ts}

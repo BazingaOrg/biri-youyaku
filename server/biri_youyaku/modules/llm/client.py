@@ -16,7 +16,7 @@ from biri_youyaku.config import (
 )
 from biri_youyaku.jobs.model import JobOptions
 from biri_youyaku.modules._http import openai_client
-from biri_youyaku.modules.bilibili.meta import VideoMeta
+from biri_youyaku.sources.model import MediaMeta as VideoMeta
 from biri_youyaku.modules.transcript import TranscriptItem
 from biri_youyaku.modules.asr.formatter import format_timestamp, transcript_to_text
 from biri_youyaku.modules.llm.prompts import (

@@ -27,9 +27,10 @@ def now_ms() -> int:
 # 列表 / 抽屉 / 清理用的 lite 投影：不拉 `chapters_json` / `transcript_json` /
 # `stage_timings_json` 这种长 JSON 字段，30 条一拉从十几兆降到几十 KB。
 _LITE_COLUMNS = (
-    "id, url, bvid, cid, mid, title, author, duration, status, "
+    "id, url, source_provider, source_id, source_part, input_path, "
+    "bvid, cid, mid, title, author, duration, status, "
     "error_stage, error_message, error_code, audio_path, "
-    "subtitle_source, summary_path, options_json, effective_options_json, "
+    "subtitle_source, subtitle_language, summary_path, options_json, effective_options_json, "
     "created_at, updated_at, completed_at, stream_finished_at, "
     "token_usage_json, email_error, tags_json"
 )
@@ -62,6 +63,10 @@ def _row_to_job(row: Any, *, lite: bool = False) -> Job:
     return Job(
         id=row["id"],
         url=row["url"],
+        source_provider=_opt_col(row, "source_provider") or "bilibili",
+        source_id=_opt_col(row, "source_id"),
+        source_part=_opt_col(row, "source_part") or "",
+        input_path=_opt_col(row, "input_path"),
         bvid=row["bvid"],
         cid=row["cid"],
         mid=_opt_col(row, "mid"),
@@ -74,6 +79,7 @@ def _row_to_job(row: Any, *, lite: bool = False) -> Job:
         error_code=_opt_col(row, "error_code"),
         audio_path=row["audio_path"],
         subtitle_source=row["subtitle_source"],
+        subtitle_language=_opt_col(row, "subtitle_language"),
         chapters=None if lite else _opt_json(row, "chapters_json"),
         transcript=None if lite else _opt_json(row, "transcript_json"),
         summary_path=row["summary_path"],
@@ -95,7 +101,10 @@ def _row_to_job_lite(row: Any) -> Job:
 
 
 def create_job(
-    url: str, options: JobOptions, option_overrides: dict[str, Any] | None = None
+    url: str, options: JobOptions, option_overrides: dict[str, Any] | None = None,
+    *, source_provider: str = "bilibili", source_id: str | None = None,
+    source_part: str = "", input_path: str | None = None,
+    title: str | None = None, duration: float | None = None,
 ) -> Job:
     timestamp = now_ms()
     option_overrides = option_overrides or {}
@@ -107,14 +116,21 @@ def create_job(
         option_overrides=option_overrides,
         created_at=timestamp,
         updated_at=timestamp,
+        source_provider=source_provider,
+        source_id=source_id,
+        source_part=source_part,
+        input_path=input_path,
+        title=title,
+        duration=duration,
     )
     with connect() as connection:
         connection.execute(
             """
             INSERT INTO jobs (
-              id, url, status, options_json, effective_options_json, created_at, updated_at
+              id, url, status, options_json, effective_options_json, created_at, updated_at,
+              source_provider, source_id, source_part, input_path, title, duration
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job.id,
@@ -124,6 +140,7 @@ def create_job(
                 json.dumps(options.as_dict(), ensure_ascii=False),
                 timestamp,
                 timestamp,
+                source_provider, source_id, source_part, input_path, title, duration,
             ),
         )
     return job
@@ -141,15 +158,20 @@ def create_resummary_job(
         connection.execute(
             """
             INSERT INTO jobs (
-              id, url, bvid, cid, mid, title, author, duration, status,
-              subtitle_source, chapters_json, transcript_json,
+              id, url, source_provider, source_id, source_part, input_path,
+              bvid, cid, mid, title, author, duration, status,
+              subtitle_source, subtitle_language, chapters_json, transcript_json,
               options_json, effective_options_json, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job_id,
                 source.url,
+                source.source_provider,
+                source.source_id,
+                source.source_part,
+                None,
                 source.bvid,
                 source.cid,
                 source.mid,
@@ -158,6 +180,7 @@ def create_resummary_job(
                 source.duration,
                 JobStatus.TRANSCRIPT_READY.value,
                 source.subtitle_source,
+                source.subtitle_language,
                 json.dumps(source.chapters or [], ensure_ascii=False),
                 json.dumps(source.transcript or [], ensure_ascii=False),
                 json.dumps(option_overrides, ensure_ascii=False),
@@ -546,6 +569,24 @@ def update_meta(
         backfill_mid_by_author(author, mid)
 
 
+def set_source(
+    job_id: str,
+    provider: str,
+    source_id: str | None,
+    source_part: str | None,
+    *,
+    input_path: str | None = None,
+) -> None:
+    values: dict[str, Any] = {
+        "source_provider": provider,
+        "source_id": source_id,
+        "source_part": source_part or "",
+    }
+    if input_path is not None:
+        values["input_path"] = input_path
+    _set(job_id, **values)
+
+
 def set_tags(job_id: str, tags: list[str]) -> None:
     _set(job_id, tags_json=json.dumps(tags, ensure_ascii=False))
 
@@ -598,6 +639,10 @@ def set_subtitle_source(job_id: str, subtitle_source: str) -> None:
     _set(job_id, subtitle_source=subtitle_source)
 
 
+def set_subtitle_language(job_id: str, language: str | None) -> None:
+    _set(job_id, subtitle_language=language)
+
+
 def set_transcript(job_id: str, items: list[TranscriptItem]) -> None:
     payload = [{"start": item.start, "end": item.end, "text": item.text} for item in items]
     _set(job_id, transcript_json=json.dumps(payload, ensure_ascii=False))
@@ -605,7 +650,7 @@ def set_transcript(job_id: str, items: list[TranscriptItem]) -> None:
 
 def clear_transcript(job_id: str) -> None:
     """Clear transcript, subtitle source, and summary so the job can re-run ASR."""
-    _set(job_id, transcript_json=None, subtitle_source=None, summary_path=None)
+    _set(job_id, transcript_json=None, subtitle_source=None, subtitle_language=None, summary_path=None)
 
 
 def update_options(
@@ -752,6 +797,59 @@ def find_completed_by_bvid(bvid: str, *, include_distill: bool = False) -> Job |
             (bvid, JobStatus.COMPLETED.value),
         ).fetchone()
     return _row_to_job(row) if row else None
+
+
+def find_reusable_source(
+    provider: str,
+    source_id: str,
+    source_part: str = "",
+    *,
+    task_type: str = "summary",
+) -> Job | None:
+    provider = provider.strip()
+    source_id = source_id.strip()
+    source_part = source_part.strip()
+    task_type = task_type.strip() or "summary"
+    if not provider or not source_id:
+        return None
+    with connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT j.*
+            FROM jobs j
+            LEFT JOIN knowledge_reconcile r ON r.job_id = j.id
+            LEFT JOIN knowledge_job_links l ON l.job_id = j.id AND l.unlinked_at IS NULL
+            LEFT JOIN knowledge_documents d ON d.id = l.document_id
+            WHERE j.source_provider = ?
+              AND j.source_id = ?
+              AND j.source_part = ?
+              AND json_extract(j.effective_options_json, '$.task_type') = ?
+              AND IFNULL(r.status, '') != 'purged'
+              AND d.deleted_at IS NULL
+              AND j.status NOT IN (?, ?)
+            ORDER BY CASE WHEN j.status = ? THEN 0 ELSE 1 END, j.created_at DESC
+            """,
+            (
+                provider,
+                source_id,
+                source_part,
+                task_type,
+                JobStatus.FAILED.value,
+                JobStatus.CANCELED.value,
+                JobStatus.COMPLETED.value,
+            ),
+        ).fetchall()
+    for row in rows:
+        job = _row_to_job(row)
+        if job.status != JobStatus.COMPLETED:
+            return job
+        if task_type == "summary" and summary_file_exists(job):
+            return job
+        if task_type == "distill" and job.transcript:
+            return job
+        if task_type == "audio" and job.audio_path and Path(job.audio_path).is_file():
+            return job
+    return None
 
 
 def find_active_distill_by_bvid(bvid: str) -> Job | None:

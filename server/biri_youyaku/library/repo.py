@@ -50,6 +50,9 @@ def _row_item(
     job_id: str | None,
     title: str | None,
     author: str | None,
+    provider: str,
+    source_id: str | None,
+    source_part: str,
     mid: Any,
     bvid: str | None,
     cid: Any,
@@ -68,6 +71,9 @@ def _row_item(
         "job_id": job_id,
         "title": title,
         "author": author,
+        "provider": provider,
+        "source_id": source_id,
+        "source_part": source_part,
         "mid": mid,
         "bvid": bvid,
         "cid": cid,
@@ -248,6 +254,9 @@ def _list_jobs_only(
           j.id AS job_id,
           j.title AS title,
           j.author AS author,
+          j.source_provider AS provider,
+          j.source_id AS source_id,
+          j.source_part AS source_part,
           j.mid AS mid,
           j.bvid AS bvid,
           j.cid AS cid,
@@ -278,6 +287,9 @@ def _list_jobs_only(
                 job_id=row["job_id"],
                 title=row["title"],
                 author=row["author"],
+                provider=row["provider"],
+                source_id=row["source_id"],
+                source_part=row["source_part"],
                 mid=row["mid"],
                 bvid=row["bvid"],
                 cid=row["cid"],
@@ -344,6 +356,9 @@ def _list_documents_and_legacy(
             ) AS job_id,
             d.title AS title,
             d.author AS author,
+            d.provider AS provider,
+            d.source_id AS source_id,
+            d.source_part AS source_part,
             d.mid AS mid,
             d.external_bvid AS bvid,
             d.external_cid AS cid,
@@ -364,6 +379,9 @@ def _list_documents_and_legacy(
             j.id AS job_id,
             j.title AS title,
             j.author AS author,
+            j.source_provider AS provider,
+            j.source_id AS source_id,
+            j.source_part AS source_part,
             j.mid AS mid,
             j.bvid AS bvid,
             j.cid AS cid,
@@ -395,6 +413,9 @@ def _list_documents_and_legacy(
                 job_id=row["job_id"],
                 title=row["title"],
                 author=row["author"],
+                provider=row["provider"],
+                source_id=row["source_id"],
+                source_part=row["source_part"],
                 mid=row["mid"],
                 bvid=row["bvid"],
                 cid=row["cid"],
@@ -416,7 +437,8 @@ def list_trash(*, limit: int = 500) -> dict[str, Any]:
         rows = connection.execute(
             """
             SELECT
-              id, title, author, external_bvid AS bvid, deleted_at
+              id, title, author, provider, source_id, source_part,
+              external_bvid AS bvid, deleted_at
             FROM knowledge_documents
             WHERE deleted_at IS NOT NULL
             ORDER BY deleted_at DESC, id DESC
@@ -432,6 +454,9 @@ def list_trash(*, limit: int = 500) -> dict[str, Any]:
                 "document_id": row["id"],
                 "title": row["title"],
                 "author": row["author"],
+                "provider": row["provider"],
+                "source_id": row["source_id"],
+                "source_part": row["source_part"],
                 "bvid": row["bvid"],
                 "deleted_at": deleted_at,
                 "expires_at": expires_at_ms(deleted_at),
@@ -446,7 +471,8 @@ def get_document_content(document_id: str) -> dict[str, Any] | None:
         doc = connection.execute(
             """
             SELECT
-              id, title, author, mid, external_bvid, external_cid, source_url,
+              id, provider, source_id, source_part, title, author, mid,
+              external_bvid, external_cid, source_url,
               tags_json, duration, tldr, created_at, updated_at, deleted_at
             FROM knowledge_documents
             WHERE id = ?
@@ -523,9 +549,8 @@ def get_document_content(document_id: str) -> dict[str, Any] | None:
         except OSError:
             markdown = ""
 
-    cues: list[dict[str, Any]] = []
-    if content_row is not None:
-        cues = _cues_from_artifact(content_row["storage_path"])
+    transcript_payload = _read_transcript_artifact(content_row["storage_path"]) if content_row is not None else {}
+    cues = _cues_from_payload(transcript_payload)
 
     deleted_at = doc["deleted_at"]
     document = {
@@ -533,6 +558,11 @@ def get_document_content(document_id: str) -> dict[str, Any] | None:
         "job_id": job_row["job_id"] if job_row else None,
         "title": doc["title"],
         "author": doc["author"],
+        "provider": doc["provider"],
+        "source_id": doc["source_id"],
+        "source_part": doc["source_part"],
+        "subtitle_source": transcript_payload.get("subtitle_source"),
+        "subtitle_language": transcript_payload.get("subtitle_language"),
         "mid": doc["mid"],
         "bvid": doc["external_bvid"],
         "cid": doc["external_cid"],
@@ -572,16 +602,16 @@ def get_document_content(document_id: str) -> dict[str, Any] | None:
     }
 
 
-def _cues_from_artifact(storage_path: str) -> list[dict[str, Any]]:
+def _read_transcript_artifact(storage_path: str) -> dict[str, Any]:
     path = art.resolve_stored_path(storage_path)
     try:
-        if not path.is_file():
-            return []
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return []
-    if not isinstance(payload, dict):
-        return []
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _cues_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
     segments = payload.get("segments") or []
     if not isinstance(segments, list):
         return []

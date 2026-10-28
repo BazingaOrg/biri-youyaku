@@ -35,6 +35,7 @@ from biri_youyaku.routes import (
     knowledge_router,
     library_router,
     up_router,
+    sources_router,
 )
 
 _deferred_http_close_tasks: set[asyncio.Task[None]] = set()
@@ -214,6 +215,7 @@ def create_app() -> FastAPI:
     app.include_router(knowledge_router)
     app.include_router(library_router)
     app.include_router(up_router)
+    app.include_router(sources_router)
     return app
 
 

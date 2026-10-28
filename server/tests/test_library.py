@@ -373,3 +373,33 @@ def test_library_search_empty_q_400(monkeypatch, tmp_path):
     client = _client()
     response = client.get("/v1/library/search", params={"q": "  "})
     assert response.status_code == 400
+
+
+def test_library_exposes_and_searches_generic_source_identity(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    job = _make_completed_job(
+        bvid="placeholder",
+        cid=None,
+        title="Imported lesson",
+        summary_body="## 笔记\nlocal media\n",
+    )
+    jobs_repo.set_source(job.id, "upload", "sha256abc", "")
+    with db.connect() as connection:
+        connection.execute("UPDATE jobs SET bvid = NULL, cid = NULL WHERE id = ?", (job.id,))
+    assert try_register_job(job.id) == RECONCILE_REGISTERED
+
+    client = _client()
+    listed = client.get("/v1/library")
+    assert listed.status_code == 200
+    item = listed.json()["items"][0]
+    assert item["provider"] == "upload"
+    assert item["source_id"] == "sha256abc"
+    assert item["source_part"] == ""
+    assert item["bvid"] is None
+
+    searched = client.get("/v1/library/search", params={"q": "sha256abc"})
+    assert searched.status_code == 200
+    group = searched.json()["groups"][0]
+    assert group["provider"] == "upload"
+    assert group["source_id"] == "sha256abc"
+    assert group["match"]["source_id"] is True

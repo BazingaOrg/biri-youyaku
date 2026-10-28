@@ -16,6 +16,7 @@ from biri_youyaku.jobs.pipeline import (
     CanceledError,
     download_audio,
     fetch_meta,
+    fetch_upload_meta,
     fetch_platform_transcript,
     send_email,
     summarize,
@@ -401,7 +402,8 @@ async def run_until_transcript(job_id: str) -> None:
 
         stage.value = JobStatus.FETCHING_META.value
         await transition(job_id, JobStatus.FETCHING_META)
-        video_meta = await _with_timeout(JobStatus.FETCHING_META, 30, fetch_meta(job.url))
+        metadata_request = fetch_upload_meta(job) if job.source_provider == "upload" else fetch_meta(job.url)
+        video_meta = await _with_timeout(JobStatus.FETCHING_META, 35, metadata_request)
         # 防滥用：preview 阶段已经拦了一次，这里兜底（用户绕过 preview 直接 POST /v1/jobs 也能挡）
         if video_meta.duration and video_meta.duration > settings.max_video_duration_seconds:
             raise RuntimeError(
@@ -416,6 +418,10 @@ async def run_until_transcript(job_id: str) -> None:
             author=video_meta.author,
             duration=video_meta.duration,
             mid=video_meta.mid,
+        )
+        repo.set_source(
+            job_id, video_meta.provider, video_meta.source_id or video_meta.bvid,
+            str(video_meta.cid) if video_meta.provider == "bilibili" and video_meta.cid is not None else video_meta.source_part or "",
         )
         repo.set_chapters(job_id, video_meta.chapters)
         # 顺手把 chapters 一起推到 meta event，前端不用再 refresh 就能拿到
@@ -519,7 +525,7 @@ async def run_until_transcript(job_id: str) -> None:
             job_id,
             JobStatus.TRANSCRIPT_READY,
             transcript_preview=transcript_preview,
-            subtitle_source="platform"
+            subtitle_source=video_meta.subtitle_source or "platform"
             if (video_meta.has_subtitle and not fresh_job.options.force_asr)
             else "asr",
         )

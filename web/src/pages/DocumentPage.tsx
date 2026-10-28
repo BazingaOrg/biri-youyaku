@@ -31,6 +31,7 @@ import {Rabbit} from '../components/Rabbit'
 import {PageLoading} from '../components/Spinner'
 import {includesSearchQuery, splitSearchHighlights} from '../lib/searchHighlight'
 import {writeActive} from '../lib/activeJob'
+import {sourceHref, sourceLabel, subtitleLabel} from '../lib/sourceUrl'
 
 type Tab = 'notes' | 'subs'
 
@@ -103,6 +104,7 @@ export function DocumentPage({id}: {id: string}) {
   const cues = content?.transcript?.length ? content.transcript : (legacyJob?.transcript ?? [])
   const chunks = content?.note_chunks ?? []
   const bvid = doc?.bvid || legacyJob?.bvid
+  const sourceId = doc?.source_id || legacyJob?.source_id || bvid || doc?.title || legacyJob?.title
   const sourceUrl = doc?.source_url || legacyJob?.url
   const deleted = Boolean(doc?.deleted_at)
   const missingFile =
@@ -242,7 +244,7 @@ export function DocumentPage({id}: {id: string}) {
   }
 
   const purge = async () => {
-    if (!doc?.id || !bvid) return
+    if (!doc?.id || !sourceId) return
     setBusy(true)
     try {
       await purgeDocument(doc.id, purgeInput.trim())
@@ -303,6 +305,8 @@ export function DocumentPage({id}: {id: string}) {
   const tags = doc?.tags || legacyJob?.tags || []
   const duration = doc?.duration ?? legacyJob?.duration
   const play = biliPlayUrl(sourceUrl, bvid)
+  const originalPage = sourceHref(sourceUrl)
+  const provider = sourceLabel(doc?.provider)
 
   return (
     <div>
@@ -315,15 +319,16 @@ export function DocumentPage({id}: {id: string}) {
           <div className="mt-2.5 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-sm text-muted">
             {mid ? (
               <Link href={`/?up=${mid}`} className="hover:text-brand">
-                {author || '未知 UP'}
+                {author || '未注明作者'}
               </Link>
             ) : (
-              <span>{author || '未知 UP'}</span>
+              <span>{author || '未注明作者'}</span>
             )}
             <span>{formatDuration(duration)}</span>
-            {play ? (
-              <a href={play} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-brand">
-                在 B 站打开 <ExternalLink size={13} />
+            {provider ? <span>{provider}</span> : null}
+            {originalPage ? (
+              <a href={originalPage} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-brand">
+                在{provider || '原页面'}打开 <ExternalLink size={13} />
               </a>
             ) : null}
           </div>
@@ -509,7 +514,7 @@ export function DocumentPage({id}: {id: string}) {
                           href={href}
                           target="_blank"
                           rel="noreferrer"
-                          title={`在 B 站播放 · ${formatClock(cue.start)}`}
+                          title={`在${provider || '原页面'}播放 · ${formatClock(cue.start)}`}
                           className="pt-0.5 text-[13px] tabular-nums text-brand hover:underline"
                         >
                           {formatClock(cue.start)}
@@ -526,7 +531,7 @@ export function DocumentPage({id}: {id: string}) {
                             rel="noreferrer"
                             className="mt-1 block text-xs text-brand"
                           >
-                            在 B 站播放 · {formatClock(cue.start)}
+                            在 {sourceLabel(doc?.provider) || "原页面"} 播放 · {formatClock(cue.start)}
                           </a>
                         ) : null}
                       </span>
@@ -543,7 +548,7 @@ export function DocumentPage({id}: {id: string}) {
           </div>
           <div className="mt-10 flex flex-wrap gap-x-4 gap-y-2 border-t border-line pt-4 text-[13px] text-muted">
             {bvid ? <span>{bvid}</span> : null}
-            <span>字幕来源：{cues.length ? doc?.subtitle_source || '已保存' : '无'}</span>
+            <span>字幕来源：{cues.length ? subtitleLabel(doc?.subtitle_source) : '无'}{doc?.subtitle_language ? ` · ${doc.subtitle_language}` : ''}</span>
             {mid ? (
               <Link href={`/?up=${mid}`} className="text-brand">
                 {author} 的其他笔记
@@ -568,7 +573,7 @@ export function DocumentPage({id}: {id: string}) {
       <ConfirmDialog
         open={removeOpen}
         title="从笔记中移除？"
-        description="会从列表和搜索里消失，30 天内可以在「最近删除」恢复。任务记录和 B 站视频不受影响。"
+        description="会从列表和搜索里消失，30 天内可以在「最近删除」恢复。任务记录和原始内容不受影响。"
         confirmLabel="移除"
         danger
         loading={busy}
@@ -580,10 +585,10 @@ export function DocumentPage({id}: {id: string}) {
         title="永久删除这篇笔记？"
         description={
           <div className="grid gap-3">
-            <p>笔记、字幕和历史版本都会删除，无法恢复。任务记录和 B 站视频不受影响。</p>
+            <p>笔记、资料库字幕和历史版本都会删除，无法恢复。任务记录会保留；服务器保存的导入原文件也会删除，外部平台原视频不受影响。</p>
             <label className="grid gap-1 text-left text-[13px]">
               <span>
-                输入 BV 号 <b className="font-mono text-ink">{bvid}</b> 确认
+                输入来源 ID 或标题 <b className="font-mono text-ink">{sourceId}</b> 确认
               </span>
               <input
                 value={purgeInput}
@@ -598,7 +603,7 @@ export function DocumentPage({id}: {id: string}) {
         confirmLabel="永久删除"
         danger
         loading={busy}
-        confirmDisabled={!bvid || purgeInput.trim() !== bvid}
+        confirmDisabled={!sourceId || purgeInput.trim() !== sourceId}
         onConfirm={() => void purge()}
         onCancel={() => {
           setPurgeOpen(false)

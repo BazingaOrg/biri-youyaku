@@ -465,3 +465,41 @@ def test_update_meta_backfills_mid_for_same_author(monkeypatch, tmp_path):
     assert repo.get_job(old.id).mid == 546195   # 老任务被补上
     assert repo.get_job(fresh.id).mid == 546195
     assert repo.get_job(other.id).mid is None    # 不同作者不动
+
+
+def test_source_identity_persists_and_resummary_does_not_share_input(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    source = repo.create_job("upload://abc", JobOptions(email_enabled=False))
+    repo.set_source(source.id, "upload", "abc", "", input_path="data/imports/abc.mp4")
+    repo.set_transcript(source.id, [TranscriptItem(start=0, end=1, text="hello")])
+    source = repo.get_job(source.id)
+
+    created = repo.create_resummary_job(source, JobOptions(email_enabled=False))
+
+    assert source.source_provider == "upload"
+    assert source.source_id == "abc"
+    assert source.source_part == ""
+    assert source.input_path == "data/imports/abc.mp4"
+    assert created.source_provider == "upload"
+    assert created.source_id == "abc"
+    assert created.source_part == ""
+    assert created.input_path is None
+
+
+def test_find_reusable_source_requires_completed_summary_artifact(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    monkeypatch.setattr(db.settings, "summary_storage_dir", tmp_path / "summaries")
+    db.init_db()
+    job = repo.create_job("https://youtu.be/abc", JobOptions(email_enabled=False))
+    repo.set_source(job.id, "youtube", "abc", "")
+    repo.update_status(job.id, JobStatus.COMPLETED)
+
+    assert repo.find_reusable_source("youtube", "abc") is None
+
+    summary = tmp_path / "summaries" / f"{job.id}.md"
+    summary.parent.mkdir(parents=True)
+    summary.write_text("summary", encoding="utf-8")
+    repo.set_summary_path(job.id, summary)
+
+    assert repo.find_reusable_source("youtube", "abc").id == job.id

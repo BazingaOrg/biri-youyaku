@@ -56,6 +56,9 @@ curl -sS http://127.0.0.1:17821/v1/config/runtime | python3 -m json.tool
 | 邮件 | `EMAIL_WEBHOOK_TOKEN` | 空 | 启用邮件时必填；后端 → Worker 的鉴权 token，与 Worker 端 `BIRI_YOUYAKU_TOKEN` 一致 |
 | 邮件 | `EMAIL_DEFAULT_RECIPIENT` | 空 | **唯一**收件人；后端永远只发到这里（无 per-job 收件人，防滥发） |
 | 邮件 | `EMAIL_SUBJECT_TEMPLATE` | `[Biri-Youyaku] {{title}}` | 支持 `{{title}}` / `{{author}}` |
+| 导入 | `UPLOAD_STORAGE_DIR` | `data/imports` | 浏览器上传的原始文件；结束任务的输入保留 7 天 |
+| 导入 | `UPLOAD_MAX_BYTES / UPLOAD_STORAGE_MAX_BYTES / UPLOAD_MIN_FREE_BYTES` | `83886080 / 2147483648 / 1073741824` | 单文件上限 / 导入目录预算 / 磁盘空闲余量；链路限制另行核对 |
+| 来源 | `JOB_URL_ALLOWED_HOSTS` | `bilibili.com,b23.tv,youtube.com,youtu.be` | 旧部署需手动更新显式白名单；仅支持适配器识别的视频路径 |
 | 存储 | `AUDIO_STORAGE_DIR / SUMMARY_STORAGE_DIR / DISTILL_STORAGE_DIR / KNOWLEDGE_STORAGE_DIR / DB_PATH` | `data/...` | `KNOWLEDGE_STORAGE_DIR` 存 knowledge artifacts；`KNOWLEDGE_REGISTER_ENABLED` 默认 true，关则跳过登记/回填 |
 | 知识库 | `KNOWLEDGE_REGISTER_ENABLED` | `true` | 关闭后 register/reconcile 空操作（回滚开关）；已落盘 artifact 不删 |
 | 知识库 | `KNOWLEDGE_SEARCH_ENABLED` | `true` | 基于总结的 FTS 检索；需 register 开启才对外暴露 |
@@ -164,3 +167,5 @@ Restore verifies `manifest.json` hashes, then copies `biri_youyaku.db`, `knowled
 
 Artifact `storage_path` and job `summary_path` are stored relative when under the configured roots; readers resolve via knowledge/summary helpers (legacy absolute paths still work).
 
+
+多来源数据身份、文件生命周期与 Mac mini 升级/回退步骤见 [运行说明](docs/runbooks/multisource.md)。

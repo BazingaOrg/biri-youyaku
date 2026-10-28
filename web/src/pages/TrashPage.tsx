@@ -17,6 +17,7 @@ export function TrashPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [purgeItem, setPurgeItem] = useState<TrashItem | null>(null)
   const [purgeInput, setPurgeInput] = useState('')
+  const purgeToken = purgeItem?.source_id || purgeItem?.bvid || purgeItem?.title || ''
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -135,10 +136,10 @@ export function TrashPage() {
         title="永久删除这篇笔记？"
         description={
           <div className="grid gap-3">
-            <p>笔记、字幕和历史版本都会删除，无法恢复。任务记录和 B 站视频不受影响。</p>
+            <p>笔记、资料库字幕和历史版本都会删除，无法恢复。任务记录会保留；服务器保存的导入原文件也会删除，外部平台原视频不受影响。</p>
             <label className="grid gap-1 text-left text-[13px]">
               <span>
-                输入 BV 号 <b className="font-mono text-ink">{purgeItem?.bvid}</b> 确认
+                输入来源 ID 或标题 <b className="font-mono text-ink">{purgeToken}</b> 确认
               </span>
               <input
                 value={purgeInput}
@@ -153,7 +154,7 @@ export function TrashPage() {
         confirmLabel="永久删除"
         danger
         loading={busyId === purgeItem?.document_id}
-        confirmDisabled={!purgeItem?.bvid || purgeInput.trim() !== purgeItem.bvid}
+        confirmDisabled={!purgeToken || purgeInput.trim() !== purgeToken}
         onConfirm={() => void purge()}
         onCancel={() => {
           setPurgeItem(null)

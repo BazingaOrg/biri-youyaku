@@ -7,6 +7,7 @@ from biri_youyaku.routes.jobs import router as jobs_router
 from biri_youyaku.routes.knowledge import router as knowledge_router
 from biri_youyaku.routes.library import router as library_router
 from biri_youyaku.routes.up import router as up_router
+from biri_youyaku.routes.sources import router as sources_router
 
 __all__ = [
     "config_router",
@@ -18,4 +19,5 @@ __all__ = [
     "knowledge_router",
     "library_router",
     "up_router",
+    "sources_router",
 ]

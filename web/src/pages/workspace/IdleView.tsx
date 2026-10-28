@@ -1,7 +1,7 @@
 import {useState} from 'react'
 import {BookOpen, History, RotateCw} from 'lucide-react'
 import {UrlInput} from '../../components/UrlInput'
-import {isValidBiliUrl, sanitizeBiliInput} from '../../lib/biliUrl'
+import {recognizeSourceUrl} from '../../lib/sourceUrl'
 
 interface IdleViewProps {
   onSubmit: (url: string) => Promise<void>
@@ -16,10 +16,9 @@ export function IdleView({onSubmit, onOpenHistory, onOpenKnowledge}: IdleViewPro
   const [busy, setBusy] = useState(false)
 
   const submit = async () => {
-    // 提交时再 sanitize 一次：handle 直接键入 / 历史回填等不走 paste 的入口。
-    const cleaned = sanitizeBiliInput(url)
-    if (!isValidBiliUrl(cleaned)) {
-      setError('请输入有效的 B 站视频链接')
+    const cleaned = recognizeSourceUrl(url)?.canonicalUrl
+    if (!cleaned) {
+      setError('请输入有效的 B 站或 YouTube 视频链接')
       return
     }
     if (cleaned !== url) {
@@ -46,7 +45,7 @@ export function IdleView({onSubmit, onOpenHistory, onOpenKnowledge}: IdleViewPro
               笔哩
             </h1>
             <p className="mt-1 text-sm leading-6 text-muted sm:text-base">
-              把视频变成能回看的笔记
+              把内容变成能回看的笔记
             </p>
           </div>
         </header>

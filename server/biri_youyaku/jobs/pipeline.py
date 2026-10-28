@@ -6,8 +6,10 @@ from biri_youyaku.jobs import repo
 from biri_youyaku.jobs.model import Job, JobOptions
 from biri_youyaku.modules.asr import get_transcriber
 from biri_youyaku.modules.asr.base import ProgressCallback, TranscribeRequest
-from biri_youyaku.modules.bilibili import audio, meta, subtitle
-from biri_youyaku.modules.bilibili.meta import VideoMeta
+from biri_youyaku.modules.bilibili import audio, subtitle
+from biri_youyaku.sources.model import MediaMeta as VideoMeta
+from biri_youyaku.sources import uploads, youtube
+from biri_youyaku.sources.service import fetch_meta as fetch_source_meta
 from biri_youyaku.modules.email import webhook
 from biri_youyaku.modules.llm import client as llm_client
 from biri_youyaku.modules.storage import audio as audio_storage
@@ -20,8 +22,15 @@ class CanceledError(Exception):
 
 
 async def fetch_platform_transcript(job: Job, video_meta: VideoMeta) -> list[TranscriptItem]:
-    items = await subtitle.download(video_meta.subtitle_url or "")
-    repo.set_subtitle_source(job.id, "platform")
+    if video_meta.provider == "youtube":
+        items = await youtube.transcript(video_meta)
+    elif video_meta.provider == "upload":
+        path = uploads.resolve_input(Path(job.input_path or ""), settings.upload_storage_dir)
+        items = uploads.parse_subtitles(path.read_bytes(), path.suffix)
+    else:
+        items = await subtitle.download(video_meta.subtitle_url or "")
+    repo.set_subtitle_source(job.id, video_meta.subtitle_source or "platform")
+    repo.set_subtitle_language(job.id, video_meta.subtitle_language)
     return items
 
 
@@ -31,7 +40,13 @@ async def download_audio(
     *,
     on_progress: Callable[[dict], Awaitable[None]] | None = None,
 ) -> Path:
-    audio_path = await audio.download(video_meta, audio_storage.path_for(job.id), on_progress=on_progress)
+    if video_meta.provider == "upload":
+        path = uploads.resolve_input(Path(job.input_path or ""), settings.upload_storage_dir)
+        audio_path = await uploads.prepare_audio(path, audio_storage.path_for(job.id).with_suffix(".wav"))
+    elif video_meta.provider == "youtube":
+        audio_path = await youtube.download(video_meta, audio_storage.path_for(job.id), on_progress=on_progress)
+    else:
+        audio_path = await audio.download(video_meta, audio_storage.path_for(job.id), on_progress=on_progress)
     repo.set_audio_path(job.id, audio_path)
     return audio_path
 
@@ -48,6 +63,7 @@ async def transcribe_audio(
         on_progress=on_progress,
     )
     repo.set_subtitle_source(job.id, "asr")
+    repo.set_subtitle_language(job.id, job.options.language if job.options.language != "auto" else None)
     return items
 
 
@@ -82,4 +98,20 @@ async def send_email(video_meta: VideoMeta, summary_md: str, options: JobOptions
 
 
 async def fetch_meta(url: str) -> VideoMeta:
-    return await meta.fetch(url)
+    return await fetch_source_meta(url)
+
+
+async def fetch_upload_meta(job: Job) -> VideoMeta:
+    path = uploads.resolve_input(Path(job.input_path or ""), settings.upload_storage_dir)
+    is_subtitle = path.suffix.lower() in uploads.SUBTITLE_SUFFIXES
+    if is_subtitle:
+        items = uploads.parse_subtitles(path.read_bytes(), path.suffix)
+        duration = max(item.end for item in items)
+    else:
+        duration = await uploads.probe_media(path)
+    return VideoMeta(
+        url=job.url, bvid="", cid=None, title=job.title or "导入内容", author="",
+        duration=duration, provider="upload", source_id=job.source_id,
+        source_part="", subtitle_url="uploaded" if is_subtitle else None,
+        subtitle_source="uploaded" if is_subtitle else None,
+    )

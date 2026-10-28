@@ -3,7 +3,7 @@ from enum import StrEnum
 from typing import Any
 
 from biri_youyaku.config import Settings
-from biri_youyaku.modules.bilibili.meta import VideoMeta
+from biri_youyaku.sources.model import MediaMeta
 
 
 class JobStatus(StrEnum):
@@ -112,6 +112,10 @@ class Job:
     created_at: int
     updated_at: int
     option_overrides: dict[str, Any] | None = None
+    source_provider: str = "bilibili"
+    source_id: str | None = None
+    source_part: str = ""
+    input_path: str | None = None
     bvid: str | None = None
     cid: int | None = None
     mid: int | None = None
@@ -123,6 +127,7 @@ class Job:
     error_code: str | None = None
     audio_path: str | None = None
     subtitle_source: str | None = None
+    subtitle_language: str | None = None
     chapters: list[dict[str, Any]] | None = None
     transcript: list[dict[str, Any]] | None = None
     summary_path: str | None = None
@@ -134,12 +139,17 @@ class Job:
     tags: list[str] | None = None
 
 
-def video_meta_from_job(job: "Job") -> VideoMeta:
-    return VideoMeta(
+def video_meta_from_job(job: "Job") -> MediaMeta:
+    return MediaMeta(
         url=job.url,
         bvid=job.bvid or "",
         cid=job.cid,
         title=job.title or job.bvid or job.id,
         author=job.author or "",
         duration=job.duration or 0,
+        provider=job.source_provider,
+        source_id=job.source_id,
+        source_part=job.source_part,
+        subtitle_source=job.subtitle_source,
+        subtitle_language=job.subtitle_language,
     )

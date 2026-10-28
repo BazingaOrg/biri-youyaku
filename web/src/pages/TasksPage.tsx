@@ -370,7 +370,7 @@ export function TasksPage() {
                       {job.title || job.url}
                     </Link>
                     <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[13px] text-muted">
-                      <span>{job.author || '未知 UP'}</span>
+                      <span>{job.author || '未注明作者'}</span>
                       <span className="tabular-nums">{formatDate(job.updated_at ?? job.created_at)}</span>
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs ${

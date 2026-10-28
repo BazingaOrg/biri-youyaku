@@ -28,26 +28,44 @@ def find_document_id(
     external_bvid: str,
     external_cid: int,
 ) -> str | None:
+    row = find_document_by_source(
+        provider=provider,
+        source_id=external_bvid,
+        source_part=str(external_cid),
+    )
+    return row["id"] if row else None
+
+
+def find_document_by_source(
+    *,
+    provider: str,
+    source_id: str,
+    source_part: str = "",
+) -> dict[str, Any] | None:
     with connect() as connection:
         row = connection.execute(
             """
-            SELECT id FROM knowledge_documents
-            WHERE provider = ? AND external_bvid = ? AND external_cid = ?
+            SELECT id, provider, source_id, source_part, external_bvid, external_cid,
+                   title, author, source_url, deleted_at, delete_reason, updated_at
+            FROM knowledge_documents
+            WHERE provider = ? AND source_id = ? AND source_part = ?
             """,
-            (provider, external_bvid, external_cid),
+            (provider, source_id, source_part),
         ).fetchone()
-    return row["id"] if row else None
+    return dict(row) if row else None
 
 
 def upsert_document(
     *,
-    provider: str = PROVIDER_BILIBILI,
-    external_bvid: str,
-    external_cid: int,
     title: str | None,
     author: str | None,
     mid: int | None,
     source_url: str | None,
+    provider: str = PROVIDER_BILIBILI,
+    source_id: str | None = None,
+    source_part: str | None = None,
+    external_bvid: str | None = None,
+    external_cid: int | None = None,
     tags_json: str | None = None,
     duration: float | None = None,
     tldr: str | None = None,
@@ -58,16 +76,27 @@ def upsert_document(
     for the same video don't race on the UNIQUE constraint and surface a
     spurious reconcile failure.
     """
-    timestamp = now_ms()
-    existing = find_document_id(
-        provider=provider, external_bvid=external_bvid, external_cid=external_cid
+    resolved_source_id = (source_id or external_bvid or "").strip()
+    resolved_source_part = (
+        str(external_cid) if source_part is None and external_cid is not None else source_part or ""
     )
+    if not resolved_source_id:
+        raise ValueError("source_id is required")
+    timestamp = now_ms()
+    existing_row = find_document_by_source(
+        provider=provider,
+        source_id=resolved_source_id,
+        source_part=resolved_source_part,
+    )
+    existing = existing_row["id"] if existing_row else None
     if existing is not None:
         with connect() as connection:
             connection.execute(
                 """
                 UPDATE knowledge_documents
-                SET title = COALESCE(?, title),
+                SET external_bvid = COALESCE(?, external_bvid),
+                    external_cid = COALESCE(?, external_cid),
+                    title = COALESCE(?, title),
                     author = COALESCE(?, author),
                     mid = COALESCE(?, mid),
                     source_url = COALESCE(?, source_url),
@@ -80,6 +109,8 @@ def upsert_document(
                 WHERE id = ?
                 """,
                 (
+                    external_bvid,
+                    external_cid,
                     title,
                     author,
                     mid,
@@ -98,12 +129,15 @@ def upsert_document(
         connection.execute(
             """
             INSERT INTO knowledge_documents (
-              id, provider, external_bvid, external_cid, title, author, mid,
+              id, provider, source_id, source_part, external_bvid, external_cid,
+              title, author, mid,
               source_url, tags_json, duration, tldr,
               created_at, updated_at, deleted_at, delete_reason
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
-            ON CONFLICT(provider, external_bvid, external_cid) DO UPDATE SET
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+            ON CONFLICT(provider, source_id, source_part) DO UPDATE SET
+              external_bvid = COALESCE(excluded.external_bvid, knowledge_documents.external_bvid),
+              external_cid = COALESCE(excluded.external_cid, knowledge_documents.external_cid),
               title = COALESCE(excluded.title, knowledge_documents.title),
               author = COALESCE(excluded.author, knowledge_documents.author),
               mid = COALESCE(excluded.mid, knowledge_documents.mid),
@@ -118,6 +152,8 @@ def upsert_document(
             (
                 document_id,
                 provider,
+                resolved_source_id,
+                resolved_source_part,
                 external_bvid,
                 external_cid,
                 title,
@@ -134,8 +170,8 @@ def upsert_document(
         # If a concurrent upsert beat us, return the winner's id so the caller
         # always gets a valid document_id.
         row = connection.execute(
-            "SELECT id FROM knowledge_documents WHERE provider = ? AND external_bvid = ? AND external_cid = ?",
-            (provider, external_bvid, external_cid),
+            "SELECT id FROM knowledge_documents WHERE provider = ? AND source_id = ? AND source_part = ?",
+            (provider, resolved_source_id, resolved_source_part),
         ).fetchone()
         if row is not None:
             return row["id"]

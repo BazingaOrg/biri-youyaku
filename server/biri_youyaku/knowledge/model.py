@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 PROVIDER_BILIBILI = "bilibili"
+PROVIDER_YOUTUBE = "youtube"
+PROVIDER_UPLOAD = "upload"
 
 ARTIFACT_KIND_SUMMARY = "summary"
 ARTIFACT_KIND_TRANSCRIPT_RAW = "transcript_raw"

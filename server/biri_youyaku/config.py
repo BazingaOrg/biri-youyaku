@@ -75,7 +75,7 @@ class Settings(BaseSettings):
 
     # 任务 URL 允许的 host 后缀列表（逗号分隔）。留空 = 允许任意 host（仅安全内网环境）。
     # 公网部署务必设为 bilibili.com,b23.tv 或你信任的域名。
-    job_url_allowed_hosts: str = "bilibili.com,b23.tv"
+    job_url_allowed_hosts: str = "bilibili.com,b23.tv,youtube.com,youtu.be"
     # 视频时长上限（秒）。默认 4 小时；公网可按机器能力收紧。
     max_video_duration_seconds: int = 14400
     # 在飞任务总数上限（PENDING + 各 RUNNING 阶段总和）。即便单 IP 在限流内灌任务，
@@ -93,6 +93,10 @@ class Settings(BaseSettings):
         "api.x.ai"
     )
 
+    upload_storage_dir: Path = Path("data/imports")
+    upload_max_bytes: int = Field(default=80 * 1024 * 1024, gt=0)
+    upload_storage_max_bytes: int = Field(default=2 * 1024 * 1024 * 1024, gt=0)
+    upload_min_free_bytes: int = Field(default=1024 * 1024 * 1024, ge=0)
     audio_storage_dir: Path = Path("data/audio")
     summary_storage_dir: Path = Path("data/summaries")
     distill_storage_dir: Path = Path("data/distill")
@@ -134,6 +138,7 @@ class Settings(BaseSettings):
         ]
 
     @field_validator(
+        "upload_storage_dir",
         "audio_storage_dir",
         "summary_storage_dir",
         "distill_storage_dir",
@@ -147,6 +152,7 @@ class Settings(BaseSettings):
         if value not in (None, ""):
             return value
         defaults = {
+            "upload_storage_dir": Path("data/imports"),
             "audio_storage_dir": Path("data/audio"),
             "summary_storage_dir": Path("data/summaries"),
             "distill_storage_dir": Path("data/distill"),

@@ -3,7 +3,7 @@ import httpx
 from biri_youyaku.config import settings
 from biri_youyaku.jobs.model import JobOptions
 from biri_youyaku.modules._http import email_client
-from biri_youyaku.modules.bilibili.meta import VideoMeta
+from biri_youyaku.sources.model import MediaMeta as VideoMeta
 
 
 def _response_error(response: httpx.Response) -> str:

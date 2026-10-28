@@ -1,6 +1,7 @@
 import {Clipboard, X} from 'lucide-react'
 import type React from 'react'
 import {sanitizeBiliInput} from '../lib/biliUrl'
+import {recognizeSourceUrl} from '../lib/sourceUrl'
 
 interface UrlInputProps {
   value: string
@@ -15,7 +16,7 @@ export function UrlInput({value, loading, error, actions, onChange, onSubmit}: U
   const paste = async () => {
     try {
       const text = await navigator.clipboard.readText()
-      onChange(sanitizeBiliInput(text))
+      onChange(recognizeSourceUrl(text)?.canonicalUrl ?? sanitizeBiliInput(text))
     } catch {
       // Clipboard permission errors are browser UI decisions; keep the input usable.
     }
@@ -28,7 +29,7 @@ export function UrlInput({value, loading, error, actions, onChange, onSubmit}: U
     }
     // 始终 normalize：即使用户粘贴的就是「干净 URL」，也要剥掉 share_source / vd_source
     // 之类的追踪参数，避免它们进 DB 与 dedup hash。
-    const cleaned = sanitizeBiliInput(text)
+    const cleaned = recognizeSourceUrl(text)?.canonicalUrl ?? sanitizeBiliInput(text)
     if (cleaned && cleaned !== text) {
       event.preventDefault()
       onChange(cleaned)
@@ -44,14 +45,14 @@ export function UrlInput({value, loading, error, actions, onChange, onSubmit}: U
   return (
     <>
       <div className="relative">
-        <label htmlFor="bili-url" className="sr-only">B 站视频链接</label>
+        <label htmlFor="bili-url" className="sr-only">视频链接</label>
         <input
           id="bili-url"
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onPaste={handlePaste}
           onKeyDown={handleKeyDown}
-          placeholder="https://www.bilibili.com/video/BV..."
+          placeholder="粘贴 B 站或 YouTube 视频链接"
           disabled={loading}
           className="min-h-14 w-full rounded-2xl border border-line bg-panel px-5 pr-28 text-base outline-none transition-[border-color,box-shadow] placeholder:text-muted/55 focus:border-brand focus:shadow-[0_0_0_3px_var(--color-brand-soft)] disabled:opacity-60"
         />

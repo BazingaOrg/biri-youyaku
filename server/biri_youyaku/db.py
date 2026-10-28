@@ -11,6 +11,10 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
   id              TEXT PRIMARY KEY,
   url             TEXT NOT NULL,
+  source_provider TEXT NOT NULL DEFAULT 'bilibili',
+  source_id       TEXT,
+  source_part     TEXT NOT NULL DEFAULT '',
+  input_path      TEXT,
   bvid            TEXT,
   cid             INTEGER,
   mid             INTEGER,
@@ -23,6 +27,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   error_code      TEXT,
   audio_path      TEXT,
   subtitle_source TEXT,
+  subtitle_language TEXT,
   chapters_json   TEXT,
   transcript_json TEXT,
   summary_path    TEXT,
@@ -117,8 +122,10 @@ CREATE INDEX IF NOT EXISTS idx_pending_file_cleanup_updated ON pending_file_clea
 CREATE TABLE IF NOT EXISTS knowledge_documents (
   id TEXT PRIMARY KEY,
   provider TEXT NOT NULL,
-  external_bvid TEXT NOT NULL,
-  external_cid INTEGER NOT NULL,
+  source_id TEXT NOT NULL,
+  source_part TEXT NOT NULL DEFAULT '',
+  external_bvid TEXT,
+  external_cid INTEGER,
   title TEXT,
   author TEXT,
   mid INTEGER,
@@ -130,7 +137,7 @@ CREATE TABLE IF NOT EXISTS knowledge_documents (
   updated_at INTEGER NOT NULL,
   deleted_at INTEGER,
   delete_reason TEXT,
-  UNIQUE(provider, external_bvid, external_cid)
+  UNIQUE(provider, source_id, source_part)
 );
 
 CREATE TABLE IF NOT EXISTS knowledge_artifacts (
@@ -450,6 +457,72 @@ def maintenance_connection() -> Iterator[sqlite3.Connection]:
         connection.close()
 
 
+def _migrate_knowledge_document_identity(connection: sqlite3.Connection) -> None:
+    columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(knowledge_documents)")
+    }
+    if not columns or {"source_id", "source_part"}.issubset(columns):
+        return
+    connection.execute("SAVEPOINT source_identity_migration")
+    try:
+        before = connection.execute("SELECT COUNT(*) AS n FROM knowledge_documents").fetchone()["n"]
+        connection.execute("DROP TABLE IF EXISTS knowledge_documents_v2")
+        connection.execute(
+            """
+            CREATE TABLE knowledge_documents_v2 (
+              id TEXT PRIMARY KEY,
+              provider TEXT NOT NULL,
+              source_id TEXT NOT NULL,
+              source_part TEXT NOT NULL DEFAULT '',
+              external_bvid TEXT,
+              external_cid INTEGER,
+              title TEXT,
+              author TEXT,
+              mid INTEGER,
+              source_url TEXT,
+              tags_json TEXT,
+              duration REAL,
+              tldr TEXT,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL,
+              deleted_at INTEGER,
+              delete_reason TEXT,
+              UNIQUE(provider, source_id, source_part)
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO knowledge_documents_v2 (
+              id, provider, source_id, source_part, external_bvid, external_cid,
+              title, author, mid, source_url, tags_json, duration, tldr,
+              created_at, updated_at, deleted_at, delete_reason
+            )
+            SELECT
+              id, provider, external_bvid, CAST(external_cid AS TEXT), external_bvid, external_cid,
+              title, author, mid, source_url, tags_json, duration, tldr,
+              created_at, updated_at, deleted_at, delete_reason
+            FROM knowledge_documents
+            """
+        )
+        after = connection.execute("SELECT COUNT(*) AS n FROM knowledge_documents_v2").fetchone()["n"]
+        if before != after:
+            raise RuntimeError("knowledge document identity migration lost rows")
+        common_columns = ", ".join(sorted(columns))
+        mismatch = connection.execute(
+            f"SELECT {common_columns} FROM knowledge_documents EXCEPT SELECT {common_columns} FROM knowledge_documents_v2 LIMIT 1"
+        ).fetchone()
+        if mismatch is not None:
+            raise RuntimeError("knowledge document identity migration changed existing metadata")
+        connection.execute("DROP TABLE knowledge_documents")
+        connection.execute("ALTER TABLE knowledge_documents_v2 RENAME TO knowledge_documents")
+        connection.execute("RELEASE SAVEPOINT source_identity_migration")
+    except BaseException:
+        connection.execute("ROLLBACK TO SAVEPOINT source_identity_migration")
+        connection.execute("RELEASE SAVEPOINT source_identity_migration")
+        raise
+
+
 def init_db() -> None:
     with connect() as connection:
         connection.executescript(SCHEMA)
@@ -458,6 +531,13 @@ def init_db() -> None:
         connection.execute("DROP TABLE IF EXISTS weekly_summaries")
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(jobs)").fetchall()}
         migrations = {
+            "subtitle_language": "ALTER TABLE jobs ADD COLUMN subtitle_language TEXT",
+            "source_provider": (
+                "ALTER TABLE jobs ADD COLUMN source_provider TEXT NOT NULL DEFAULT 'bilibili'"
+            ),
+            "source_id": "ALTER TABLE jobs ADD COLUMN source_id TEXT",
+            "source_part": "ALTER TABLE jobs ADD COLUMN source_part TEXT NOT NULL DEFAULT ''",
+            "input_path": "ALTER TABLE jobs ADD COLUMN input_path TEXT",
             "mid": "ALTER TABLE jobs ADD COLUMN mid INTEGER",
             "chapters_json": "ALTER TABLE jobs ADD COLUMN chapters_json TEXT",
             "transcript_json": "ALTER TABLE jobs ADD COLUMN transcript_json TEXT",
@@ -472,6 +552,27 @@ def init_db() -> None:
         for column, statement in migrations.items():
             if column not in columns:
                 connection.execute(statement)
+        connection.execute(
+            """
+            UPDATE jobs
+            SET source_provider = 'bilibili'
+            WHERE source_provider IS NULL OR source_provider = ''
+            """
+        )
+        connection.execute(
+            """
+            UPDATE jobs
+            SET source_id = bvid
+            WHERE source_id IS NULL AND bvid IS NOT NULL AND bvid != ''
+            """
+        )
+        connection.execute(
+            """
+            UPDATE jobs
+            SET source_part = CAST(cid AS TEXT)
+            WHERE (source_part IS NULL OR source_part = '') AND cid IS NOT NULL
+            """
+        )
         usage_columns = {
             row["name"]
             for row in connection.execute("PRAGMA table_info(llm_usage_events)").fetchall()
@@ -509,6 +610,7 @@ def init_db() -> None:
                 connection.execute("ALTER TABLE knowledge_documents ADD COLUMN duration REAL")
             if "tldr" not in knowledge_doc_columns:
                 connection.execute("ALTER TABLE knowledge_documents ADD COLUMN tldr TEXT")
+        _migrate_knowledge_document_identity(connection)
         connection.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_knowledge_job_links_document

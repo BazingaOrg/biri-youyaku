@@ -6,8 +6,9 @@ import {resolveUp, type Job} from '../lib/api'
 import {Spinner} from './Spinner'
 import {SearchHighlight} from './SearchHighlight'
 import {useToast} from './ToastProvider'
+import {recognizeSourceUrl} from '../lib/sourceUrl'
 
-type AuthorJob = Pick<Job, 'mid' | 'author' | 'url'>
+type AuthorJob = Pick<Job, 'mid' | 'author' | 'url' | 'provider'>
 
 /**
  * 「查看该 UP 全部投稿」入口。
@@ -29,6 +30,11 @@ export function AuthorLink({
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const name = job.author || '未知 UP'
+  const biliAuthor = job.provider === 'bilibili' || (!job.provider && recognizeSourceUrl(job.url)?.provider === 'bilibili')
+
+  if (!biliAuthor) {
+    return job.author ? <span className="min-w-0 truncate text-xs text-muted" title={job.author}>{job.author}</span> : null
+  }
 
   const resolveAndGo = async (event: MouseEvent) => {
     event.preventDefault()

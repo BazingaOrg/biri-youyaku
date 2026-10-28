@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
+import httpx
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
@@ -43,7 +45,8 @@ from biri_youyaku.jobs.runner import (
     retry_job,
     start_job,
 )
-from biri_youyaku.modules.bilibili import meta as bili_meta
+from biri_youyaku.sources.service import fetch_meta as fetch_source_meta
+from biri_youyaku.sources.uploads import SUBTITLE_SUFFIXES
 from biri_youyaku.modules.email.webhook import send as send_email
 from biri_youyaku.llm_url import validate_llm_base_url
 from biri_youyaku.rate_limit import limiter
@@ -51,6 +54,7 @@ from biri_youyaku.rate_limit import limiter
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_token)])
+creation_lock = asyncio.Lock()
 
 
 class JobOptionsPayload(BaseModel):
@@ -234,6 +238,9 @@ def serialize_job(job: Job, *, lite: bool = False) -> dict:
     payload = {
         "id": job.id,
         "url": job.url,
+        "provider": job.source_provider,
+        "source_id": job.source_id,
+        "source_part": job.source_part,
         "bvid": job.bvid,
         "cid": job.cid,
         "mid": job.mid,
@@ -245,6 +252,7 @@ def serialize_job(job: Job, *, lite: bool = False) -> dict:
         "error_message": job.error_message,
         "error_code": job.error_code,
         "subtitle_source": job.subtitle_source,
+        "subtitle_language": job.subtitle_language,
         "chapters": [] if lite else (job.chapters or []),
         "transcript": [] if lite else (job.transcript or []),
         "created_at": job.created_at,
@@ -312,30 +320,33 @@ def _ensure_inflight_capacity() -> None:
 @router.post("/jobs")
 @limiter.limit("10/minute")
 async def create_job(request: Request, payload: CreateJobPayload) -> dict:
-    # 去重：粘到「已经总结完成」的同一个视频（按 BV 号）就直接复用旧结果，不重复烧 token。
-    # BV 直接从 URL 提取（无需网络）；b23 短链等取不到 BV 的跳过去重照常建。
-    try:
-        bvid = bili_meta.extract_bvid(payload.url)
-    except ValueError:
-        bvid = None
-    source_url = (
-        bili_meta.canonical_video_url(bvid, bili_meta.extract_page_number(payload.url))
-        if bvid
-        else payload.url
-    )
-    if payload.dedupe and bvid:
-        existing = repo.find_completed_by_bvid(bvid)
-        if existing is not None:
-            return {"ok": True, "job_id": existing.id, "deduped": True}
-
     _ensure_inflight_capacity()
     option_overrides, llm_api_key = _extract_option_overrides(payload.options)
     options = _job_options_from_overrides(option_overrides)
-    # 早失败：开了邮件却没有有效收件人 → 直接拒，别让任务跑完才在 EMAILING 阶段 fail。
     if options.email_enabled:
         _ensure_email_ready()
-    job = repo.create_job(source_url, options, option_overrides=option_overrides)
-    start_job(job.id, llm_api_key=llm_api_key)
+    try:
+        media = await asyncio.wait_for(fetch_source_meta(payload.url), timeout=35)
+    except (ValueError, RuntimeError, TimeoutError, httpx.HTTPError):
+        raise HTTPException(400, "无法获取内容，请检查链接或稍后重试") from None
+    if media.duration > settings.max_video_duration_seconds:
+        raise HTTPException(400, "内容时长超过服务器上限")
+    if options.task_type == "distill" and media.provider != "bilibili":
+        raise HTTPException(400, "作者蒸馏仅支持 B 站")
+    source_id = media.source_id or media.bvid
+    part = str(media.cid) if media.provider == "bilibili" and media.cid is not None else media.source_part or ""
+    if not source_id or (media.provider == "bilibili" and media.cid is None):
+        raise HTTPException(400, "无法确认内容身份")
+    async with creation_lock:
+        if payload.dedupe:
+            existing = repo.find_reusable_source(media.provider, source_id, part, task_type=options.task_type)
+            if existing is not None:
+                return {"ok": True, "job_id": existing.id, "deduped": True}
+        _ensure_inflight_capacity()
+        job = repo.create_job(media.url, options, option_overrides=option_overrides)
+        repo.set_source(job.id, media.provider, source_id, part)
+        repo.update_meta(job.id, bvid=media.bvid or None, cid=media.cid, mid=media.mid, title=media.title, author=media.author, duration=media.duration)
+        start_job(job.id, llm_api_key=llm_api_key)
     return {"ok": True, "job_id": job.id}
 
 
@@ -539,6 +550,15 @@ async def cancel(job_id: str) -> dict:
     return {"ok": True}
 
 
+def _validate_force_asr(job: Job) -> None:
+    if job.source_provider != "upload":
+        return
+    if not job.input_path or not Path(job.input_path).is_file():
+        raise HTTPException(409, "原始文件已清理，请重新导入；已有字幕仍可重新总结")
+    if Path(job.input_path).suffix.lower() in SUBTITLE_SUFFIXES:
+        raise HTTPException(409, "字幕文件不能重新转写，请导入音视频文件")
+
+
 @router.post("/jobs/{job_id}/resume")
 @limiter.limit("30/minute")
 async def resume(request: Request, job_id: str, payload: ResumeJobPayload | None = None) -> dict:
@@ -556,6 +576,7 @@ async def resume(request: Request, job_id: str, payload: ResumeJobPayload | None
     # jumping straight to summarize.  We clear the existing transcript/subtitle so
     # run_until_transcript will re-download audio and re-transcribe.
     if option_overrides.get("force_asr"):
+        _validate_force_asr(job)
         options = _job_options_from_overrides(option_overrides)
         repo.update_options(job_id, options, option_overrides=option_overrides)
         repo.clear_transcript(job_id)

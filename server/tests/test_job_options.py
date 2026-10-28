@@ -1,8 +1,13 @@
 import pytest
+from pathlib import Path
 from pydantic import ValidationError
 
 from biri_youyaku.config import Settings
 from biri_youyaku.jobs.model import JobOptions
+
+
+def test_empty_upload_storage_directory_uses_private_import_directory():
+    assert Settings(upload_storage_dir="").upload_storage_dir == Path("data/imports")
 
 
 def test_job_options_from_settings_uses_env_defaults():

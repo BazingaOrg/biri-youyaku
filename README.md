@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-粘贴 B 站视频链接，自动生成可读的 Markdown 总结与可跳转字幕。本地优先、自托管、无遥测。
+粘贴 B 站或 YouTube 视频链接，或导入音视频与字幕文件，生成可读的 Markdown 总结与来源适配的字幕时间跳转。本地优先、自托管、无遥测。
 
 <!-- 演示图：把截图/GIF 放到 assets/，再取消下面这行注释
 ![demo](assets/demo.gif)
@@ -13,13 +13,14 @@
 
 ## ✨ 特性
 
-- **字幕优先**：先取官方字幕，没有则下载音频本地转写（ASR）。
+- **字幕优先**：先取平台字幕，没有则下载音频本地转写（ASR）。
+- **多来源导入**：B 站 / YouTube 单视频、本地音视频、UTF-8 SRT/VTT；浏览器把文件上传到后端，统一进入资料库。
 - **多视图总结**：Markdown 笔记 / 字幕原文（点时间戳跳回视频）。
 - **任意 LLM**：任何 OpenAI 兼容接口（默认 DeepSeek，OpenAI / Gemini / 本地 ollama 等都行）。
 - **按 UP 主浏览**：列出某 UP 全部投稿、标记已/未总结、未总结一键补。
 - **UP 主蒸馏语料**（实验性，默认隐藏）：抓取某 UP 的投稿字幕，LLM 提取观点后编译成一份人设语料（corpus）；`web/.env` 设 `VITE_DISTILL_ENABLED=true` 后重建即可在 UP 页显示入口。
 - **个人知识库与分工检索**：总结完成后自动登记；历史页按标题、UP 主、BV 号或标签定位任务，知识库用本地 FTS 检索总结与转写正文。
-- **去重省钱**：同一视频已总结过就直接复用，不重复烧 token。
+- **去重省钱**：按来源内容身份复用结果，B 站区分分 P，文件按内容哈希识别。
 - **单任务补救**：重新总结（复用已有字幕）、强制重新转写（忽略已有字幕/转写重新走 ASR）、失败任务重发邮件。
 - **本地优先**：数据全落本地、无遥测；可选邮件推送、可选 API Token 鉴权。
 
@@ -124,10 +125,11 @@ LLM_BASE_URL_ALLOWED_HOSTS=   # 仅本地留空；公网部署不要放开白名
 
 ```mermaid
 flowchart LR
-    user([浏览器]) -->|粘贴 BV 链接| web[Vite + React]
+    user([浏览器]) -->|链接或上传文件| web[Vite + React]
     web -->|REST + SSE| api[FastAPI]
     web -->|UP/蒸馏/历史/知识库| api
-    api --> ytdlp[yt-dlp<br/>抓字幕/音频]
+    api --> sources[来源适配<br/>B 站 / YouTube / 文件]
+    sources --> ytdlp[yt-dlp / ffmpeg<br/>获取字幕和音频]
     ytdlp -->|有字幕| llm
     ytdlp -->|无字幕| asr[本地 ASR<br/>SenseVoice / Parakeet]
     asr --> llm[LLM<br/>OpenAI 兼容]
@@ -154,6 +156,8 @@ flowchart LR
 cd server && uv sync --extra dev && uv run pytest -q && uv run ruff check .
 cd web && npm ci && npm test && npm run build  # build 含 tsc
 ```
+
+远程 Mac mini 的上传限额、依赖、数据迁移与验收见 [`多来源运行说明`](docs/runbooks/multisource.md)。
 
 完整 API 见后端运行后的 `/docs`（FastAPI 自动生成）。
 

@@ -3,6 +3,7 @@ import type {Job, JobStatus} from '../../lib/api'
 import type {StepDef, StepState} from '../../components/StepCarousel'
 import {LazyMarkdown} from '../../components/LazyMarkdown'
 import {formatDuration} from '../../lib/format'
+import {sourceLabel} from '../../lib/sourceUrl'
 
 /** status → 步骤索引（识别 / 字幕 / 总结 / 邮件）。终态映射到 0 让失败卡片继续在 0 上展示。 */
 export function statusToStepIndex(status: JobStatus): number {
@@ -67,12 +68,12 @@ function renderStep(idx: number, job: Job): ReactNode {
 }
 
 function renderMeta(job: Job) {
-  if (job.bvid) {
+  if (job.title || job.source_id || job.bvid) {
     return (
       <div className="grid gap-1">
         <p className="break-words text-ink">{job.title || '已识别'}</p>
         <p className="text-xs">
-          {job.author || '未知 UP'} · {formatDuration(job.duration)}
+          {job.author || sourceLabel(job.provider) || '已导入'} · {formatDuration(job.duration)}
         </p>
       </div>
     )

@@ -24,6 +24,7 @@ async def test_transcribe_audio_uses_faster_whisper_when_configured(monkeypatch,
     # 具体 transcriber 类。这里拦截工厂，断言 asr_model 被透传。
     monkeypatch.setattr(pipeline, "get_transcriber", fake_get_transcriber)
     monkeypatch.setattr(pipeline.repo, "set_subtitle_source", lambda job_id, source: calls.update(source=(job_id, source)))
+    monkeypatch.setattr(pipeline.repo, "set_subtitle_language", lambda job_id, language: calls.update(language=(job_id, language)))
     audio_path = tmp_path / "audio.wav"
     job = Job(
         id="job-1",
@@ -35,6 +36,7 @@ async def test_transcribe_audio_uses_faster_whisper_when_configured(monkeypatch,
     )
 
     result = await pipeline.transcribe_audio(job, audio_path)
+    assert calls["language"] == (job.id, "zh")
 
     assert result[0].text == "hello"
     assert calls["model"] == "faster-whisper"

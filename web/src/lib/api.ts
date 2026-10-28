@@ -1,3 +1,5 @@
+import {playbackUrl} from './sourceUrl'
+
 export type JobStatus =
   | 'PENDING'
   | 'FETCHING_META'
@@ -36,6 +38,9 @@ export interface ConfigDefaults extends JobOptions {
 export interface Job {
   id: string
   url: string
+  provider?: string | null
+  source_id?: string | null
+  source_part?: string | null
   bvid?: string
   cid?: number
   /** UP 主 uid，用于跳「该 UP 全部投稿」页；老任务可能为空。 */
@@ -48,6 +53,7 @@ export interface Job {
   error_message?: string
   error_code?: string
   subtitle_source?: string
+  subtitle_language?: string | null
   chapters: Array<{
     start: number
     end?: number
@@ -188,6 +194,25 @@ export interface RuntimeConfig {
   knowledge_search_enabled?: boolean
 }
 
+export interface SourceResolveResponse {
+  provider: string
+  source_id: string
+  source_part: string
+  canonical_url: string
+  existing: {document_id: string; title: string; saved_at?: number | null} | null
+  trashed: {document_id: string; title: string; days_left?: number | null} | null
+  active_job_id: string | null
+}
+
+export interface SourceCapabilities {
+  providers: string[]
+  upload: {max_bytes: number; extensions: string[]}
+  ffmpeg: boolean
+  ffprobe: boolean
+  asr: {installed: boolean; model: string}
+  youtube: boolean
+}
+
 export interface KnowledgeSearchHit {
   chunk_id: string
   document_id: string
@@ -247,6 +272,15 @@ export function getKnowledgeStatus() {
 
 export function getRuntimeConfig() {
   return request<RuntimeConfig>('/v1/config/runtime')
+}
+
+export function resolveSource(url: string, init?: RequestInit) {
+  const params = new URLSearchParams({url})
+  return request<SourceResolveResponse>(`/v1/sources/resolve?${params.toString()}`, init)
+}
+
+export function getSourceCapabilities(init?: RequestInit) {
+  return request<SourceCapabilities>('/v1/sources/capabilities', init)
 }
 
 export interface LlmBalanceResponse {
@@ -325,6 +359,56 @@ export function createJob(url: string, options: JobOptionOverrides, params: {ded
     method: 'POST',
     body: JSON.stringify({url, options, dedupe: params.dedupe}),
   })
+}
+
+export interface ImportUploadResult {
+  ok: true
+  job_id: string
+  deduped?: boolean
+}
+
+export function uploadImport(
+  file: File,
+  title: string,
+  onProgress: (loaded: number, total: number) => void,
+  sourceUrl?: string,
+): {promise: Promise<ImportUploadResult>; abort: () => void} {
+  const controller = new AbortController()
+  const params = new URLSearchParams({filename: file.name})
+  if (title.trim()) params.set('title', title.trim())
+  if (sourceUrl?.trim()) params.set('source_url', sourceUrl.trim())
+  const promise = new Promise<ImportUploadResult>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${API_BASE_URL}/v1/imports?${params.toString()}`)
+    xhr.withCredentials = true
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    const token = getApiToken()
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded, event.total)
+    }
+    xhr.onerror = () => reject(new Error('上传连接中断，请重试'))
+    xhr.onabort = () => reject(new DOMException('上传已取消', 'AbortError'))
+    xhr.onload = () => {
+      let body: unknown = null
+      try {
+        body = xhr.responseText ? JSON.parse(xhr.responseText) : null
+      } catch {
+        body = null
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const message = body && typeof body === 'object' && 'detail' in body && typeof body.detail === 'string'
+          ? body.detail
+          : `上传失败（HTTP ${xhr.status}）`
+        reject(new ApiError(xhr.status, message))
+        return
+      }
+      resolve(body as ImportUploadResult)
+    }
+    controller.signal.addEventListener('abort', () => xhr.abort(), {once: true})
+    xhr.send(file)
+  })
+  return {promise, abort: () => controller.abort()}
 }
 
 export function resummarizeJob(jobId: string, options: JobOptionOverrides) {
@@ -558,6 +642,9 @@ export interface LibraryListItem {
   tldr?: string | null
   saved_at?: number | null
   source_url?: string | null
+  provider?: string | null
+  source_id?: string | null
+  source_part?: string | null
   legacy?: boolean
   legacy_reason?: string | null
 }
@@ -596,6 +683,9 @@ export interface LibrarySearchGroup {
   bvid?: string | null
   cid?: number | null
   source_url?: string | null
+  provider?: string | null
+  source_id?: string | null
+  source_part?: string | null
   saved_at?: number | null
   tags: string[]
   tldr?: string | null
@@ -650,6 +740,10 @@ export interface LibraryDocumentContent {
     legacy?: boolean
     legacy_reason?: string | null
     subtitle_source?: string | null
+    subtitle_language?: string | null
+    provider?: string | null
+    source_id?: string | null
+    source_part?: string | null
   }
   summary: {markdown: string; content_hash?: string | null}
   transcript: LibraryTranscriptCue[]
@@ -667,6 +761,7 @@ export interface TrashItem {
   title?: string | null
   author?: string | null
   bvid?: string | null
+  source_id?: string | null
   deleted_at: number
   expires_at?: number | null
   days_left: number
@@ -753,6 +848,9 @@ function normalizeLibraryItem(raw: unknown): LibraryListItem | null {
     tldr: asString(row.tldr) || null,
     saved_at: unixMaybeMs(asNumber(row.saved_at ?? row.updated_at ?? row.created_at ?? row.completed_at)),
     source_url: asString(row.source_url || row.url) || null,
+    provider: asString(row.provider) || null,
+    source_id: asString(row.source_id) || null,
+    source_part: asString(row.source_part) || null,
     legacy: asBool(row.legacy) || kind === 'legacy_job',
     legacy_reason: asString(row.legacy_reason) || null,
   }
@@ -802,6 +900,9 @@ function normalizeSearchGroup(raw: unknown, query: string): LibrarySearchGroup |
     bvid: asString(row.bvid) || null,
     cid: asNumber(row.cid),
     source_url: asString(row.source_url) || null,
+    provider: asString(row.provider) || null,
+    source_id: asString(row.source_id) || null,
+    source_part: asString(row.source_part) || null,
     saved_at: unixMaybeMs(asNumber(row.saved_at ?? row.updated_at ?? row.created_at)),
     tags: asTags(row.tags ?? row.tags_json),
     tldr: asString(row.tldr) || null,
@@ -872,6 +973,10 @@ export function normalizeLibraryDocumentContent(raw: unknown): LibraryDocumentCo
       legacy: asBool(document.legacy),
       legacy_reason: asString(document.legacy_reason) || null,
       subtitle_source: asString(document.subtitle_source) || null,
+      subtitle_language: asString(document.subtitle_language) || null,
+      provider: asString(document.provider) || null,
+      source_id: asString(document.source_id) || null,
+      source_part: asString(document.source_part) || null,
     },
     summary: {
       markdown,
@@ -906,6 +1011,7 @@ function normalizeTrashItem(raw: unknown): TrashItem | null {
     title: asString(row.title) || null,
     author: asString(row.author) || null,
     bvid: asString(row.bvid || row.external_bvid) || null,
+    source_id: asString(row.source_id) || null,
     deleted_at: deletedAt,
     expires_at: expiresAt,
     days_left: daysLeft,
@@ -1038,15 +1144,7 @@ export function purgeDocument(documentId: string, confirmTitle: string) {
 
 export function biliPlayUrl(sourceUrl?: string | null, bvid?: string | null, startSec?: number | null) {
   const base = sourceUrl || (bvid ? `https://www.bilibili.com/video/${bvid}` : null)
-  if (!base) return null
-  if (startSec == null || Number.isNaN(startSec)) return base
-  try {
-    const url = new URL(base)
-    url.searchParams.set('t', String(Math.floor(startSec)))
-    return url.toString()
-  } catch {
-    return `${base}${base.includes('?') ? '&' : '?'}t=${Math.floor(startSec)}`
-  }
+  return playbackUrl(base, undefined, startSec)
 }
 
 export {API_BASE_URL}

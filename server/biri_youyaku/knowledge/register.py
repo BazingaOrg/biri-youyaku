@@ -19,7 +19,6 @@ from biri_youyaku.knowledge.model import (
     ARTIFACT_KIND_TRANSCRIPT_RAW,
     MAX_RECONCILE_ATTEMPTS,
     PERMANENT_SKIP_REASONS,
-    PROVIDER_BILIBILI,
     RECONCILE_FAILED,
     RECONCILE_PURGED,
     RECONCILE_REGISTERED,
@@ -29,6 +28,15 @@ from biri_youyaku.knowledge.model import (
 from biri_youyaku.knowledge.summary_meta import extract_tldr
 
 logger = logging.getLogger("biri_youyaku.knowledge.register")
+
+
+def _source_identity(job: Job) -> tuple[str, str, str]:
+    provider = (job.source_provider or "bilibili").strip()
+    source_id = (job.source_id or job.bvid or "").strip()
+    source_part = (job.source_part or "").strip()
+    if not source_part and provider == "bilibili" and job.cid is not None:
+        source_part = str(job.cid)
+    return provider, source_id, source_part
 
 
 def try_register_job(job_id: str) -> str:
@@ -111,10 +119,12 @@ def _register_job(job: Job) -> str:
 
     if existing is not None and existing.status == RECONCILE_FAILED:
         if existing.attempts >= MAX_RECONCILE_ATTEMPTS:
+            provider, source_id, source_part = _source_identity(job)
             if not (
-                existing.reason == "missing_bvid_or_cid"
-                and (job.bvid or "").strip()
-                and job.cid is not None
+                existing.reason in {"missing_bvid_or_cid", "missing_source_identity"}
+                and provider
+                and source_id
+                and source_part is not None
             ):
                 return RECONCILE_FAILED
 
@@ -160,13 +170,15 @@ def _register_job(job: Job) -> str:
         )
         return RECONCILE_FAILED
 
-    bvid = (job.bvid or "").strip()
-    if not bvid or job.cid is None:
+    provider, source_id, source_part = _source_identity(job)
+    if not provider or not source_id or (provider == "bilibili" and not source_part):
+        reason = "missing_bvid_or_cid" if provider == "bilibili" else "missing_source_identity"
+        error = "bvid or cid missing" if provider == "bilibili" else "source identity missing"
         knowledge_repo.set_reconcile(
             job_id,
             status=RECONCILE_FAILED,
-            reason="missing_bvid_or_cid",
-            last_error="bvid or cid missing",
+            reason=reason,
+            last_error=error,
             increment_attempts=True,
         )
         return RECONCILE_FAILED
@@ -176,7 +188,7 @@ def _register_job(job: Job) -> str:
     summary_hash = art.sha256_bytes(summary_bytes)
 
     transcript_payload = art.build_transcript_payload(
-        job.transcript, subtitle_source=job.subtitle_source
+        job.transcript, subtitle_source=job.subtitle_source, subtitle_language=job.subtitle_language
     )
     transcript_bytes = art.encode_transcript_bytes(transcript_payload)
     transcript_hash = art.sha256_bytes(transcript_bytes)
@@ -198,7 +210,9 @@ def _register_job(job: Job) -> str:
             transcript_hash=transcript_hash,
             summary_text=summary_text,
             tags_json=tags_json,
-            bvid=bvid,
+            provider=provider,
+            source_id=source_id,
+            source_part=source_part,
         )
 
 
@@ -211,13 +225,17 @@ def _write_registered_document(
     transcript_hash: str,
     summary_text: str,
     tags_json: str | None,
-    bvid: str,
+    provider: str,
+    source_id: str,
+    source_part: str,
 ) -> str:
     job_id = job.id
     document_id = knowledge_repo.upsert_document(
-        provider=PROVIDER_BILIBILI,
-        external_bvid=bvid,
-        external_cid=int(job.cid),
+        provider=provider,
+        source_id=source_id,
+        source_part=source_part,
+        external_bvid=job.bvid if provider == "bilibili" else None,
+        external_cid=job.cid if provider == "bilibili" else None,
         title=job.title,
         author=job.author,
         mid=job.mid,

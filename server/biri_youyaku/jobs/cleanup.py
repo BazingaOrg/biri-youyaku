@@ -24,8 +24,10 @@ from biri_youyaku.jobs.model import (
     Job,
     JobStatus,
     RETENTION_DELETE_JOB_STATUSES,
+    TERMINAL_JOB_STATUSES,
 )
 from biri_youyaku.jobs.runner import has_active_task
+from biri_youyaku.sources.uploads import UploadError, resolve_input
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,54 @@ def _resolved_path(path: Path) -> Path:
         return path
 
 
+def _upload_path(path: str | Path) -> Path | None:
+    try:
+        return resolve_input(Path(path), Path(settings.upload_storage_dir))
+    except UploadError:
+        return None
+
+
+def _can_clear_upload_path(path: str | Path) -> bool:
+    root = Path(settings.upload_storage_dir).resolve()
+    candidate = Path(path).absolute()
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError:
+        return False
+    current = root
+    for part in relative.parts:
+        current /= part
+        if current.is_symlink():
+            return False
+    try:
+        return candidate.resolve().is_relative_to(root)
+    except OSError:
+        return False
+
+
+def _clear_job_input_path(job_id: str) -> None:
+    with connect() as connection:
+        connection.execute("UPDATE jobs SET input_path = NULL WHERE id = ?", (job_id,))
+
+
+def discard_job_input(job: Job) -> bool:
+    if job.source_provider != "upload" or not job.input_path:
+        return False
+    input_path = _upload_path(job.input_path)
+    if input_path is None:
+        if _can_clear_upload_path(job.input_path):
+            _clear_job_input_path(job.id)
+            return True
+        return False
+    try:
+        input_path.unlink()
+    except OSError:
+        logger.warning("Failed to remove uploaded input for job %s", job.id, exc_info=True)
+        return False
+    _clear_job_input_path(job.id)
+    return True
+
+
 def delete_job_files(job: Job, *, audio_only: bool = False) -> None:
     if job.audio_path:
         audio_path = Path(job.audio_path)
@@ -73,6 +123,8 @@ def delete_job_files(job: Job, *, audio_only: bool = False) -> None:
                 summary_path.unlink()
         except OSError:
             logger.warning("Failed to remove summary file for job %s", job.id, exc_info=True)
+    if not audio_only:
+        discard_job_input(job)
 
 
 def collect_job_file_cleanup_targets(job: Job) -> list[dict[str, str]]:
@@ -115,6 +167,10 @@ def collect_job_file_cleanup_targets(job: Job) -> list[dict[str, str]]:
                 "path": str(_resolved_path(summary_path)),
             }
         )
+    if job.source_provider == "upload" and job.input_path:
+        input_path = _upload_path(job.input_path)
+        if input_path is not None:
+            targets.append({"job_id": job.id, "file_type": "input", "path": str(input_path)})
     return targets
 
 
@@ -128,6 +184,10 @@ def delete_job_file_targets_with_result(targets: list[dict[str, str]]) -> list[d
                 for sibling in path.glob(f"{target['job_id']}*"):
                     if sibling.is_file():
                         sibling.unlink()
+            elif target["file_type"] == "input":
+                input_path = _upload_path(path)
+                if input_path is not None:
+                    input_path.unlink()
             elif path.is_file():
                 path.unlink()
         except OSError:
@@ -188,6 +248,10 @@ def retry_pending_file_cleanup_once() -> int:
                 for sibling in path.glob(f"{row['job_id']}*"):
                     if sibling.is_file():
                         sibling.unlink()
+            elif row["file_type"] == "input":
+                input_path = _upload_path(path)
+                if input_path is not None:
+                    input_path.unlink()
             elif path.is_file():
                 path.unlink()
         except OSError as exc:
@@ -221,10 +285,15 @@ def cleanup_once_sync() -> dict[str, int]:
     job_cutoff = now - JOB_RETENTION_DAYS * 24 * 60 * 60 * 1000
     audio_removed = 0
     jobs_removed = 0
+    input_removed = 0
 
     for job in repo.list_jobs_with_expired_audio(RETENTION_DELETE_JOB_STATUSES, audio_cutoff):
         if discard_job_audio(job, touch=False):
             audio_removed += 1
+
+    for job in repo.list_jobs_by_status(TERMINAL_JOB_STATUSES):
+        if (job.completed_at or job.created_at) < audio_cutoff and discard_job_input(job):
+            input_removed += 1
 
     expired_jobs = repo.list_jobs_by_status_before(AUTO_JOB_DELETE_STATUSES, job_cutoff)
     for job in expired_jobs:
@@ -245,6 +314,9 @@ def cleanup_once_sync() -> dict[str, int]:
             logger.info("Purged %d expired soft-deleted knowledge documents", knowledge_purged)
     except Exception:
         logger.exception("knowledge soft-delete auto-purge failed")
+
+    if input_removed:
+        logger.info("Removed %d expired uploaded inputs", input_removed)
 
     return {
         "audio_removed": audio_removed,
@@ -321,6 +393,42 @@ def _scan_orphan_files(directory: Path, known_paths: set[str], retention_days: i
     return removed
 
 
+def _all_upload_input_paths() -> set[str]:
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT input_path FROM jobs WHERE source_provider = 'upload' AND input_path IS NOT NULL"
+        ).fetchall()
+    return {row["input_path"] for row in rows if row["input_path"]}
+
+
+def _scan_upload_orphans(directory: Path, known_paths: set[str], retention_days: int) -> int:
+    root = directory.resolve()
+    if not root.exists():
+        return 0
+    known: set[str] = set()
+    for raw in known_paths:
+        input_path = _upload_path(raw)
+        if input_path is not None:
+            known.add(str(input_path))
+    cutoff_seconds = retention_days * 24 * 60 * 60
+    now_seconds = time.time()
+    removed = 0
+    for entry in root.iterdir():
+        if entry.is_symlink() or not entry.is_file():
+            continue
+        try:
+            resolved = entry.resolve()
+            if resolved.parent != root or str(resolved) in known:
+                continue
+            if now_seconds - entry.stat().st_mtime < cutoff_seconds:
+                continue
+            entry.unlink()
+            removed += 1
+        except OSError:
+            logger.warning("Failed to remove upload orphan %s", entry, exc_info=True)
+    return removed
+
+
 def _scan_orphan_distill_dirs(directory: Path, retention_days: int) -> int:
     """删除 directory 下「distill_runs 表无 mid 记录且 mtime 比 retention_days 早」的子目录。
 
@@ -358,23 +466,53 @@ def scan_orphans_once_sync() -> dict[str, int]:
     audio_dir = Path(settings.audio_storage_dir)
     summary_dir = Path(settings.summary_storage_dir)
     distill_dir = Path(settings.distill_storage_dir)
+    upload_dir = Path(settings.upload_storage_dir)
     audio_known = repo.all_audio_paths()
     summary_known = repo.all_summary_paths()
     audio_orphans = _scan_orphan_files(audio_dir, audio_known, retention)
+    audio_orphans += _scan_youtube_work_dirs(audio_dir)
     summary_orphans = _scan_orphan_files(summary_dir, summary_known, retention)
+    upload_orphans = _scan_upload_orphans(upload_dir, _all_upload_input_paths(), retention)
     distill_orphans = _scan_orphan_distill_dirs(distill_dir, retention)
-    if audio_orphans or summary_orphans or distill_orphans:
+    if audio_orphans or summary_orphans or distill_orphans or upload_orphans:
         logger.info(
-            "Removed orphans: audio=%d summary=%d distill=%d",
+            "Removed orphans: audio=%d summary=%d distill=%d upload=%d",
             audio_orphans,
             summary_orphans,
             distill_orphans,
+            upload_orphans,
         )
     return {
         "audio_orphans": audio_orphans,
         "summary_orphans": summary_orphans,
         "distill_orphans": distill_orphans,
     }
+
+
+def _scan_youtube_work_dirs(directory: Path) -> int:
+    from itertools import islice
+    from biri_youyaku.sources.youtube import active_work_dirs
+
+    if not directory.is_dir():
+        return 0
+    root = directory.resolve()
+    active = active_work_dirs()
+    cutoff = time.time() - 3600
+    removed = 0
+    for entry in islice(root.glob("biri-youyaku-youtube-*"), 200):
+        try:
+            if entry.is_symlink() or not entry.is_dir():
+                continue
+            resolved = entry.resolve()
+            if resolved.parent != root or resolved in active:
+                continue
+            if entry.stat().st_mtime >= cutoff:
+                continue
+            shutil.rmtree(entry)
+            removed += 1
+        except OSError:
+            logger.warning("Failed to remove stale YouTube work directory", exc_info=True)
+    return removed
 
 
 async def scan_orphans_once() -> dict[str, int]:

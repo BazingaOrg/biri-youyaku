@@ -4,6 +4,21 @@ from fastapi import HTTPException
 from biri_youyaku.jobs.model import Job, JobOptions, JobStatus
 from biri_youyaku.routes import config as config_route
 from biri_youyaku.routes import jobs as jobs_route
+from biri_youyaku.sources.model import MediaMeta
+
+
+def _bili_media(*, cid: int = 1) -> MediaMeta:
+    return MediaMeta(
+        url=f"https://www.bilibili.com/video/BV123?p={cid}",
+        bvid="BV123",
+        cid=cid,
+        title="标题",
+        author="作者",
+        duration=60,
+        provider="bilibili",
+        source_id="BV123",
+        source_part=str(cid),
+    )
 
 
 @pytest.mark.asyncio
@@ -111,7 +126,18 @@ async def test_create_job_dedupes_completed_bvid(monkeypatch):
         updated_at=1,
     )
     started = {}
-    monkeypatch.setattr(jobs_route.repo, "find_completed_by_bvid", lambda bvid: existing if bvid == "BV123" else None)
+    calls = {}
+
+    async def fetch_source_meta(_url):
+        return _bili_media(cid=1)
+
+    def find_reusable_source(provider, source_id, source_part, *, task_type):
+        calls["reusable"] = (provider, source_id, source_part, task_type)
+        return existing
+
+    monkeypatch.setattr(jobs_route, "fetch_source_meta", fetch_source_meta)
+    monkeypatch.setattr(jobs_route.repo, "count_jobs_excluding_status", lambda statuses: 0)
+    monkeypatch.setattr(jobs_route.repo, "find_reusable_source", find_reusable_source)
     monkeypatch.setattr(jobs_route, "start_job", lambda job_id, llm_api_key=None: started.update(id=job_id))
 
     response = await jobs_route.create_job(
@@ -121,18 +147,11 @@ async def test_create_job_dedupes_completed_bvid(monkeypatch):
     # 命中已完成 → 复用旧任务、不新建、不启动 runner。
     assert response == {"ok": True, "job_id": "job-existing", "deduped": True}
     assert "id" not in started
+    assert calls["reusable"] == ("bilibili", "BV123", "1", "summary")
 
 
 @pytest.mark.asyncio
 async def test_create_job_can_bypass_dedupe(monkeypatch):
-    existing = Job(
-        id="job-existing",
-        url="https://www.bilibili.com/video/BV123",
-        status=JobStatus.COMPLETED,
-        options=JobOptions(),
-        created_at=1,
-        updated_at=1,
-    )
     created = Job(
         id="job-new",
         url="https://www.bilibili.com/video/BV123",
@@ -142,9 +161,16 @@ async def test_create_job_can_bypass_dedupe(monkeypatch):
         updated_at=2,
     )
     calls = {}
-    monkeypatch.setattr(jobs_route.repo, "find_completed_by_bvid", lambda bvid: existing if bvid == "BV123" else None)
+
+    async def fetch_source_meta(_url):
+        return _bili_media(cid=1)
+
+    monkeypatch.setattr(jobs_route, "fetch_source_meta", fetch_source_meta)
     monkeypatch.setattr(jobs_route.repo, "count_jobs_excluding_status", lambda statuses: 0)
     monkeypatch.setattr(jobs_route.repo, "create_job", lambda url, options, option_overrides=None: created)
+    monkeypatch.setattr(jobs_route.repo, "set_source", lambda *args: calls.update(source=args))
+    monkeypatch.setattr(jobs_route.repo, "update_meta", lambda *args, **kwargs: calls.update(meta=(args, kwargs)))
+    monkeypatch.setattr(jobs_route.repo, "find_reusable_source", lambda *args, **kwargs: pytest.fail("dedupe should be bypassed"))
     monkeypatch.setattr(jobs_route, "start_job", lambda job_id, llm_api_key=None: calls.update(started=job_id))
 
     response = await jobs_route.create_job(
@@ -152,13 +178,12 @@ async def test_create_job_can_bypass_dedupe(monkeypatch):
     )
 
     assert response == {"ok": True, "job_id": "job-new"}
-    assert calls == {"started": "job-new"}
+    assert calls["started"] == "job-new"
+    assert calls["source"] == ("job-new", "bilibili", "BV123", "1")
 
 
 @pytest.mark.asyncio
 async def test_create_job_normalizes_untrusted_url_with_bvid(monkeypatch):
-    # Allow localhost URLs for this test (the SSRF guard rejects them by default).
-    monkeypatch.setattr(jobs_route.settings, "job_url_allowed_hosts", "127.0.0.1")
     created = Job(
         id="job-new",
         url="https://www.bilibili.com/video/BV1xx?p=2",
@@ -170,18 +195,77 @@ async def test_create_job_normalizes_untrusted_url_with_bvid(monkeypatch):
     received = {}
     monkeypatch.setattr(jobs_route.repo, "count_jobs_excluding_status", lambda statuses: 0)
 
+    async def fetch_source_meta(_url):
+        return _bili_media(cid=2)
+
     def create_job(url, options, option_overrides=None):
         received["url"] = url
         return created
 
     monkeypatch.setattr(jobs_route.repo, "create_job", create_job)
+    monkeypatch.setattr(jobs_route, "fetch_source_meta", fetch_source_meta)
+    monkeypatch.setattr(jobs_route.repo, "set_source", lambda *args: received.update(source=args))
+    monkeypatch.setattr(jobs_route.repo, "update_meta", lambda *args, **kwargs: received.update(meta=(args, kwargs)))
     monkeypatch.setattr(jobs_route, "start_job", lambda *args, **kwargs: None)
 
     await jobs_route.create_job(
-        None, jobs_route.CreateJobPayload(url="http://127.0.0.1:8000/video/BV1xx?p=2", dedupe=False)
+        None, jobs_route.CreateJobPayload(url="https://www.bilibili.com/video/BV123?p=2", dedupe=False)
     )
 
-    assert received["url"] == "https://www.bilibili.com/video/BV1xx?p=2"
+    assert received["url"] == "https://www.bilibili.com/video/BV123?p=2"
+    assert received["source"] == ("job-new", "bilibili", "BV123", "2")
+
+
+@pytest.mark.asyncio
+async def test_create_job_does_not_reuse_another_bilibili_part(monkeypatch):
+    created = Job("job-new", "https://www.bilibili.com/video/BV123?p=2", JobStatus.PENDING, JobOptions(), 2, 2)
+    calls = {}
+
+    async def fetch_source_meta(_url):
+        return _bili_media(cid=2)
+
+    def find_reusable_source(provider, source_id, source_part, *, task_type):
+        calls["reusable"] = (provider, source_id, source_part, task_type)
+        return None
+
+    monkeypatch.setattr(jobs_route, "fetch_source_meta", fetch_source_meta)
+    monkeypatch.setattr(jobs_route.repo, "count_jobs_excluding_status", lambda statuses: 0)
+    monkeypatch.setattr(jobs_route.repo, "find_reusable_source", find_reusable_source)
+    monkeypatch.setattr(jobs_route.repo, "create_job", lambda *args, **kwargs: created)
+    monkeypatch.setattr(jobs_route.repo, "set_source", lambda *args: None)
+    monkeypatch.setattr(jobs_route.repo, "update_meta", lambda *args, **kwargs: None)
+    monkeypatch.setattr(jobs_route, "start_job", lambda *args, **kwargs: None)
+
+    response = await jobs_route.create_job(None, jobs_route.CreateJobPayload(url="https://www.bilibili.com/video/BV123?p=2"))
+
+    assert response == {"ok": True, "job_id": "job-new"}
+    assert calls["reusable"] == ("bilibili", "BV123", "2", "summary")
+
+
+@pytest.mark.asyncio
+async def test_create_job_dedupe_keeps_task_types_separate(monkeypatch):
+    created = Job("job-distill", "https://www.bilibili.com/video/BV123", JobStatus.PENDING, JobOptions(), 2, 2)
+    calls = {}
+
+    async def fetch_source_meta(_url):
+        return _bili_media(cid=1)
+
+    def find_reusable_source(provider, source_id, source_part, *, task_type):
+        calls["reusable"] = (provider, source_id, source_part, task_type)
+        return None
+
+    monkeypatch.setattr(jobs_route, "fetch_source_meta", fetch_source_meta)
+    monkeypatch.setattr(jobs_route.repo, "count_jobs_excluding_status", lambda statuses: 0)
+    monkeypatch.setattr(jobs_route.repo, "find_reusable_source", find_reusable_source)
+    monkeypatch.setattr(jobs_route.repo, "create_job", lambda *args, **kwargs: created)
+    monkeypatch.setattr(jobs_route.repo, "set_source", lambda *args: None)
+    monkeypatch.setattr(jobs_route.repo, "update_meta", lambda *args, **kwargs: None)
+    monkeypatch.setattr(jobs_route, "start_job", lambda *args, **kwargs: None)
+
+    response = await jobs_route.create_job(None, jobs_route.CreateJobPayload(url="https://www.bilibili.com/video/BV123", options=jobs_route.JobOptionsPayload(task_type="distill")))
+
+    assert response == {"ok": True, "job_id": "job-distill"}
+    assert calls["reusable"] == ("bilibili", "BV123", "1", "distill")
 
 
 @pytest.mark.asyncio

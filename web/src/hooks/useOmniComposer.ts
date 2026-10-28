@@ -2,14 +2,12 @@ import {useCallback, useEffect, useMemo, useState} from 'react'
 import {useLocation} from 'wouter'
 import {
   createJob,
-  listLibrary,
-  listLibraryTrash,
+  resolveSource,
   restoreDocument,
-  searchLibrary,
   type JobOptionOverrides,
 } from '../lib/api'
-import {extractBvid, isValidBiliUrl, sanitizeBiliInput} from '../lib/biliUrl'
-import {matchByBvid, resolvePasteAction, type PasteMatch} from '../lib/pasteAction'
+import {resolvePasteAction, type PasteMatch} from '../lib/pasteAction'
+import {recognizeSourceUrl} from '../lib/sourceUrl'
 import {useRuntimeConfig} from './useRuntimeConfig'
 import {writeActive} from '../lib/activeJob'
 import {useToast} from '../components/ToastProvider'
@@ -23,71 +21,55 @@ export function useOmniComposer(initialValue = '') {
   const [busy, setBusy] = useState(false)
   const [existing, setExisting] = useState<PasteMatch | null>(null)
   const [trashed, setTrashed] = useState<PasteMatch | null>(null)
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
+  const [sourceState, setSourceState] = useState<'idle' | 'resolving' | 'error'>('idle')
 
   useEffect(() => {
     setValue(initialValue)
   }, [initialValue])
 
-  const cleaned = sanitizeBiliInput(value)
-  const isLink = isValidBiliUrl(cleaned)
-  const bvid = extractBvid(cleaned) || extractBvid(value)
+  const source = recognizeSourceUrl(value)
+  const isLink = source != null
 
   useEffect(() => {
     if (!isLink) {
       setExisting(null)
       setTrashed(null)
+      setActiveJobId(null)
+      setSourceState('idle')
       return
     }
     let cancelled = false
     const controller = new AbortController()
-    void (async () => {
+    setExisting(null)
+    setTrashed(null)
+    setActiveJobId(null)
+    setSourceState('resolving')
+    const timer = window.setTimeout(() => void (async () => {
       try {
-        const [trash, library, search] = await Promise.all([
-          listLibraryTrash({signal: controller.signal}),
-          listLibrary({limit: 40}, {signal: controller.signal}),
-          bvid
-            ? searchLibrary({q: bvid, scope: 'all', limit: 8}, {signal: controller.signal}).catch(() => null)
-            : Promise.resolve(null),
-        ])
+        const resolved = await resolveSource(source?.canonicalUrl ?? value, {signal: controller.signal})
         if (cancelled) return
-        const trashHit = matchByBvid(
-          trash.items.map((item) => ({
-            bvid: item.bvid,
-            documentId: item.document_id,
-            title: item.title || '未命名',
-            daysLeft: item.days_left,
-          })),
-          bvid,
-        )
-        const liveItems: PasteMatch[] = [
-          ...library.items.map((item) => ({
-            documentId: item.document_id || item.id,
-            title: item.title,
-            bvid: item.bvid,
-            savedAt: item.saved_at,
-          })),
-          ...(search?.groups ?? []).map((group) => ({
-            documentId: group.document_id || group.job_id || '',
-            title: group.title,
-            bvid: group.bvid,
-            savedAt: group.saved_at,
-          })),
-        ].filter((item) => item.documentId)
-        const liveHit = matchByBvid(liveItems, bvid)
+        const trashHit = resolved.trashed ? {documentId: resolved.trashed.document_id, title: resolved.trashed.title, daysLeft: resolved.trashed.days_left} : null
+        const liveHit = resolved.existing ? {documentId: resolved.existing.document_id, title: resolved.existing.title, savedAt: resolved.existing.saved_at} : null
         setTrashed(trashHit)
         setExisting(trashHit ? null : liveHit)
+        setActiveJobId(resolved.active_job_id)
+        setSourceState('idle')
       } catch {
         if (!cancelled) {
           setExisting(null)
           setTrashed(null)
+          setActiveJobId(null)
+          setSourceState('error')
         }
       }
-    })()
+    })(), 250)
     return () => {
       cancelled = true
+      window.clearTimeout(timer)
       controller.abort()
     }
-  }, [bvid, isLink])
+  }, [isLink, source?.canonicalUrl, value])
 
   const action = useMemo(
     () => resolvePasteAction({isLink, existing, trashed}),
@@ -100,15 +82,19 @@ export function useOmniComposer(initialValue = '') {
     return options
   }, [runtime?.email_configured])
 
-  const generate = useCallback(async () => {
-    const url = sanitizeBiliInput(value)
-    if (!isValidBiliUrl(url)) {
-      toast.error('请输入有效的 B 站视频链接')
+  const generate = useCallback(async (force = false) => {
+    const url = recognizeSourceUrl(value)?.canonicalUrl
+    if (!url) {
+      toast.error('目前支持 B 站和 YouTube 视频链接')
+      return
+    }
+    if (activeJobId && !force) {
+      navigate(`/jobs/${activeJobId}`)
       return
     }
     setBusy(true)
     try {
-      const response = await createJob(url, newSummaryOptions())
+      const response = await createJob(url, newSummaryOptions(), {dedupe: force ? false : undefined})
       writeActive({jobId: response.job_id, url})
       toast.success(response.deduped ? '这条视频已有笔记' : '已开始生成笔记', undefined, {
         dedupeKey: response.job_id,
@@ -119,7 +105,7 @@ export function useOmniComposer(initialValue = '') {
     } finally {
       setBusy(false)
     }
-  }, [navigate, newSummaryOptions, toast, value])
+  }, [activeJobId, navigate, newSummaryOptions, toast, value])
 
   const restore = useCallback(
     async (documentId: string) => {
@@ -152,8 +138,12 @@ export function useOmniComposer(initialValue = '') {
       await generate()
       return
     }
+    if (/^https?:\/\//i.test(trimmed)) {
+      toast.error('这个链接暂不支持，可使用 B 站、YouTube 或导入文件')
+      return
+    }
     navigate(hrefWithQuery('/search', {q: trimmed, scope: 'all'}))
-  }, [action, generate, navigate, restore, value])
+  }, [action, generate, navigate, restore, toast, value])
 
-  return {value, setValue, action, busy, submit, generate, restore, isLink}
+  return {value, setValue, action, busy, submit, generate, restore, isLink, activeJobId, sourceState}
 }

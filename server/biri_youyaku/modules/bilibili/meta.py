@@ -1,5 +1,4 @@
 import re
-from dataclasses import dataclass
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -9,28 +8,7 @@ from biri_youyaku.modules._cache import ttl_lru
 from biri_youyaku.modules._http import bili_client, bili_get
 
 
-@dataclass(frozen=True)
-class Chapter:
-    start: float
-    end: float | None
-    title: str
-
-
-@dataclass(frozen=True)
-class VideoMeta:
-    url: str
-    bvid: str
-    cid: int | None
-    title: str
-    author: str
-    duration: float
-    subtitle_url: str | None = None
-    chapters: list[Chapter] | None = None
-    mid: int | None = None
-
-    @property
-    def has_subtitle(self) -> bool:
-        return self.subtitle_url is not None
+from biri_youyaku.sources.model import Chapter, MediaMeta as VideoMeta
 
 
 def extract_bvid(url: str) -> str:

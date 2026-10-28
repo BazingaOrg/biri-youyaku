@@ -2,6 +2,21 @@
 import pytest
 
 from biri_youyaku.rate_limit import limiter
+from biri_youyaku.config import settings
+
+
+@pytest.fixture(autouse=True)
+def _isolate_runtime_data(monkeypatch, tmp_path):
+    for field, name in {
+        "db_path": "isolated.db",
+        "audio_storage_dir": "audio",
+        "summary_storage_dir": "summaries",
+        "knowledge_storage_dir": "knowledge",
+        "knowledge_backup_dir": "backups",
+        "distill_storage_dir": "distill",
+        "upload_storage_dir": "imports",
+    }.items():
+        monkeypatch.setattr(settings, field, tmp_path / "runtime" / name)
 
 
 @pytest.fixture(autouse=True)

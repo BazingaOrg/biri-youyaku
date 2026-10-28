@@ -134,7 +134,7 @@ export function SearchPage() {
         />
         {result ? (
           <span className="ml-auto text-[13px] text-muted">
-            {nextCursor ? `已显示 ${result.groups.length} 个视频` : `${result.groups.length} 个视频`}
+            {nextCursor ? `已显示 ${result.groups.length} 份内容` : `${result.groups.length} 份内容`}
           </span>
         ) : null}
       </div>
@@ -170,7 +170,7 @@ export function SearchPage() {
           <p className="text-sm leading-6 text-muted">
             {scopedEmptyHint}
             <br />
-            换个更短的关键词试试；如果它是一个视频链接，直接粘贴就能生成笔记。
+            换个更短的关键词试试；如果它是一份内容链接，直接粘贴就能生成笔记。
           </p>
           <div className="mt-4">
             <Button variant="secondary" onClick={() => navigate('/')}>
@@ -232,7 +232,7 @@ function ResultGroup({
       </div>
       <p className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-1 text-[13px] text-muted">
         <span>
-          <SearchHighlight text={group.author || '未知 UP'} query={query} />
+          <SearchHighlight text={group.author || '未注明作者'} query={query} />
         </span>
         <span>{formatDuration(group.duration ?? undefined)}</span>
         <span>{formatSavedDay(group.saved_at)}</span>
