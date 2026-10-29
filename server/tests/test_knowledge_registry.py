@@ -18,10 +18,12 @@ from biri_youyaku.knowledge import (
     unlink_job,
 )
 from biri_youyaku.knowledge import artifacts as art
+from biri_youyaku.knowledge import reconcile as knowledge_reconcile
 from biri_youyaku.knowledge import repo as knowledge_repo
 from biri_youyaku.knowledge.model import (
     ARTIFACT_KIND_SUMMARY,
     ARTIFACT_KIND_TRANSCRIPT_RAW,
+    MAX_RECONCILE_ATTEMPTS,
     RECONCILE_FAILED,
     RECONCILE_REGISTERED,
     RECONCILE_SKIPPED,
@@ -363,6 +365,68 @@ def test_metadata_repair_retries_only_missing_identity_exhaustion(monkeypatch, t
     assert counts["registered"] == 1
     assert knowledge_repo.get_reconcile(repaired.id).status == RECONCILE_REGISTERED
     assert knowledge_repo.get_reconcile(blocked.id).attempts == 5
+
+
+def test_register_missing_cid_stops_at_attempt_limit_until_repaired(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    job, _ = _make_completed_job(cid=None)
+    for _ in range(MAX_RECONCILE_ATTEMPTS):
+        assert try_register_job(job.id) == RECONCILE_FAILED
+
+    assert try_register_job(job.id) == RECONCILE_FAILED
+    rec = knowledge_repo.get_reconcile(job.id)
+    assert rec is not None
+    assert rec.attempts == MAX_RECONCILE_ATTEMPTS
+
+    jobs_repo.update_meta(
+        job.id,
+        bvid=job.bvid,
+        cid=12345,
+        title=job.title,
+        author=job.author,
+        duration=job.duration,
+        mid=job.mid,
+    )
+    assert try_register_job(job.id) == RECONCILE_REGISTERED
+
+
+def test_reconcile_missing_cid_stops_at_attempt_limit_until_repaired(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    job, _ = _make_completed_job(cid=None)
+    for _ in range(MAX_RECONCILE_ATTEMPTS):
+        assert try_register_job(job.id) == RECONCILE_FAILED
+
+    counts = reconcile_once(limit=10)
+    assert counts["attempted"] == 0
+    assert knowledge_reconcile._should_attempt(job.id) is False
+    rec = knowledge_repo.get_reconcile(job.id)
+    assert rec is not None
+    assert rec.attempts == MAX_RECONCILE_ATTEMPTS
+
+    jobs_repo.update_meta(
+        job.id,
+        bvid=job.bvid,
+        cid=12345,
+        title=job.title,
+        author=job.author,
+        duration=job.duration,
+        mid=job.mid,
+    )
+    assert knowledge_reconcile._should_attempt(job.id) is True
+    counts = reconcile_once(limit=10)
+    assert counts["registered"] == 1
+    assert knowledge_repo.get_reconcile(job.id).status == RECONCILE_REGISTERED
+
+
+def test_register_retry_limit_allows_non_bilibili_empty_source_part(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    job, _ = _make_completed_job(bvid="", cid=None, url="https://youtu.be/video123")
+    for _ in range(MAX_RECONCILE_ATTEMPTS):
+        assert try_register_job(job.id) == RECONCILE_FAILED
+    jobs_repo.set_source(job.id, "youtube", "video123", "")
+
+    assert try_register_job(job.id) == RECONCILE_REGISTERED
+    assert knowledge_repo.get_reconcile(job.id).status == RECONCILE_REGISTERED
 
 
 def test_unlink_noop_without_link(monkeypatch, tmp_path):

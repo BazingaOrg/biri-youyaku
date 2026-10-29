@@ -124,7 +124,7 @@ def _register_job(job: Job) -> str:
                 existing.reason in {"missing_bvid_or_cid", "missing_source_identity"}
                 and provider
                 and source_id
-                and source_part is not None
+                and (provider != "bilibili" or source_part)
             ):
                 return RECONCILE_FAILED
 

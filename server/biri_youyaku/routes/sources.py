@@ -14,7 +14,7 @@ from biri_youyaku.jobs import repo
 from biri_youyaku.jobs.model import JobOptions, JobStatus
 from biri_youyaku.jobs.runner import resume_job, start_job
 from biri_youyaku.rate_limit import limiter
-from biri_youyaku.routes.jobs import _ensure_inflight_capacity, creation_lock
+from biri_youyaku.routes.jobs import _ensure_email_ready, _ensure_inflight_capacity, creation_lock
 from biri_youyaku.sources.capabilities import capabilities
 from biri_youyaku.sources.service import fetch_meta
 from biri_youyaku.sources import uploads
@@ -115,6 +115,9 @@ async def import_file(
     job = None
     async with _upload_lock:
         _ensure_inflight_capacity()
+        options = JobOptions.from_settings(settings)
+        if options.email_enabled:
+            _ensure_email_ready()
         root = Path(settings.upload_storage_dir)
         root.mkdir(parents=True, exist_ok=True)
         size = sum(path.stat().st_size for path in root.iterdir() if path.is_file())
@@ -154,7 +157,6 @@ async def import_file(
                 if existing is not None:
                     return {"ok": True, "job_id": existing.id, "deduped": True}
                 _ensure_inflight_capacity()
-                options = JobOptions.from_settings(settings)
                 job = repo.create_job(
                     source_url or f"upload://{uploaded.sha256}",
                     options,

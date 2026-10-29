@@ -30,6 +30,21 @@ def test_render_prompt_replaces_supported_placeholders():
     )
 
 
+@pytest.mark.parametrize(
+    ("subtitle_source", "expected"),
+    [
+        ("platform", "官方字幕"),
+        ("asr", "ASR 自动识别"),
+        ("automatic", "平台自动字幕"),
+        ("uploaded", "导入字幕"),
+        (None, "未知"),
+        ("unsupported", "未知"),
+    ],
+)
+def test_subtitle_source_label(subtitle_source, expected):
+    assert client.subtitle_source_label(subtitle_source) == expected
+
+
 def test_resolve_temperature_uses_settings_override(monkeypatch):
     monkeypatch.setattr(client, "LLM_TEMPERATURE", 0.7)
 

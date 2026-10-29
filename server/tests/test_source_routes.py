@@ -106,6 +106,57 @@ async def test_import_validation_does_not_leave_files_or_jobs(source_app):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "missing",
+    ["email_webhook_url", "email_webhook_token", "email_default_recipient"],
+)
+async def test_import_email_preflight_matches_job_creation(source_app, monkeypatch, missing):
+    configured = {
+        "email_webhook_url": "https://worker.example",
+        "email_webhook_token": "secret",
+        "email_default_recipient": "reader@example.com",
+    }
+    monkeypatch.setattr(db.settings, "email_enabled", True)
+    for name, value in configured.items():
+        monkeypatch.setattr(db.settings, name, "" if name == missing else value)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=source_app), base_url="http://test"
+    ) as client:
+        job_response = await client.post(
+            "/v1/jobs", json={"url": "https://www.bilibili.com/video/BV123"}
+        )
+        import_response = await client.post(
+            "/v1/imports", params={"filename": "lecture.srt"}, content=SRT
+        )
+    assert job_response.status_code == 400
+    assert import_response.status_code == 400
+    assert import_response.json() == job_response.json()
+    assert not db.settings.upload_storage_dir.exists()
+    assert repo.list_jobs() == []
+
+
+@pytest.mark.asyncio
+async def test_import_accepts_complete_email_config(source_app, monkeypatch):
+    for name, value in {
+        "email_enabled": True,
+        "email_webhook_url": "https://worker.example",
+        "email_webhook_token": "secret",
+        "email_default_recipient": "reader@example.com",
+    }.items():
+        monkeypatch.setattr(db.settings, name, value)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=source_app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/v1/imports", params={"filename": "lecture.srt"}, content=SRT
+        )
+    assert response.status_code == 200, response.text
+    job = repo.get_job(response.json()["job_id"])
+    assert job.options.email_enabled is True
+    assert Path(job.input_path).is_file()
+
+
+@pytest.mark.asyncio
 async def test_import_requires_auth_before_consuming_upload(source_app, monkeypatch):
     monkeypatch.setattr(db.settings, "api_token", "test-only")
     async with httpx.AsyncClient(

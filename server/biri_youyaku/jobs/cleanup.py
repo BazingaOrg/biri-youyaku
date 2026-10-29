@@ -292,7 +292,7 @@ def cleanup_once_sync() -> dict[str, int]:
             audio_removed += 1
 
     for job in repo.list_jobs_by_status(TERMINAL_JOB_STATUSES):
-        if (job.completed_at or job.created_at) < audio_cutoff and discard_job_input(job):
+        if (job.completed_at or job.updated_at) < audio_cutoff and discard_job_input(job):
             input_removed += 1
 
     expired_jobs = repo.list_jobs_by_status_before(AUTO_JOB_DELETE_STATUSES, job_cutoff)

@@ -22,6 +22,15 @@ def _age_job(job_id: str, days: int) -> None:
         )
 
 
+def _age_terminal_job(job_id: str, days: int) -> None:
+    value = repo.now_ms() - days * 24 * 60 * 60 * 1000
+    with db.connect() as connection:
+        connection.execute(
+            "UPDATE jobs SET created_at = ?, updated_at = ?, completed_at = NULL WHERE id = ?",
+            (value, value, job_id),
+        )
+
+
 def _uploaded_job(root: Path):
     job = repo.create_job("upload://input", JobOptions())
     source = root / f"{job.id}.wav"
@@ -40,6 +49,44 @@ async def test_cleanup_removes_expired_uploaded_input_and_clears_metadata(monkey
     job, source = _uploaded_job(tmp_path / "imports")
     repo.update_status(job.id, JobStatus.COMPLETED)
     _age_job(job.id, 2)
+
+    await cleanup.cleanup_once()
+
+    loaded = repo.get_job(job.id)
+    assert loaded is not None
+    assert loaded.input_path is None
+    assert not source.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [JobStatus.FAILED, JobStatus.CANCELED])
+async def test_cleanup_keeps_recently_terminal_uploaded_input(monkeypatch, tmp_path, status):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    monkeypatch.setattr(cleanup.settings, "upload_storage_dir", tmp_path / "imports")
+    monkeypatch.setattr(cleanup, "AUDIO_RETENTION_DAYS", 1)
+    db.init_db()
+    job, source = _uploaded_job(tmp_path / "imports")
+    _age_terminal_job(job.id, 2)
+    repo.update_status(job.id, status)
+
+    await cleanup.cleanup_once()
+
+    loaded = repo.get_job(job.id)
+    assert loaded is not None
+    assert loaded.input_path == str(source)
+    assert source.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [JobStatus.FAILED, JobStatus.CANCELED])
+async def test_cleanup_removes_uploaded_input_after_terminal_retention(monkeypatch, tmp_path, status):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    monkeypatch.setattr(cleanup.settings, "upload_storage_dir", tmp_path / "imports")
+    monkeypatch.setattr(cleanup, "AUDIO_RETENTION_DAYS", 1)
+    db.init_db()
+    job, source = _uploaded_job(tmp_path / "imports")
+    repo.update_status(job.id, status)
+    _age_terminal_job(job.id, 2)
 
     await cleanup.cleanup_once()
 

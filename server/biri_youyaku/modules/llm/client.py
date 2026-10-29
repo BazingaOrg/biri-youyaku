@@ -51,6 +51,10 @@ def subtitle_source_label(subtitle_source: str | None) -> str:
         return "官方字幕"
     if subtitle_source == "asr":
         return "ASR 自动识别"
+    if subtitle_source == "automatic":
+        return "平台自动字幕"
+    if subtitle_source == "uploaded":
+        return "导入字幕"
     return "未知"
 
 

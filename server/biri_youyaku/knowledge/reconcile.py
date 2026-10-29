@@ -15,7 +15,7 @@ from biri_youyaku.knowledge.model import (
     RECONCILE_REGISTERED,
     RECONCILE_SKIPPED,
 )
-from biri_youyaku.knowledge.register import try_register_job
+from biri_youyaku.knowledge.register import _source_identity, try_register_job
 
 logger = logging.getLogger("biri_youyaku.knowledge.reconcile")
 
@@ -42,7 +42,10 @@ def _should_attempt(job_id: str) -> bool:
         if row.reason not in {"missing_bvid_or_cid", "missing_source_identity"}:
             return False
         job = jobs_repo.get_job(job_id)
-        return job is not None and (bool(job.source_id) or (bool((job.bvid or "").strip()) and job.cid is not None))
+        if job is None:
+            return False
+        provider, source_id, source_part = _source_identity(job)
+        return bool(provider and source_id and (provider != "bilibili" or source_part))
     # pending or unknown
     return True
 
