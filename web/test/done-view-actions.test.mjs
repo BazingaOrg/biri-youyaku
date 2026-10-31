@@ -2,16 +2,15 @@ import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import test from 'node:test'
 
-test('completed job copy sits on the tab row and follows the active tab', async () => {
+test('completed job delegates full reading to the formal document page', async () => {
   const doneSource = await readFile(new URL('../src/pages/workspace/DoneView.tsx', import.meta.url), 'utf8')
-  const tabsSource = await readFile(new URL('../src/pages/workspace/SummaryTabs.tsx', import.meta.url), 'utf8')
+  const documentSource = await readFile(new URL('../src/pages/DocumentPage.tsx', import.meta.url), 'utf8')
 
-  assert.match(tabsSource, /tabs\.push\(\['transcript', '字幕'\]\)/)
-  assert.match(tabsSource, /tab === 'notes' \? '复制笔记' : '复制字幕'/)
-  assert.match(tabsSource, /ml-auto inline-flex min-h-9/)
-  assert.match(tabsSource, /transcriptToPlainText\(job\.transcript/)
+  assert.match(doneSource, /docHref\(job.document_id \|\| job.id, \{from: 'task'\}\)/)
+  assert.doesNotMatch(doneSource, /SummaryTabs/)
   assert.doesNotMatch(doneSource, /复制总结全文/)
-  assert.doesNotMatch(doneSource, /onCopy/)
+  assert.match(documentSource, /<LazyMarkdown markdown=\{markdown\} \/>/)
+  assert.match(documentSource, /transcriptToPlainText\(cues\)/)
 })
 
 test('completed job actions stay on the toolbar without a more menu', async () => {

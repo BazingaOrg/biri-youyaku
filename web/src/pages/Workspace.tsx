@@ -23,6 +23,7 @@ import {IconButton} from '../components/IconButton'
 import {PageLoading} from '../components/Spinner'
 import {RunningView} from './workspace/RunningView'
 import {BackButton} from '../components/BackButton'
+import {docHref} from '../lib/docNav'
 
 const DoneView = lazy(() =>
   import('./workspace/DoneView').then((module) => ({default: module.DoneView})),
@@ -113,16 +114,28 @@ export function Workspace({jobId}: WorkspaceProps) {
 
   useTerminalToast(job, jobId)
 
-  // SSE 的 COMPLETED status 不带完整 transcript。实时跑完时，当前 state 可能仍只有
-  // TRANSCRIPT_READY 的 preview；终态到达后拉一次详情 snapshot，补齐字幕全文等大字段。
+  // SSE 的 COMPLETED 可能还没有 document_id。标记刚完成的任务并拉一次详情；
+  // 等 document_id 到位后进入正式阅读页，直接打开历史任务时不自动跳转。
   const previousJobStatusRef = useRef(jobStatus)
+  const pendingReadJobRef = useRef<string | null>(null)
+  useEffect(() => {
+    previousJobStatusRef.current = undefined
+    pendingReadJobRef.current = null
+  }, [jobId])
   useEffect(() => {
     const previous = previousJobStatusRef.current
     previousJobStatusRef.current = jobStatus
-    if (jobStatus === 'COMPLETED' && previous && previous !== 'COMPLETED') {
+    if (jobStatus === 'COMPLETED' && previous && previous !== 'COMPLETED' && jobId) {
+      pendingReadJobRef.current = jobId
       void refresh()
     }
-  }, [jobStatus, refresh])
+  }, [jobId, jobStatus, refresh])
+  useEffect(() => {
+    if (!jobId || jobStatus !== 'COMPLETED' || !job?.document_id) return
+    if (pendingReadJobRef.current !== jobId) return
+    pendingReadJobRef.current = null
+    navigate(docHref(job.document_id, {from: 'task'}), {replace: true})
+  }, [job?.document_id, jobId, jobStatus, navigate])
 
   // ---- 状态恢复 / 跨标签同步 ----
 
@@ -190,7 +203,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     if (!duplicateJob) return
     const {jobId} = duplicateJob
     setDuplicateJob(null)
-    navigate(`/jobs/${jobId}`)
+    navigate(docHref(jobId, {from: 'task'}))
   }
 
   const resummarizeDuplicate = async () => {

@@ -16,7 +16,7 @@ import {
 } from '../lib/api'
 import {formatClock, formatDuration} from '../lib/format'
 import {transcriptToPlainText} from '../lib/subtitle'
-import {backTarget} from '../lib/docNav'
+import {backTarget, docHref} from '../lib/docNav'
 import {useUrlState} from '../hooks/useUrlState'
 import {useToast} from '../components/ToastProvider'
 import {BackButton} from '../components/BackButton'
@@ -77,6 +77,10 @@ export function DocumentPage({id}: {id: string}) {
         try {
           const response = await getJob(id)
           if (token !== loadGeneration.current) return
+          if (response.job.document_id && response.job.document_id !== id) {
+            navigate(`${docHref(response.job.document_id)}${window.location.search}`, {replace: true})
+            return
+          }
           setLegacyJob(response.job)
           setContent(null)
         } catch (jobErr) {
@@ -89,7 +93,7 @@ export function DocumentPage({id}: {id: string}) {
     } finally {
       if (token === loadGeneration.current) setLoading(false)
     }
-  }, [id])
+  }, [id, navigate])
 
   useEffect(() => {
     void load()

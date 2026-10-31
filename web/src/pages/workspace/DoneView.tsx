@@ -6,7 +6,7 @@ import {useToast} from '../../components/ToastProvider'
 import {useRuntimeConfig} from '../../hooks/useRuntimeConfig'
 import {Button, buttonClassName} from '../../components/Button'
 import {MetaBar} from './MetaBar'
-import {SummaryTabs} from './SummaryTabs'
+import {docHref} from '../../lib/docNav'
 
 interface DoneViewProps {
   job: Job
@@ -37,11 +37,7 @@ export function DoneView({
       setResending(false)
     }
   }
-  const readHref = job.document_id
-    ? `/doc/${job.document_id}?from=task`
-    : job.bvid
-      ? `/search?q=${encodeURIComponent(job.bvid)}&scope=all`
-      : '/'
+  const readHref = docHref(job.document_id || job.id, {from: 'task'})
   return (
     <div className="grid min-w-0 gap-4 py-4">
       <div className="flex flex-wrap items-center justify-center gap-2">
@@ -82,7 +78,6 @@ export function DoneView({
           </button>
         </p>
       )}
-      <SummaryTabs job={job} />
     </div>
   )
 }

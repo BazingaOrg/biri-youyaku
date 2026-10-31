@@ -27,7 +27,7 @@ async def test_up_videos_merges_summary_status(monkeypatch):
     monkeypatch.setattr(
         up_route.repo,
         "summary_status_for_bvids",
-        lambda bvids: {"BV1": {"status": "COMPLETED", "job_id": "job-1"}},
+        lambda bvids: {"BV1": {"status": "COMPLETED", "job_id": "job-1", "document_id": "doc-1"}},
     )
 
     result = await up_route.up_videos(None, 123)
@@ -37,9 +37,11 @@ async def test_up_videos_merges_summary_status(monkeypatch):
     by_bvid = {v["bvid"]: v for v in result["videos"]}
     assert by_bvid["BV1"]["status"] == "COMPLETED"
     assert by_bvid["BV1"]["job_id"] == "job-1"
+    assert by_bvid["BV1"]["document_id"] == "doc-1"
     assert by_bvid["BV1"]["url"] == "https://www.bilibili.com/video/BV1"
     assert by_bvid["BV2"]["status"] is None
     assert by_bvid["BV2"]["job_id"] is None
+    assert by_bvid["BV2"]["document_id"] is None
 
 
 @pytest.mark.asyncio

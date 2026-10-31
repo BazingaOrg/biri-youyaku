@@ -741,7 +741,7 @@ def set_error(job_id: str, stage: str, message: str, code: str | None = None) ->
 
 
 def summary_status_for_bvids(bvids: list[str]) -> dict[str, dict[str, Any]]:
-    """给一批 bvid，返回 {bvid: {"status": ..., "job_id": ...}}。
+    """给一批 bvid，返回 {bvid: {"status": ..., "job_id": ..., "document_id": ...}}。
 
     UP 投稿列表只给 bvid（不含 cid/分 P），所以按 **bvid 粒度**匹配。一个 bvid 可能有
     多条任务，按相关性取一条：COMPLETED 优先，其次进行中，最后失败/取消；同档取最新。
@@ -774,7 +774,21 @@ def summary_status_for_bvids(bvids: list[str]) -> dict[str, dict[str, Any]]:
         # 同 rank 时 created_at 大者胜（rows 已按 created_at 升序，直接覆盖即可）。
         if current is None or candidate[0] >= current[0]:
             best[bvid] = candidate
-    return {bvid: {"status": value[2], "job_id": value[3]} for bvid, value in best.items()}
+    job_ids = [value[3] for value in best.values()]
+    document_by_job: dict[str, str] = {}
+    if job_ids:
+        job_placeholders = ",".join("?" for _ in job_ids)
+        with connect() as connection:
+            links = connection.execute(
+                f"SELECT job_id, document_id FROM knowledge_job_links "
+                f"WHERE job_id IN ({job_placeholders}) AND unlinked_at IS NULL",
+                job_ids,
+            ).fetchall()
+        document_by_job = {row["job_id"]: row["document_id"] for row in links}
+    return {
+        bvid: {"status": value[2], "job_id": value[3], "document_id": document_by_job.get(value[3])}
+        for bvid, value in best.items()
+    }
 
 
 def find_completed_by_bvid(bvid: str, *, include_distill: bool = False) -> Job | None:

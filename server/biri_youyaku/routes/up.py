@@ -57,6 +57,7 @@ async def up_videos(
                 "url": f"https://www.bilibili.com/video/{video.bvid}",
                 "status": match["status"] if match else None,
                 "job_id": match["job_id"] if match else None,
+                "document_id": match["document_id"] if match else None,
             }
         )
     return {

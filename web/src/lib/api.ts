@@ -521,6 +521,7 @@ export interface UpVideo {
   /** 该 bvid 是否已有任务及其状态；null = 从未总结过。 */
   status: JobStatus | null
   job_id: string | null
+  document_id?: string | null
 }
 
 export interface UpVideosResponse {

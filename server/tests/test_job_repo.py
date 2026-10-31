@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from biri_youyaku import db
 from biri_youyaku.jobs import repo
 from biri_youyaku.jobs.model import JobOptions, JobStatus
+from biri_youyaku.knowledge import repo as knowledge_repo
 from biri_youyaku.modules.bilibili.meta import Chapter
 from biri_youyaku.modules.bilibili.subtitle import TranscriptItem
 from biri_youyaku.routes import jobs as jobs_route
@@ -436,11 +437,25 @@ def test_summary_status_for_bvids_prefers_completed(monkeypatch, tmp_path):
     completed = make("BV1", JobStatus.COMPLETED)
     # BV2：只有进行中
     running = make("BV2", JobStatus.SUMMARIZING)
+    document_id = knowledge_repo.upsert_document(
+        title="T",
+        author="UP",
+        mid=1,
+        source_url="https://www.bilibili.com/video/BV1",
+        external_bvid="BV1",
+        external_cid=1,
+    )
+    knowledge_repo.upsert_job_link(
+        job_id=completed.id,
+        document_id=document_id,
+        summary_revision_id=None,
+        content_revision_id=None,
+    )
 
     result = repo.summary_status_for_bvids(["BV1", "BV2", "BVnone"])
 
-    assert result["BV1"] == {"status": "COMPLETED", "job_id": completed.id}
-    assert result["BV2"] == {"status": "SUMMARIZING", "job_id": running.id}
+    assert result["BV1"] == {"status": "COMPLETED", "job_id": completed.id, "document_id": document_id}
+    assert result["BV2"] == {"status": "SUMMARIZING", "job_id": running.id, "document_id": None}
     assert "BVnone" not in result
     assert failed.id != completed.id  # sanity
 

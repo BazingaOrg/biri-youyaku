@@ -5,6 +5,7 @@ import {ClampText} from '../../components/ClampText'
 import {type JobStatus, type UpVideo} from '../../lib/api'
 import {formatDay, formatDuration} from '../../lib/format'
 import {isRunning} from '../../lib/jobStatus'
+import {docHref} from '../../lib/docNav'
 
 export function VideoRow({
   video,
@@ -24,6 +25,7 @@ export function VideoRow({
   const done = status === 'COMPLETED'
   const running = status != null && isRunning(status)
   const failed = status === 'FAILED' || status === 'CANCELED'
+  const readId = video.document_id || jobId
 
   return (
     <li
@@ -59,14 +61,16 @@ export function VideoRow({
       </div>
 
       <div className="flex items-center justify-end">
-        {done ? (
+        {done && readId ? (
           <Link
-            href={`/jobs/${jobId}`}
+            href={docHref(readId, {from: 'up'})}
             className={buttonClassName({variant: 'secondary', size: 'sm', className: 'text-brand'})}
           >
             <Check size={14} />
-            查看
+            阅读笔记
           </Link>
+        ) : done ? (
+          <span className="px-2 text-xs text-muted">已完成</span>
         ) : running && jobId ? (
           <Link
             href={`/jobs/${jobId}`}

@@ -1,5 +1,5 @@
 import {Link, Search, X} from 'lucide-react'
-import {useEffect, type FormEvent} from 'react'
+import {useEffect, type FormEvent, type ReactNode} from 'react'
 import {Button} from './Button'
 import {formatSavedDay} from '../lib/format'
 import type {PasteAction} from '../lib/pasteAction'
@@ -17,6 +17,7 @@ interface OmniBarProps {
   onClear?: () => void
   sourceState?: 'idle' | 'resolving' | 'error'
   activeJobId?: string | null
+  trailing?: ReactNode
 }
 
 export function OmniBar({
@@ -32,6 +33,7 @@ export function OmniBar({
   onClear,
   sourceState = 'idle',
   activeJobId = null,
+  trailing,
 }: OmniBarProps) {
   const isLink = action.kind !== 'text'
   const showGenerate = action.primary === 'generate'
@@ -88,6 +90,7 @@ export function OmniBar({
             <X size={16} />
           </button>
         ) : null}
+        {trailing}
         {showGenerate ? (
           <Button
             type="submit"
