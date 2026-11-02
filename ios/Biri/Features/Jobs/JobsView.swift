@@ -4,6 +4,7 @@ struct JobsView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel = JobsViewModel()
+    @State private var deletionConfirmation: JobsDeletionConfirmation?
 
     var body: some View {
         List {
@@ -16,28 +17,27 @@ struct JobsView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+            } header: {
+                HStack {
+                    Text("任务记录")
+                    Spacer()
+                    Button(viewModel.isSelecting ? "完成" : "选择") {
+                        viewModel.toggleSelection()
+                    }
+                    .font(.footnote)
+                    .disabled(viewModel.isDeleting)
+                }
             }
 
             ForEach(viewModel.visibleJobs) { job in
-                NavigationLink(value: job.id) {
-                    VStack(alignment: .leading, spacing: 9) {
-                        Text(job.displayTitle)
-                            .font(.headline)
-                            .lineLimit(2)
-                        HStack(spacing: 8) {
-                            if let author = job.author, !author.isEmpty {
-                                Text(author).lineLimit(1)
-                                Text("·")
+                row(for: job)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if !job.status.isActive, !viewModel.isSelecting {
+                            Button("删除", systemImage: "trash", role: .destructive) {
+                                deletionConfirmation = .job(job)
                             }
-                            RelativeDateText(milliseconds: job.updatedAt).fixedSize()
-                            Spacer(minLength: 8)
-                            JobStatusBadge(status: job.status)
                         }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     }
-                    .padding(.vertical, 3)
-                }
             }
 
             if viewModel.nextCursor != nil && !viewModel.visibleJobs.isEmpty {
@@ -51,7 +51,46 @@ struct JobsView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .navigationTitle("任务")
+        .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .bottom) {
+            if viewModel.isSelecting {
+                HStack(spacing: 16) {
+                    Text("已选择 \(viewModel.selectedCount) 项")
+                        .font(.subheadline)
+                    Spacer()
+                    Button("删除任务记录", role: .destructive) {
+                        deletionConfirmation = .selected
+                    }
+                    .disabled(!viewModel.canDeleteSelection)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(.bar)
+            }
+        }
+        .confirmationDialog(
+            "删除任务记录？",
+            item: $deletionConfirmation,
+            titleVisibility: .visible
+        ) { confirmation in
+            switch confirmation {
+            case .selected:
+                Button("删除 \(viewModel.selectedCount) 条任务记录", role: .destructive) {
+                    Task { await deleteSelected() }
+                }
+            case let .job(job):
+                Button("删除任务记录", role: .destructive) {
+                    Task { await delete(job) }
+                }
+            }
+        } message: { confirmation in
+            switch confirmation {
+            case .selected:
+                Text("将删除选中的任务记录。已同步到资料库的笔记会保留；仅存在于旧任务中的笔记也会一并删除。此操作无法撤销。")
+            case let .job(job):
+                Text("将删除“\(job.displayTitle)”的任务记录。已同步到资料库的笔记会保留；仅存在于旧任务中的笔记也会一并删除。此操作无法撤销。")
+            }
+        }
         .task(id: viewModel.filter) { await load() }
         .task(id: viewModel.pollKey) {
             guard viewModel.hasActiveJobs else { return }
@@ -72,6 +111,28 @@ struct JobsView: View {
             ReaderView(destination: destination)
         }
         .overlay { stateOverlay }
+    }
+
+    @ViewBuilder
+    private func row(for job: Job) -> some View {
+        if viewModel.isSelecting {
+            Button {
+                viewModel.toggleSelection(for: job)
+            } label: {
+                JobRow(
+                    job: job,
+                    isSelected: viewModel.selectedIDs.contains(job.id),
+                    showsSelection: true
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.isDeleting)
+            .accessibilityHint(job.status.isActive ? "进行中的任务需先取消，不能删除" : "切换任务选择")
+        } else {
+            NavigationLink(value: job.id) {
+                JobRow(job: job, isSelected: false, showsSelection: false)
+            }
+        }
     }
 
     @ViewBuilder
@@ -105,6 +166,76 @@ struct JobsView: View {
     private func loadMore() async {
         guard let service = try? appModel.makeService() else { return }
         await viewModel.loadMore(using: service)
+    }
+
+    private func deleteSelected() async {
+        guard let service = try? appModel.makeService() else {
+            viewModel.errorMessage = APIError.notConfigured.localizedDescription
+            return
+        }
+        await viewModel.deleteSelected(using: service)
+    }
+
+    private func delete(_ job: Job) async {
+        guard let service = try? appModel.makeService() else {
+            viewModel.errorMessage = APIError.notConfigured.localizedDescription
+            return
+        }
+        await viewModel.delete(job: job, using: service)
+    }
+}
+
+private enum JobsDeletionConfirmation: Identifiable {
+    case selected
+    case job(Job)
+
+    var id: String {
+        switch self {
+        case .selected: "selected"
+        case let .job(job): job.id
+        }
+    }
+}
+
+private struct JobRow: View {
+    let job: Job
+    let isSelected: Bool
+    let showsSelection: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            if showsSelection {
+                Image(systemName: selectionImage)
+                    .font(.title3)
+                    .foregroundStyle(job.status.isActive ? Color.secondary : Color.accentColor)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 9) {
+                Text(job.displayTitle)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                HStack(spacing: 8) {
+                    if let author = job.author, !author.isEmpty {
+                        Text(author).lineLimit(1)
+                        Text("·")
+                    }
+                    RelativeDateText(milliseconds: job.updatedAt).fixedSize()
+                    Spacer(minLength: 8)
+                    JobStatusBadge(status: job.status)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 3)
+        .contentShape(Rectangle())
+    }
+
+    private var selectionImage: String {
+        if job.status.isActive { return "circle.slash" }
+        return isSelected ? "checkmark.circle.fill" : "circle"
     }
 }
 

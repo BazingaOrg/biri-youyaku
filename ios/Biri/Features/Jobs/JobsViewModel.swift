@@ -4,11 +4,18 @@ import Observation
 @MainActor
 @Observable
 final class JobsViewModel {
-    var filter: JobFilter = .all
+    var filter: JobFilter = .all {
+        didSet {
+            if oldValue != filter { exitSelection() }
+        }
+    }
     private(set) var jobs: [Job] = []
     private(set) var nextCursor: CursorValue?
+    private(set) var selectedIDs: Set<String> = []
+    var isSelecting = false
     var isLoading = false
     var isLoadingMore = false
+    var isDeleting = false
     var errorMessage: String?
 
     private var generation = 0
@@ -16,6 +23,71 @@ final class JobsViewModel {
     var visibleJobs: [Job] { jobs.filter(filter.matches) }
     var hasActiveJobs: Bool { visibleJobs.contains { $0.status.isActive } }
     var pollKey: String { "\(filter.rawValue)-\(hasActiveJobs)" }
+    var selectedCount: Int { deletableSelectedJobs.count }
+    var canDeleteSelection: Bool { selectedCount > 0 && !isDeleting }
+
+    private var deletableSelectedJobs: [Job] {
+        visibleJobs.filter { selectedIDs.contains($0.id) && !$0.status.isActive }
+    }
+
+    func toggleSelection() {
+        isSelecting.toggle()
+        if !isSelecting { selectedIDs.removeAll() }
+    }
+
+    func exitSelection() {
+        isSelecting = false
+        selectedIDs.removeAll()
+    }
+
+    func toggleSelection(for job: Job) {
+        guard isSelecting, !job.status.isActive, !isDeleting else { return }
+        if selectedIDs.contains(job.id) {
+            selectedIDs.remove(job.id)
+        } else {
+            selectedIDs.insert(job.id)
+        }
+    }
+
+    func deleteSelected(using service: any JobMutationServicing) async {
+        let ids = deletableSelectedJobs.map(\.id)
+        await delete(ids: ids, using: service, exitSelectionAfterward: true)
+    }
+
+    func delete(job: Job, using service: any JobMutationServicing) async {
+        guard !job.status.isActive else { return }
+        await delete(ids: [job.id], using: service, exitSelectionAfterward: false)
+    }
+
+    private func delete(
+        ids: [String],
+        using service: any JobMutationServicing,
+        exitSelectionAfterward: Bool
+    ) async {
+        guard !ids.isEmpty, !isDeleting else { return }
+        isDeleting = true
+        errorMessage = nil
+        defer { isDeleting = false }
+
+        do {
+            try await service.deleteJobs(ids: ids)
+            removeDeletedJobs(ids: ids)
+            if exitSelectionAfterward { exitSelection() }
+        } catch {
+            if let batchError = error as? JobBatchDeleteError {
+                removeDeletedJobs(ids: batchError.successfulIDs)
+            }
+            guard !error.isRequestCancellation else { return }
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func removeDeletedJobs(ids: [String]) {
+        let deletedIDs = Set(ids)
+        jobs.removeAll { deletedIDs.contains($0.id) }
+        firstPageIDs.subtract(deletedIDs)
+        selectedIDs.subtract(deletedIDs)
+    }
 
     func load(using service: any BiriServicing, quietly: Bool = false) async {
         generation += 1
@@ -55,6 +127,8 @@ final class JobsViewModel {
                 nextCursor = page.nextCursor
             }
             firstPageIDs = Set(firstPageJobs.map(\.id))
+            let nonActiveIDs = Set(jobs.filter { !$0.status.isActive }.map(\.id))
+            selectedIDs.formIntersection(nonActiveIDs)
         } catch {
             guard currentGeneration == generation, !error.isRequestCancellation else { return }
             errorMessage = error.localizedDescription
@@ -74,34 +148,6 @@ final class JobsViewModel {
             self.nextCursor = page.nextCursor
         } catch {
             if currentGeneration == generation, !error.isRequestCancellation { errorMessage = error.localizedDescription }
-        }
-    }
-}
-
-@MainActor
-@Observable
-final class JobDetailViewModel {
-    let jobID: String
-    private(set) var job: Job?
-    var isLoading = false
-    var errorMessage: String?
-
-    private var generation = 0
-    init(jobID: String) { self.jobID = jobID }
-
-    func load(using service: any BiriServicing, quietly: Bool = false) async {
-        generation += 1
-        let currentGeneration = generation
-        if !quietly { isLoading = true }
-        errorMessage = nil
-        defer { if currentGeneration == generation { isLoading = false } }
-        do {
-            let loaded = try await service.job(id: jobID)
-            guard currentGeneration == generation else { return }
-            job = loaded
-        } catch {
-            guard currentGeneration == generation, !error.isRequestCancellation else { return }
-            errorMessage = error.localizedDescription
         }
     }
 }

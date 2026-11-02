@@ -82,7 +82,7 @@ final class AppModel {
     var isConfigured: Bool { serverURL != nil }
     var hasSavedToken: Bool { keychain.readToken() != nil }
 
-    func makeService() throws -> any BiriServicing {
+    func makeService() throws -> APIClient {
         guard let serverURL else { throw APIError.notConfigured }
         return APIClient(baseURL: serverURL, token: keychain.readToken())
     }
