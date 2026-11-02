@@ -1,0 +1,992 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="claude:viewport-fit-sides" content="cover">
+  <title>笔哩 iOS 原型</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@600;700&display=swap">
+  <style>
+    /* Native app canvas in the center, flow index and rationale beside it. */
+    :root {
+      color-scheme: light;
+      --bg: #f5f3f5;
+      --surface: #ffffff;
+      --surface-2: #eeebef;
+      --ink: #262229;
+      --muted: #756e79;
+      --line: #ded8e0;
+      --brand: #b33f66;
+      --brand-soft: #f5e5eb;
+      --success: #31785a;
+      --danger: #c64552;
+      --warning: #9a661c;
+      --on-accent: #ffffff;
+      --device: #1c181e;
+      --shadow: rgba(46, 31, 42, .14);
+      --font-ui: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+      --font-display: "Noto Serif SC", "Songti SC", serif;
+      --font-native: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --bg: #171419;
+        --surface: #242027;
+        --surface-2: #302b33;
+        --ink: #f3eef4;
+        --muted: #b0a7b4;
+        --line: #403946;
+        --brand: #f29cb4;
+        --brand-soft: #492c3a;
+        --success: #7fc6a5;
+        --danger: #ff8d98;
+        --warning: #e4b56d;
+        --on-accent: #24161d;
+        --device: #09080a;
+        --shadow: rgba(0, 0, 0, .34);
+      }
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #171419;
+      --surface: #242027;
+      --surface-2: #302b33;
+      --ink: #f3eef4;
+      --muted: #b0a7b4;
+      --line: #403946;
+      --brand: #f29cb4;
+      --brand-soft: #492c3a;
+      --success: #7fc6a5;
+      --danger: #ff8d98;
+      --warning: #e4b56d;
+      --on-accent: #24161d;
+      --device: #09080a;
+      --shadow: rgba(0, 0, 0, .34);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100%;
+      padding-left: max(16px, env(safe-area-inset-left, 0px));
+      padding-right: max(16px, env(safe-area-inset-right, 0px));
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font-ui);
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible { outline: 3px solid color-mix(in srgb, var(--brand) 48%, transparent); outline-offset: 3px; }
+    button { -webkit-tap-highlight-color: transparent; }
+    .page-header {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding-block: 28px 22px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .brand-mark { width: 46px; height: 46px; border-radius: 12px; box-shadow: 0 5px 16px var(--shadow); }
+    .header-copy { display: grid; gap: 3px; }
+    .header-copy h1 { margin: 0; font: 700 24px/1.25 var(--font-display); letter-spacing: -.02em; }
+    .header-copy p { margin: 0; color: var(--muted); font-size: 13px; }
+    .scope-badge { margin-left: auto; padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .workspace {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding-bottom: 40px;
+      display: grid;
+      grid-template-columns: 210px 410px minmax(250px, 1fr);
+      align-items: start;
+      gap: 28px;
+    }
+    .flow-index { position: sticky; top: 20px; display: grid; gap: 18px; }
+    .flow-group { display: grid; gap: 5px; }
+    .flow-label { padding: 0 10px 5px; color: var(--muted); font-size: 12px; font-weight: 600; }
+    .flow-button {
+      width: 100%;
+      min-height: 42px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      text-align: left;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .flow-button:hover { background: var(--surface-2); }
+    .flow-button.active { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+    .flow-button svg { width: 17px; height: 17px; flex: none; }
+    .prototype-caption { padding: 0 10px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+    .device-wrap { display: grid; justify-items: center; gap: 12px; }
+    .device {
+      width: 410px;
+      height: 864px;
+      padding: 10px;
+      border-radius: 54px;
+      background: var(--device);
+      box-shadow: 0 24px 60px var(--shadow), inset 0 0 0 1px color-mix(in srgb, var(--surface) 15%, transparent);
+    }
+    .phone {
+      position: relative;
+      height: 100%;
+      overflow: hidden;
+      border-radius: 44px;
+      background: var(--surface);
+      color: var(--ink);
+      font-family: var(--font-native);
+      font-size: 14px;
+      isolation: isolate;
+    }
+    .device-note { color: var(--muted); font-size: 12px; }
+    .screen { height: 100%; display: flex; flex-direction: column; background: var(--surface); }
+    .statusbar {
+      height: 36px;
+      flex: none;
+      padding: 10px 22px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .status-icons { display: flex; align-items: center; gap: 6px; }
+    .status-icons svg { width: 15px; height: 15px; }
+    .nav {
+      min-height: 50px;
+      flex: none;
+      padding: 7px 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid transparent;
+    }
+    .nav.large { min-height: 62px; align-items: flex-end; padding-bottom: 9px; }
+    .nav.inline { border-bottom-color: var(--line); }
+    .nav h2 { margin: 0; font-size: 29px; line-height: 1.15; letter-spacing: -.5px; text-wrap: balance; }
+    .nav.inline h2 { font-size: 16px; letter-spacing: 0; text-align: center; flex: 1; }
+    .nav-spacer { flex: 1; }
+    .icon-button {
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      display: inline-grid;
+      place-items: center;
+      flex: none;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--brand);
+      cursor: pointer;
+    }
+    .icon-button:hover { background: var(--brand-soft); }
+    .icon-button svg { width: 21px; height: 21px; }
+    .text-button {
+      min-height: 36px;
+      padding: 6px 0;
+      border: 0;
+      background: transparent;
+      color: var(--brand);
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .text-button.danger { color: var(--danger); }
+    .back-button { display: inline-flex; align-items: center; gap: 2px; min-width: 54px; }
+    .back-button svg { width: 18px; height: 18px; }
+    .content { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+    .content::-webkit-scrollbar { display: none; }
+    .content.grouped { background: var(--bg); }
+    .content-pad { padding: 0 18px 22px; display: grid; gap: 16px; }
+    .search-box {
+      height: 38px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 11px;
+      background: var(--surface-2);
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .search-box svg { width: 17px; height: 17px; flex: none; }
+    .search-box strong { color: var(--ink); font-weight: 400; }
+    .search-box .cancel { margin-left: auto; color: var(--brand); font-size: 12px; }
+    .chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip {
+      min-height: 32px;
+      padding: 6px 11px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      flex: none;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .chip.active { border-color: transparent; background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+    .chip svg { width: 13px; height: 13px; }
+    .segmented { padding: 3px; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; border-radius: 10px; background: var(--surface-2); }
+    .segment { min-height: 30px; padding: 5px 7px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
+    .segment.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 4px var(--shadow); }
+    .section-title { padding: 2px 2px 0; display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; font-weight: 600; }
+    .active-strip {
+      width: 100%;
+      padding: 13px 14px;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      border: 0;
+      border-radius: 13px;
+      background: var(--brand-soft);
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+    }
+    .active-strip svg { width: 21px; height: 21px; color: var(--brand); flex: none; }
+    .active-strip .grow, .row-copy { flex: 1; min-width: 0; }
+    .active-strip strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+    .active-strip small { display: block; margin-top: 3px; color: var(--brand); font-size: 11px; }
+    .list { overflow: hidden; border-top: 1px solid var(--line); }
+    .note-row, .task-row, .video-row, .trash-row {
+      position: relative;
+      width: 100%;
+      padding: 14px 0;
+      display: flex;
+      gap: 12px;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+      color: var(--ink);
+      text-align: left;
+    }
+    button.note-row, button.task-row, button.video-row { cursor: pointer; }
+    .row-copy { display: grid; align-content: start; gap: 6px; }
+    .row-title { font-size: 15px; font-weight: 600; line-height: 1.45; text-wrap: pretty; }
+    .row-summary { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 9px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .meta .spacer { flex: 1; }
+    .tag-row { display: flex; flex-wrap: wrap; gap: 5px; }
+    .tag { padding: 3px 7px; border-radius: 6px; background: var(--surface-2); color: var(--muted); font-size: 10px; }
+    button.tag { border: 0; cursor: pointer; }
+    .status { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 4px 7px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-size: 10px; font-weight: 600; white-space: nowrap; }
+    .status.success { background: color-mix(in srgb, var(--success) 12%, var(--surface)); color: var(--success); }
+    .status.failed { background: color-mix(in srgb, var(--danger) 12%, var(--surface)); color: var(--danger); }
+    .status.neutral { background: var(--surface-2); color: var(--muted); }
+    .status svg { width: 12px; height: 12px; }
+    .tabbar {
+      height: 67px;
+      flex: none;
+      padding: 7px 20px 12px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid var(--line);
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+      backdrop-filter: blur(18px);
+    }
+    .tab { display: grid; place-items: center; align-content: center; gap: 3px; border: 0; background: transparent; color: var(--muted); font-size: 10px; cursor: pointer; }
+    .tab.active { color: var(--brand); }
+    .tab svg { width: 22px; height: 22px; }
+    .home-indicator { position: absolute; z-index: 20; bottom: 5px; left: 50%; width: 120px; height: 4px; transform: translateX(-50%); border-radius: 999px; background: var(--ink); opacity: .75; pointer-events: none; }
+    .search-result { padding: 15px 0; display: grid; gap: 10px; border-bottom: 1px solid var(--line); }
+    .hit {
+      width: 100%;
+      padding: 11px 12px;
+      display: grid;
+      gap: 6px;
+      border: 0;
+      border-radius: 10px;
+      background: var(--surface-2);
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+    }
+    .hit-label { display: flex; justify-content: space-between; color: var(--brand); font-size: 11px; font-weight: 600; }
+    .hit p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+    mark { padding: 0 2px; border-radius: 3px; background: color-mix(in srgb, var(--brand) 20%, transparent); color: var(--ink); }
+    .task-check { width: 22px; height: 22px; margin-top: 3px; display: grid; place-items: center; flex: none; border: 1.5px solid var(--line); border-radius: 50%; color: var(--surface); }
+    .task-check.checked { border-color: var(--brand); background: var(--brand); }
+    .task-check svg { width: 14px; height: 14px; }
+    .selection-bar { padding: 12px 18px 18px; display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--line); background: var(--surface); }
+    .selection-bar strong { flex: 1; font-size: 13px; }
+    .detail-head { display: grid; gap: 10px; text-align: center; justify-items: center; padding-block: 6px 4px; }
+    .detail-head h3 { margin: 0; font-size: 21px; line-height: 1.4; text-wrap: balance; }
+    .detail-head p { margin: 0; color: var(--muted); font-size: 12px; }
+    .progress-card { padding: 16px; display: grid; gap: 14px; border-radius: 14px; background: var(--surface); }
+    .step { display: grid; grid-template-columns: 24px 1fr auto; align-items: start; gap: 10px; }
+    .step-icon { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--muted); }
+    .step.done .step-icon { background: color-mix(in srgb, var(--success) 14%, var(--surface)); color: var(--success); }
+    .step.current .step-icon { background: var(--brand-soft); color: var(--brand); }
+    .step-icon svg { width: 13px; height: 13px; }
+    .step-copy strong { display: block; font-size: 13px; }
+    .step-copy small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .step-value { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .progress-track { height: 5px; margin-top: 9px; overflow: hidden; border-radius: 99px; background: var(--surface-2); }
+    .progress-track > span { display: block; height: 100%; border-radius: inherit; background: var(--brand); }
+    .live-preview { padding: 15px; display: grid; gap: 9px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    .live-preview h4 { margin: 0; font-size: 13px; }
+    .live-preview p { margin: 0; color: var(--muted); font: 12px/1.75 var(--font-display); }
+    .live-dot { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--brand); }
+    .primary-button, .secondary-button {
+      width: 100%;
+      min-height: 46px;
+      padding: 11px 16px;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .primary-button { border: 0; background: var(--brand); color: var(--on-accent); }
+    .secondary-button { border: 1px solid var(--line); background: var(--surface); color: var(--brand); }
+    .secondary-button.danger { color: var(--danger); }
+    .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .error-box { padding: 13px; display: grid; gap: 7px; border-radius: 12px; background: color-mix(in srgb, var(--danger) 10%, var(--surface)); color: var(--danger); font-size: 12px; line-height: 1.55; }
+    .error-box code { color: var(--muted); font-size: 10px; user-select: all; }
+    .reader { font-family: var(--font-display); }
+    .reader-title { margin: 0; font-size: 24px; line-height: 1.45; text-wrap: balance; }
+    .reader-body { display: grid; gap: 16px; font-size: calc(14px * var(--reader-scale, 1)); line-height: 1.95; }
+    .reader-body p, .reader-body h3 { margin: 0; }
+    .reader-body h3 { padding-top: 8px; font-size: 17px; }
+    .match-bar { margin: 0 18px 12px; padding: 9px 12px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); box-shadow: 0 6px 20px var(--shadow); color: var(--muted); font-size: 11px; }
+    .match-bar strong { flex: 1; color: var(--ink); font-weight: 500; }
+    .match-bar .icon-button { width: 28px; height: 28px; }
+    .author-card { padding: 16px 0; display: flex; align-items: center; gap: 12px; }
+    .avatar { width: 52px; height: 52px; display: grid; place-items: center; flex: none; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font: 700 22px var(--font-display); }
+    .author-card h3 { margin: 0 0 4px; font-size: 18px; }
+    .author-card p { margin: 0; color: var(--muted); font-size: 11px; }
+    .video-row { align-items: flex-start; }
+    .video-thumb { width: 88px; aspect-ratio: 16/10; max-width: 100%; display: grid; place-items: center; flex: none; border-radius: 8px; background: var(--surface-2); color: var(--muted); }
+    .video-thumb svg { width: 24px; height: 24px; }
+    .video-row .row-title { font-size: 13px; }
+    .row-action { align-self: center; flex: none; padding: 7px 9px; border: 0; border-radius: 8px; background: var(--brand-soft); color: var(--brand); font-size: 11px; font-weight: 600; cursor: pointer; }
+    .trash-row { align-items: center; }
+    .days { flex: none; color: var(--warning); font-size: 11px; white-space: nowrap; }
+    .swipe-demo { display: grid; grid-template-columns: 1fr 74px 74px; align-items: stretch; overflow: hidden; border-bottom: 1px solid var(--line); }
+    .swipe-demo .trash-row { padding-left: 4px; border: 0; }
+    .swipe-action { display: grid; place-items: center; border: 0; color: var(--on-accent); font-size: 12px; cursor: pointer; }
+    .swipe-action.restore { background: var(--brand); }
+    .swipe-action.delete { background: var(--danger); }
+    .sheet-backdrop { position: absolute; z-index: 30; inset: 0; display: flex; align-items: flex-end; background: rgba(10, 7, 11, .38); }
+    .sheet { width: 100%; max-height: 88%; overflow-y: auto; padding: 10px 18px 24px; border-radius: 22px 22px 0 0; background: var(--surface); box-shadow: 0 -12px 40px var(--shadow); }
+    .grabber { width: 38px; height: 5px; margin: 0 auto 16px; border-radius: 99px; background: var(--line); }
+    .sheet-head { display: flex; align-items: center; gap: 10px; }
+    .sheet-head h3 { margin: 0; flex: 1; font-size: 19px; }
+    .sheet p { color: var(--muted); font-size: 12px; line-height: 1.65; }
+    .field { display: grid; gap: 7px; }
+    .field label { color: var(--muted); font-size: 11px; }
+    .url-field { min-height: 45px; padding: 10px 12px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--brand); border-radius: 11px; background: var(--surface); color: var(--ink); font-size: 12px; }
+    .url-field span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .url-field svg { width: 17px; height: 17px; flex: none; color: var(--brand); }
+    .source-preview { padding: 12px; display: flex; align-items: center; gap: 10px; border-radius: 11px; background: var(--surface-2); }
+    .source-preview svg { width: 22px; height: 22px; color: var(--brand); }
+    .source-preview strong { display: block; font-size: 12px; }
+    .source-preview small { display: block; margin-top: 3px; color: var(--success); font-size: 10px; }
+    .toggle-row { min-height: 42px; display: flex; align-items: center; gap: 12px; }
+    .toggle-row span { flex: 1; font-size: 13px; }
+    .toggle { width: 42px; height: 25px; padding: 2px; border: 0; border-radius: 99px; background: var(--success); cursor: pointer; }
+    .toggle::after { content: ""; display: block; width: 21px; height: 21px; margin-left: 17px; border-radius: 50%; background: #fff; }
+    .sheet-actions { display: grid; gap: 9px; margin-top: 14px; }
+    .action-list { margin: 14px -18px -24px; display: grid; }
+    .action-list button { min-height: 50px; padding: 12px 18px; border: 0; border-top: 1px solid var(--line); background: var(--surface); color: var(--brand); cursor: pointer; }
+    .action-list button.danger { color: var(--danger); }
+    .action-list button.cancel { color: var(--ink); font-weight: 600; }
+    .toast { position: absolute; z-index: 50; left: 18px; right: 18px; bottom: 78px; min-height: 45px; padding: 11px 14px; display: flex; align-items: center; gap: 10px; border-radius: 12px; background: var(--device); color: #f8f3f8; box-shadow: 0 8px 28px var(--shadow); font-size: 12px; }
+    .toast span { flex: 1; }
+    .toast button { border: 0; background: transparent; color: #f29cb4; font-weight: 600; cursor: pointer; }
+    .notes-panel { position: sticky; top: 20px; display: grid; gap: 20px; }
+    .notes-head { display: grid; gap: 7px; }
+    .notes-head .kicker { color: var(--brand); font-size: 12px; font-weight: 600; }
+    .notes-head h2 { margin: 0; font: 700 23px/1.35 var(--font-display); text-wrap: balance; }
+    .notes-head p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .note-section { padding-top: 16px; display: grid; gap: 9px; border-top: 1px solid var(--line); }
+    .note-section h3 { margin: 0; font-size: 13px; }
+    .note-section ul { margin: 0; padding: 0; display: grid; gap: 9px; list-style: none; }
+    .note-section li { position: relative; padding-left: 15px; color: var(--muted); font-size: 12px; line-height: 1.75; }
+    .note-section li::before { content: ""; position: absolute; top: .75em; left: 0; width: 5px; height: 5px; border-radius: 50%; background: var(--brand); }
+    .native-note { padding: 13px 14px; border-left: 3px solid var(--brand); background: var(--brand-soft); color: var(--muted); font-size: 12px; line-height: 1.7; }
+    .implementation-order { max-width: 1180px; margin: 0 auto; padding: 24px 0 36px; border-top: 1px solid var(--line); display: grid; grid-template-columns: 180px 1fr; gap: 24px; }
+    .implementation-order h2 { margin: 0; font: 700 18px var(--font-display); }
+    .order-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .order-item { display: grid; gap: 5px; }
+    .order-item strong { color: var(--brand); font-size: 12px; }
+    .order-item span { color: var(--muted); font-size: 12px; line-height: 1.65; }
+    .load-more { width: 100%; min-height: 46px; border: 0; background: transparent; color: var(--brand); font-size: 13px; font-weight: 600; cursor: pointer; }
+    .settings-group { overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
+    .settings-row { width: 100%; min-height: 49px; padding: 10px 13px; display: flex; align-items: center; gap: 10px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; }
+    .settings-row:last-child { border-bottom: 0; }
+    button.settings-row { cursor: pointer; }
+    .settings-row .grow { flex: 1; min-width: 0; }
+    .settings-row strong { display: block; font-size: 13px; font-weight: 500; }
+    .settings-row small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+    .settings-value { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .setting-icon { width: 29px; height: 29px; display: grid; place-items: center; flex: none; border-radius: 8px; background: var(--brand-soft); color: var(--brand); }
+    .setting-icon svg { width: 16px; height: 16px; }
+    .form-field { display: grid; gap: 7px; color: var(--muted); font-size: 11px; }
+    .form-field input { width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); color: var(--ink); font-size: 12px; }
+    .info-band { padding: 12px 13px; border-radius: 11px; background: var(--surface-2); color: var(--muted); font-size: 11px; line-height: 1.6; }
+    .app-icon-large { width: 82px; height: 82px; border-radius: 20px; box-shadow: 0 8px 24px var(--shadow); }
+    .empty-state { min-height: 420px; padding: 52px 20px; display: grid; align-content: center; justify-items: center; gap: 12px; text-align: center; }
+    .empty-state h3 { margin: 0; font-size: 20px; }
+    .empty-state p { margin: 0; max-width: 270px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+    .skeletons { display: grid; gap: 22px; padding-top: 12px; }
+    .skeleton { display: grid; gap: 9px; }
+    .skeleton span { display: block; height: 12px; border-radius: 6px; background: var(--surface-2); }
+    .skeleton span:first-child { width: 84%; height: 17px; }
+    .skeleton span:last-child { width: 52%; }
+    .cue-list { display: grid; }
+    .cue { padding: 12px 2px; display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 10px; border-bottom: 1px solid var(--line); font-size: calc(13px * var(--reader-scale, 1)); line-height: 1.7; }
+    .timestamp { padding: 2px 0; border: 0; background: transparent; color: var(--brand); text-align: left; font-size: 11px; font-variant-numeric: tabular-nums; cursor: pointer; }
+    .directory-link { min-height: 45px; padding: 10px 0; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+    svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    @media (max-width: 1040px) {
+      .workspace { grid-template-columns: 170px 410px; justify-content: center; }
+      .notes-panel { position: static; grid-column: 1 / -1; grid-template-columns: 1fr 1fr; max-width: 760px; margin: 0 auto; }
+      .notes-head { grid-column: 1 / -1; }
+      .implementation-order { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 700px) {
+      .page-header { padding-block: 20px 16px; }
+      .header-copy h1 { font-size: 20px; }
+      .scope-badge { display: none; }
+      .workspace { display: flex; flex-direction: column; gap: 18px; }
+      .flow-index { position: static; width: 100%; display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+      .flow-group { display: contents; }
+      .flow-label, .prototype-caption { display: none; }
+      .flow-button { width: auto; min-width: max-content; min-height: 38px; padding: 8px 12px; background: var(--surface); }
+      .flow-button svg { display: none; }
+      .device { width: min(100%, 410px); height: min(844px, calc(100dvh - 120px)); min-height: 640px; border-radius: 42px; padding: 6px; }
+      .phone { border-radius: 36px; }
+      .notes-panel { width: 100%; display: grid; grid-template-columns: 1fr; }
+      .order-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 390px) {
+      body { padding-left: max(10px, env(safe-area-inset-left, 0px)); padding-right: max(10px, env(safe-area-inset-right, 0px)); }
+      .brand-mark { width: 40px; height: 40px; }
+      .device { min-height: 620px; }
+      .video-thumb { width: 72px; }
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .sheet { animation: sheet-in .22s ease-out; }
+      .toast { animation: toast-in .18s ease-out; }
+      @keyframes sheet-in { from { transform: translateY(24px); opacity: .7; } to { transform: translateY(0); opacity: 1; } }
+      @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H11v17H7.5A3.5 3.5 0 0 0 4 22V5.5ZM20 5.5A3.5 3.5 0 0 0 16.5 2H13v17h3.5A3.5 3.5 0 0 1 20 22V5.5Z"/></symbol>
+    <symbol id="i-task" viewBox="0 0 24 24"><path d="m4 7 2 2 4-4M4 15l2 2 4-4M13 7h7M13 15h7"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17v.1"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="m9 15 6-6M8 17H6a4 4 0 0 1 0-8h3M16 7h2a4 4 0 0 1 0 8h-3"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 3h6l1 4H8l1-4ZM6 7l1 14h10l1-14M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="m12 4 3 6 6 1-4.5 4.5 1 6.5-5.5-3-5.5 3 1-6.5L3 11l6-1 3-6Z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M3 9a14 14 0 0 1 18 0M6 13a9 9 0 0 1 12 0M9.5 16.5a4 4 0 0 1 5 0"/><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-battery" viewBox="0 0 24 24"><rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 10v4"/><rect x="4" y="9" width="13" height="6" rx="1" fill="currentColor" stroke="none"/></symbol>
+  </svg>
+
+  <header class="page-header">
+    <img class="brand-mark" src="Biri/Assets.xcassets/AppIcon.appiconset/icon-1024.png" alt="笔哩图标">
+    <div class="header-copy">
+      <h1>笔哩 iOS 原型</h1>
+      <p>完整客户端 · 可点击高保真原型</p>
+    </div>
+    <span class="scope-badge">不含文件导入 · 示例数据</span>
+  </header>
+
+  <main class="workspace">
+    <nav class="flow-index" aria-label="原型页面" id="flowIndex"></nav>
+    <section class="device-wrap" aria-label="可交互 iPhone 原型">
+      <div class="device"><div class="phone" id="phone"></div></div>
+      <span class="device-note">点击页面与按钮体验主要路径</span>
+    </section>
+    <aside class="notes-panel" id="notesPanel"></aside>
+  </main>
+
+  <section class="implementation-order" aria-label="建议落地顺序">
+    <h2>建议落地顺序</h2>
+    <div class="order-grid">
+      <div class="order-item"><strong>核心闭环</strong><span>URL 创建、取消、重试、重新生成与实时进度。</span></div>
+      <div class="order-item"><strong>内容管理</strong><span>任务删除、回收站、UP 与标签筛选。</span></div>
+      <div class="order-item"><strong>阅读效率</strong><span>搜索高亮、段落定位与文档内匹配导航。</span></div>
+      <div class="order-item"><strong>按需扩展</strong><span>UP 主目录、邮件重发与实验性语料蒸馏。</span></div>
+    </div>
+  </section>
+
+  <script>
+    const flows = [
+      { id: "library", label: "笔记与筛选", group: "资料库", icon: "book" },
+      { id: "search", label: "搜索与定位", group: "资料库", icon: "search" },
+      { id: "reader", label: "阅读与操作", group: "资料库", icon: "book" },
+      { id: "trash", label: "回收站", group: "资料库", icon: "trash" },
+      { id: "create", label: "创建 URL 任务", group: "任务", icon: "plus" },
+      { id: "tasks", label: "任务与批量管理", group: "任务", icon: "task" },
+      { id: "progress", label: "实时任务进度", group: "任务", icon: "clock" },
+      { id: "failed", label: "失败与重试", group: "任务", icon: "alert" },
+      { id: "settings", label: "设置与外观", group: "设置与状态", icon: "settings" },
+      { id: "server", label: "服务器与 Token", group: "设置与状态", icon: "link" },
+      { id: "onboarding", label: "初始连接", group: "设置与状态", icon: "plus" },
+      { id: "loading", label: "加载状态", group: "设置与状态", icon: "clock" },
+      { id: "empty", label: "空状态", group: "设置与状态", icon: "book" },
+      { id: "error", label: "错误状态", group: "设置与状态", icon: "alert" },
+      { id: "up", label: "UP 主目录", group: "扩展", icon: "user" },
+      { id: "distill", label: "语料蒸馏", group: "扩展", icon: "up" }
+    ];
+
+    const notes = {
+      library: {
+        title: "搜索归搜索，创建归创建",
+        description: "保留现有资料库结构，用右上角加号承接创建，不让搜索框同时承担 URL 提交。",
+        decisions: ["UP 与标签作为可移除的筛选条件，不再增加一级 Tab。", "笔记行展示标签、来源和时长；点击作者进入 UP 主目录。", "正在生成的任务保留在列表顶部，但可展示多个活跃任务。"],
+        interactions: ["左滑笔记：移到回收站。", "点击标签：应用筛选；再次从顶部条件中移除。", "右上角加号：打开创建任务 Sheet。"],
+        native: "原生对应：navigationItem 的加号、List.swipeActions、可横向滚动的筛选条件，以及现有 searchable。"
+      },
+      search: {
+        title: "从结果直达证据位置",
+        description: "保留 Return 才搜索，增强结果中的命中原因与阅读页内定位。",
+        decisions: ["标题、笔记、字幕命中使用不同说明，不只返回一组相似摘要。", "字幕显示时间点，笔记显示所属章节。", "关键词高亮沿用品牌色浅底，同时保持深浅色可读性。"],
+        interactions: ["点击命中进入对应章节或字幕时间点。", "阅读页顶部显示当前匹配，底部可切换上一处、下一处。", "范围切换只影响已提交的搜索，不在输入时自动请求。"],
+        native: "原生对应：搜索结果携带 chunk/cue 目的地，ReaderView 恢复滚动位置，并用带 ID 的匹配状态驱动高亮。"
+      },
+      reader: {
+        title: "阅读为主，管理收进菜单",
+        description: "标题、作者与标签构成统一头部；正文仍是页面视觉中心。",
+        decisions: ["作者可进入 UP 主目录，标签可返回资料库筛选。", "重新生成、移到回收站放入更多菜单，不与正文操作争抢注意力。", "搜索进入时显示匹配导航，普通阅读时不占空间。"],
+        interactions: ["更多菜单统一提供目录、字号、复制、来源、重新生成和移到回收站。", "目录选择后滚动到对应标题；正文与字幕同步应用字号。", "重新生成需确认并保留当前笔记；删除后显示可撤销提示。"],
+        native: "原生对应：confirmationDialog 管理操作，Menu 承载次级动作，SnackBar/Toast 提供撤销。"
+      },
+      trash: {
+        title: "恢复容易，彻底删除足够谨慎",
+        description: "回收站放在“设置 → 内容管理”，避免占用一级导航。",
+        decisions: ["每条笔记直接显示剩余保留天数。", "恢复是轻量操作；彻底删除与普通移除明确区分。", "彻底删除需要输入笔记标题，不用一次误触确认。"],
+        interactions: ["左滑出现恢复与彻底删除。", "恢复后立即提示，可从回收站返回原阅读页。", "彻底删除说明会移除笔记、字幕、版本与导入原件。"],
+        native: "原生对应：软删除、恢复、标题确认 purge 分别调用现有接口；破坏性按钮只在确认 Sheet 中出现。"
+      },
+      create: {
+        title: "先识别链接，再承诺创建",
+        description: "用底部 Sheet 完成短流程，保留当前资料库上下文。",
+        decisions: ["支持粘贴与手动输入，识别后显示平台和视频标题。", "已有笔记、进行中任务、回收站命中分别给出对应主操作。", "邮件仅显示开关，收件人继续使用服务器配置。"],
+        interactions: ["新链接主按钮为“生成笔记”。", "已有链接优先“阅读已有笔记”，重新生成作为次级操作。", "创建成功后关闭 Sheet，进入任务详情并连接实时进度。"],
+        native: "原生对应：sheet + presentationDetents、PasteButton、异步 resolve 状态机；429/503 转成可理解的重试提示。"
+      },
+      tasks: {
+        title: "单条操作靠滑动，批量操作显式进入",
+        description: "列表保持扫读效率，选择模式只在用户点击“选择”后出现。",
+        decisions: ["状态胶囊继续表达进行中、完成和失败。", "运行任务先取消，不能直接删除。", "批量删除只处理选中的非运行任务，并清楚显示数量。"],
+        interactions: ["点击“选择”进入原型中的批量管理状态。", "底部确认删除后显示撤销提示。", "失败任务进入详情后可重试；完成任务可重新生成。"],
+        native: "原生对应：editMode、swipeActions 与底部 safeAreaInset；删除使用延迟执行或服务端预览令牌保护撤销。"
+      },
+      progress: {
+        title: "展示真实阶段，不虚构总百分比",
+        description: "把服务端事件映射为来源、字幕、总结和邮件四个可理解阶段。",
+        decisions: ["只对当前阶段显示真实进度，例如音频下载或 ASR 百分比。", "流式总结可预览，但仍保留任务状态，避免误认为已完成。", "取消放在底部独立区域，与主要阅读操作保持距离。"],
+        interactions: ["取消需要确认；断线时显示“正在重新连接”，并刷新任务快照。", "完成后主按钮变为“阅读笔记”。", "从后台回前台立即恢复快照，再连接 SSE。"],
+        native: "原生对应：URLSession.bytes 解析 SSE；事件无 ID，重连后以 GET 快照修复遗漏，后台不承诺持续连接。"
+      },
+      failed: {
+        title: "先给恢复动作，再展开技术细节",
+        description: "失败页告诉用户卡在哪一步、能否重试，而不是只显示红色错误。",
+        decisions: ["重试是唯一主按钮，适用于 FAILED 状态。", "阶段、Job ID 和错误详情可复制，便于排查。", "删除是次级操作；重试沿用同一个任务 ID。"],
+        interactions: ["点击重试进入实时进度页。", "若字幕已就绪，则提供继续生成或重新生成字幕的明确选择。", "限流或服务繁忙时保留当前页并说明稍后重试。"],
+        native: "原生对应：按状态控制 retry/resume/resummarize，避免把一个“重试”按钮映射到所有接口。"
+      },
+      settings: {
+        title: "设置保持简单，内容管理有明确归属",
+        description: "连接、外观与阅读沿用当前客户端；回收站加入内容管理，不再使用开发者视角的“只读”说明。",
+        decisions: ["服务器显示查看或更改连接，不重复展示技术状态。", "外观与正文字号继续使用原生分段控件。", "关于只说明应用、版本和实际用途。"],
+        interactions: ["服务器进入连接详情；回收站进入内容恢复。", "外观立即切换原型主题。", "正文字号同时影响笔记正文和字幕。"],
+        native: "原生对应：Form 分组、NavigationLink 和 AppStorage；回收站属于内容管理，不占一级 Tab。"
+      },
+      server: {
+        title: "凭据可理解，但不暴露明文",
+        description: "同步最近的连接页调整：固定 Token 掩码、就近移除、未修改时不显示主按钮。",
+        decisions: ["初始连接页不重复“欢迎使用笔哩”，图标与 App 图标一致。", "已保存 Token 只显示固定掩码，不回填真实内容。", "地址未修改且已连接时，不继续显示“连接并保存”。"],
+        interactions: ["修改地址或输入新 Token 后才出现“保存并重新连接”。", "移除 Token 位于凭据分组，并需要再次确认。", "连接状态使用普通用户能理解的语言。"],
+        native: "原生对应：SecureField、Keychain 和变更检测；原型不收集或保存任何真实 Token。"
+      },
+      onboarding: {
+        title: "首次打开只完成一件事：连接服务器",
+        description: "品牌图标、功能说明和表单构成初始页，不设置重复的欢迎标题。",
+        decisions: ["服务器地址与 Token 在同一上下文完成。", "说明文字面向普通用户，不出现“只读客户端”。", "连接成功后再进入三栏主导航。"],
+        interactions: ["填写地址并连接；Token 可按服务器配置留空。", "失败时在表单内显示原因，不丢失已输入地址。", "公网连接使用 HTTPS 与访问验证。"],
+        native: "原生对应：ServerSettingsView(isInitialSetup: true)，Token 仅写入 ThisDeviceOnly Keychain。"
+      },
+      loading: {
+        title: "先呈现结构，再填充内容",
+        description: "资料库加载沿用标题、搜索和列表骨架，不让活动任务请求阻塞笔记首屏。",
+        decisions: ["笔记接口返回后立即显示内容。", "活动任务独立更新顶部区域。", "骨架只描述即将出现的列表，不制造额外动画。"],
+        interactions: ["网络失败切换为可重试错误态。", "已有内容时下拉刷新不清空列表。", "接近列表末尾自动预取下一页。"],
+        native: "原生对应：独立 async let 请求、列表代次防护、倒数第五条预取与 Equatable 行。"
+      },
+      empty: {
+        title: "空状态直接给出下一步",
+        description: "现在可以从 iOS 创建任务，空状态不再引导用户必须回到网页版。",
+        decisions: ["保留“全部笔记”的导航上下文。", "说明如何生成第一篇笔记。", "主操作与资料库右上角加号一致。"],
+        interactions: ["点击“生成第一篇笔记”打开 URL 创建 Sheet。", "没有搜索结果时只提示调整关键词，不显示创建按钮。", "失败分类为空时不显示加载更多。"],
+        native: "原生对应：ContentUnavailableView 与统一创建入口，避免不同空状态使用相互矛盾的文案。"
+      },
+      error: {
+        title: "错误说明原因，也保留恢复路径",
+        description: "网络、鉴权和数据错误使用普通用户能理解的表达。",
+        decisions: ["页面级错误提供重试与检查服务器设置。", "列表已有内容时，分页错误在列表底部展示，不覆盖内容。", "Token 不写入错误信息、日志或原型。"],
+        interactions: ["重试保留当前页面和查询条件。", "检查设置进入服务器页。", "401、403、超时和无法解析分别使用针对性文案。"],
+        native: "原生对应：ErrorStateView 与 APIError 中文映射；重试不丢弃已加载数据。"
+      },
+      up: {
+        title: "UP 主目录是资料库的延伸",
+        description: "从作者名进入，不在底部新增第四个 Tab。",
+        decisions: ["搜索、排序和总结状态筛选集中在列表上方。", "每个视频同时呈现阅读或生成动作与当前状态。", "实验性蒸馏保持次级入口，不干扰单视频总结。"],
+        interactions: ["已生成视频直接阅读；未生成视频显示“生成笔记”。", "失败视频原位重试，进行中视频进入任务详情。", "筛选只作用于当前已加载数据时需明确提示。"],
+        native: "原生对应：值类型 UP 目的地接入 NavigationStack；游标加载与状态合并复用任务列表模式。"
+      },
+      distill: {
+        title: "实验功能完整可见，但不抢占主导航",
+        description: "从 UP 主目录进入，明确处理数量、当前阶段和语料结果。",
+        decisions: ["开始前选择视频数量，并提示只支持当前 UP 主。", "运行中展示真实完成数与当前视频，不显示虚构时间估算。", "完成后原地预览语料 Markdown，取消与删除分开确认。"],
+        interactions: ["取消后保留当前状态，可重新开始新任务。", "失败时没有专用重试接口，按钮应为“重新开始”。", "删除语料不会影响已生成的单篇笔记。"],
+        native: "原生对应：独立 DistillViewModel 与 SSE 通道，不复用普通 Job 状态机；功能入口可由服务端能力控制。"
+      }
+    };
+
+    const state = {
+      screen: "library", sheet: null, toast: "", filter: "", selecting: false, selected: new Set(),
+      canceled: false, taskFilter: "all", readerTab: "notes", readerScale: 1, readerBack: "library", readerSearch: false,
+      searchDraft: "费曼学习法", submittedQuery: "费曼学习法", searchScope: "all",
+      theme: "system", connected: true, hasToken: true
+    };
+    let toastTimer;
+    const icon = (name, cls = "") => `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
+    const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+    const statusBar = () => `<div class="statusbar"><span>9:41</span><div class="status-icons">${icon("wifi")}${icon("battery")}</div></div>`;
+    const tabBar = (active = "library") => `<nav class="tabbar" aria-label="App 主导航">
+      <button class="tab ${active === "library" ? "active" : ""}" data-go="library">${icon("book")}<span>笔记</span></button>
+      <button class="tab ${active === "tasks" ? "active" : ""}" data-go="tasks">${icon("task")}<span>任务</span></button>
+      <button class="tab ${active === "settings" ? "active" : ""}" data-go="settings">${icon("settings")}<span>设置</span></button>
+    </nav><div class="home-indicator"></div>`;
+    const nav = (title, options = {}) => `<div class="nav ${options.inline ? "inline" : "large"}">
+      ${options.back ? `<button class="icon-button back-button" data-go="${options.back}" aria-label="返回">${icon("back")}${options.backLabel ? `<span>${options.backLabel}</span>` : ""}</button>` : ""}
+      <h2>${title}</h2><div class="nav-spacer"></div>${options.action || ""}</div>`;
+    const status = (text, type = "") => `<span class="status ${type}">${type === "failed" ? icon("alert") : type === "success" ? icon("check") : icon("clock")}${text}</span>`;
+
+    function libraryContent(innerOnly = false) {
+      const rows = [
+        { title: "如何用最少的步骤建立长期记忆", summary: "从主动回忆、间隔重复到真实使用，把记忆拆成可以持续执行的三个环节。", author: "老师好我叫何同学", duration: "12:48", age: "2小时前", tags: ["学习方法", "认知科学"] },
+        { title: "Folo：信息获取工作流的重新组织", summary: "从订阅源到稍后读，信息工具真正需要减少的是切换，而不是增加更多入口。", author: "少数派", duration: "08:32", age: "昨天", tags: ["效率工具", "RSS"] },
+        { title: "AI 编程助手如何改变个人知识管理", summary: "当生成成本降低，筛选、验证和保留上下文成为知识工作里更重要的部分。", author: "李自然说", duration: "21:06", age: "3天前", tags: ["AI", "知识管理"] }
+      ];
+      const visible = state.filter ? rows.filter(row => row.tags.includes(state.filter) || row.author === state.filter) : rows;
+      const content = `<div class="content"><div class="content-pad">
+        <button class="search-box" data-go="search" style="border:0;text-align:left;cursor:pointer">${icon("search")}<span>搜索标题、正文和字幕</span></button>
+        <div class="chips">
+          <button class="chip ${!state.filter ? "active" : ""}" data-action="clear-filter">全部</button>
+          ${state.filter ? `<button class="chip active" data-action="clear-filter">${state.filter}${icon("close")}</button>` : `<button class="chip" data-action="filter" data-value="老师好我叫何同学">UP 主</button><button class="chip" data-action="filter" data-value="效率工具">标签</button>`}
+        </div>
+        <button class="active-strip" data-go="progress">${icon("clock")}<span class="grow"><strong>为什么你记得快，也忘得快？</strong><small>正在生成字幕 · 64%</small></span>${icon("chevron")}</button>
+        <div class="section-title"><span>${state.filter ? `筛选：${state.filter}` : "本周"}</span><span>${visible.length} 篇</span></div>
+        <div class="list">${visible.length ? visible.map(noteRow).join("") : `<p style="color:var(--muted);text-align:center;padding:36px 0">这个条件下还没有笔记</p>`}</div>
+        ${visible.length ? `<button class="load-more" data-action="load-more">加载更多</button>` : ""}
+      </div></div>`;
+      return innerOnly ? content : `${statusBar()}${nav("全部笔记（128）", { action: `<button class="icon-button" data-go="create" aria-label="创建任务">${icon("plus")}</button>` })}${content}${tabBar("library")}`;
+    }
+    function noteRow(note) {
+      return `<article class="note-row"><div class="row-copy">
+        <button class="text-button" data-go="reader" style="padding:0;min-height:0;text-align:left;color:var(--ink)"><span class="row-title">${note.title}</span></button>
+        <span class="row-summary">${note.summary}</span>
+        <div class="tag-row">${note.tags.map(tag => `<button class="tag" data-action="filter" data-value="${tag}">${tag}</button>`).join("")}</div>
+        <div class="meta"><button class="text-button" data-go="up" style="padding:0;min-height:0;color:var(--muted);font-size:11px">${note.author}</button><span>${note.duration}</span><span>${note.age}</span></div>
+      </div></article>`;
+    }
+
+    function searchScreen() {
+      const submitted = state.submittedQuery;
+      const hasExample = submitted === "费曼学习法";
+      const showNotes = state.searchScope !== "subs";
+      const showSubs = state.searchScope !== "notes";
+      let results = "";
+      if (submitted && hasExample) {
+        results = `<div class="section-title"><span>3 篇笔记包含匹配内容</span></div>
+          <article class="search-result"><div class="row-copy"><span class="row-title">如何用<mark>费曼学习法</mark>真正理解一个概念</span><div class="meta"><span>学习方法</span><span>14:20</span></div></div>
+            ${showNotes ? `<button class="hit" data-go="reader"><span class="hit-label"><span>笔记 · 第二个章节</span>${icon("chevron")}</span><p>当你无法用自己的话解释时，说明理解仍有缺口。<mark>费曼学习法</mark>把表达当作检验，而不是最后的展示。</p></button>` : ""}
+            ${showSubs ? `<button class="hit" data-go="reader"><span class="hit-label"><span>字幕 · 06:42</span>${icon("chevron")}</span><p>这就是所谓的<mark>费曼学习法</mark>，先讲给一个完全不了解的人听。</p></button>` : ""}
+          </article>
+          ${showNotes ? `<article class="search-result"><div class="row-copy"><span class="row-title">如何用最少的步骤建立长期记忆</span><div class="meta"><span>认知科学</span><span>12:48</span></div></div><button class="hit" data-go="reader"><span class="hit-label"><span>笔记 · 主动回忆</span>${icon("chevron")}</span><p>主动回忆与<mark>费曼学习法</mark>都强调从记忆中提取，而不是重复阅读。</p></button></article>` : ""}`;
+      } else if (submitted) {
+        results = `<div class="empty-state"><h3>没有找到“${escapeHtml(submitted)}”</h3><p>试试更短的关键词，或切换搜索范围。</p></div>`;
+      } else {
+        results = `<div class="empty-state"><h3>找回保存过的内容</h3><p>输入关键词后按 Return 搜索。输入过程中不会自动请求，也不会提前显示无结果。</p></div>`;
+      }
+      return `${statusBar()}${nav("搜索笔记", { inline: true, back: "library", backLabel: "取消" })}<div class="content"><form class="content-pad" id="search-form"><label class="search-box" for="search-input">${icon("search")}<input id="search-input" name="q" value="${escapeHtml(state.searchDraft)}" placeholder="搜索标题、正文和字幕" autocomplete="off" style="min-width:0;flex:1;border:0;background:transparent;color:var(--ink);outline:0"><button class="text-button" type="submit" style="min-height:28px;font-size:12px">搜索</button></label><div class="segmented">${[["all", "全部"], ["notes", "笔记"], ["subs", "字幕"]].map(([key, label]) => `<button class="segment ${state.searchScope === key ? "active" : ""}" type="button" data-action="search-scope" data-value="${key}">${label}</button>`).join("")}</div></form><div class="content-pad">${results}</div></div>${tabBar("library")}`;
+    }
+
+    const transcriptCues = [
+      ["00:00", "今天想讨论一个看起来很简单的问题：为什么学了很久，却还是觉得自己没有真正学会？"],
+      ["02:14", "理解不是重复阅读带来的熟悉感，而是能够建立概念之间的关系。"],
+      ["06:42", "这就是所谓的费曼学习法，先讲给一个完全不了解的人听。"],
+      ["08:16", "如果一句话只能依赖术语成立，就继续追问它解决的问题。"],
+      ["10:05", "最后回到具体例子，用自己的话重新说明。"]
+    ];
+    function cueRows(rows) {
+      return rows.map(([time, text]) => `<div class="cue"><button class="timestamp" data-action="timestamp" data-value="${time}">${time}</button><span>${text}</span></div>`).join("") || `<p style="color:var(--muted)">没有匹配的字幕</p>`;
+    }
+    function readerScreen() {
+      const notesTab = state.readerTab === "notes";
+      const backLabel = state.readerBack === "search" ? "搜索" : state.readerBack === "tasks" ? "任务" : state.readerBack === "up" ? "UP 主" : "笔记";
+      return `${statusBar()}${nav("", { inline: true, back: state.readerBack, backLabel, action: `<button class="icon-button" data-action="reader-menu" aria-label="阅读操作">${icon("more")}</button>` })}<div class="content"><div class="content-pad reader" style="--reader-scale:${state.readerScale}">
+        <div class="row-copy"><h3 class="reader-title">如何用费曼学习法真正理解一个概念</h3><div class="meta"><button class="text-button" data-go="up" style="padding:0;min-height:0;color:var(--muted);font-size:11px">老师好我叫何同学</button><span>14:20</span><span>Bilibili</span></div><div class="tag-row"><span class="tag">学习方法</span><span class="tag">认知科学</span></div></div>
+        <div class="segmented"><button class="segment ${notesTab ? "active" : ""}" data-action="reader-tab" data-value="notes">笔记</button><button class="segment ${!notesTab ? "active" : ""}" data-action="reader-tab" data-value="subs">字幕</button></div>
+        ${notesTab ? `<div class="reader-body" id="reader-body"><h3 id="section-expression">表达是理解的检验</h3><p>重复阅读会带来熟悉感，但熟悉不等于能够解释。真正的理解需要建立概念之间的关系。</p><p><mark>费曼学习法</mark>把表达当作检验：选择一个概念，用自己的话讲给不了解它的人听，再回到材料中修补无法解释的部分。</p><h3 id="section-example">从复杂语言回到具体例子</h3><p>如果一句话只能依赖术语成立，就继续追问它解决的问题，并用一个具体例子重新说明。</p><h3 id="section-output">用输出检查理解</h3><p>阅读留下的痕迹，不等于真正理解。试着合上材料，用自己的话复述一次。</p></div>` : `<label class="search-box" for="cue-search">${icon("search")}<input id="cue-search" placeholder="在字幕里搜索" autocomplete="off" style="min-width:0;flex:1;border:0;background:transparent;color:var(--ink);outline:0"></label><div class="cue-list" id="cue-list">${cueRows(transcriptCues)}</div>`}
+      </div></div>${state.readerSearch && notesTab ? `<div class="match-bar"><strong>“费曼学习法” 第 2 / 5 处</strong><button class="icon-button" data-action="match" aria-label="上一处">${icon("back")}</button><button class="icon-button" data-action="match" aria-label="下一处" style="transform:rotate(180deg)">${icon("back")}</button></div>` : ""}<div class="home-indicator"></div>`;
+    }
+
+    function createScreen() {
+      return `${statusBar()}${nav("全部笔记（128）", {})}${libraryContent(true)}${tabBar("library")}
+        <div class="sheet-backdrop"><section class="sheet" aria-label="创建任务"><div class="grabber"></div><div class="sheet-head"><h3>生成笔记</h3><button class="icon-button" data-go="library" aria-label="关闭">${icon("close")}</button></div>
+          <p>粘贴 Bilibili 或 YouTube 视频链接，服务器会检查是否已生成过。</p>
+          <div class="field"><label for="videoUrl">视频链接</label><div class="url-field">${icon("link")}<span id="videoUrl">https://www.bilibili.com/video/BV1memory</span></div></div>
+          <div class="source-preview">${icon("play")}<div><strong>为什么你记得快，也忘得快？</strong><small>新视频 · 没有找到已有笔记或进行中的任务</small></div></div>
+          <div class="toggle-row"><span>完成后发送邮件</span><button class="toggle" aria-label="关闭完成后发送邮件"></button></div>
+          <div class="sheet-actions"><button class="primary-button" data-action="generate">生成笔记</button><button class="text-button" data-action="duplicate">查看已有链接的示例状态</button></div>
+        </section></div>`;
+    }
+
+    function duplicateSheet() {
+      return `<div class="sheet-backdrop"><section class="sheet"><div class="grabber"></div><div class="sheet-head"><h3>链接已存在</h3><button class="icon-button" data-go="create" aria-label="关闭">${icon("close")}</button></div><div class="source-preview" style="margin-top:16px">${icon("book")}<div><strong>这篇视频已经生成过笔记</strong><small>上次生成于 3 天前</small></div></div><p>优先阅读已有内容。只有需要更新总结时，才重新生成。</p><div class="sheet-actions"><button class="primary-button" data-go="reader">阅读已有笔记</button><button class="secondary-button" data-action="regenerate">仍要重新生成</button></div></section></div>`;
+    }
+
+    function taskRows(selecting = false) {
+      const tasks = [
+        { id: 0, title: "为什么你记得快，也忘得快？", author: "老师好我叫何同学", age: "刚刚", label: "字幕 64%", type: "", go: "progress" },
+        { id: 1, title: "如何建立真正可执行的周计划", author: "少数派", age: "昨天", label: "已完成", type: "success", go: "reader" },
+        { id: 2, title: "个人知识库的未来形态", author: "李自然说", age: "2天前", label: "失败", type: "failed", go: "failed" },
+        { id: 3, title: "信息过载时代的订阅整理", author: "少数派", age: "4天前", label: "已完成", type: "success", go: "reader" }
+      ];
+      const filtered = tasks.filter(task => state.taskFilter === "all" || (state.taskFilter === "running" ? task.type === "" : state.taskFilter === "done" ? task.type === "success" : task.type === "failed"));
+      if (!filtered.length) return `<div class="empty-state" style="min-height:340px"><h3>${state.taskFilter === "running" ? "没有进行中的任务" : state.taskFilter === "done" ? "没有已完成任务" : "没有失败任务"}</h3><p>新的任务状态会自动更新。</p></div>`;
+      return filtered.map(task => `<div class="task-row">${selecting ? `<button class="task-check ${state.selected.has(task.id) ? "checked" : ""}" data-action="select-task" data-id="${task.id}" aria-label="选择任务">${state.selected.has(task.id) ? icon("check") : ""}</button>` : ""}<button class="row-copy" data-go="${task.go}" style="border:0;background:transparent;text-align:left;padding:0;color:var(--ink)"><span class="row-title">${task.title}</span><div class="meta"><span>${task.author}</span><span>${task.age}</span></div></button>${status(task.label, task.type)}</div>`).join("") + `<button class="load-more" data-action="load-more">加载更多</button>`;
+    }
+
+    function tasksScreen() {
+      return `${statusBar()}${nav("任务", { action: `<button class="text-button" data-action="toggle-select">${state.selecting ? "完成" : "选择"}</button>` })}<div class="content"><div class="content-pad"><div class="segmented">${[["all", "全部"], ["running", "进行中"], ["done", "已完成"], ["failed", "失败"]].map(([key, label]) => `<button class="segment ${state.taskFilter === key ? "active" : ""}" data-action="task-filter" data-value="${key}">${label}</button>`).join("")}</div><div class="list">${taskRows(state.selecting)}</div></div></div>${state.selecting ? `<div class="selection-bar"><strong>已选择 ${state.selected.size} 项</strong><button class="text-button danger" data-action="delete-tasks">删除任务记录</button></div>` : ""}${tabBar("tasks")}`;
+    }
+
+    function progressScreen() {
+      return `${statusBar()}${nav("任务详情", { inline: true, back: "tasks", backLabel: "任务" })}<div class="content grouped"><div class="content-pad"><div class="detail-head"><h3>为什么你记得快，也忘得快？</h3><p>老师好我叫何同学 · Bilibili</p>${status(state.canceled ? "已取消" : "正在生成字幕", state.canceled ? "neutral" : "")}</div>
+        <section class="progress-card"><div class="step done"><span class="step-icon">${icon("check")}</span><div class="step-copy"><strong>识别来源</strong><small>已获取标题、作者与视频信息</small></div><span class="step-value">完成</span></div>
+          <div class="step current"><span class="step-icon">${icon("clock")}</span><div class="step-copy"><strong>生成字幕</strong><small>正在转写第 4 段，共 6 段</small><div class="progress-track"><span style="width:64%"></span></div></div><span class="step-value">64%</span></div>
+          <div class="step"><span class="step-icon">3</span><div class="step-copy"><strong>总结笔记</strong><small>等待字幕完成</small></div></div>
+          <div class="step"><span class="step-icon">4</span><div class="step-copy"><strong>发送邮件</strong><small>笔记完成后自动发送</small></div></div>
+        </section>
+        <section class="live-preview"><h4><span class="live-dot"></span>字幕实时预览</h4><p>“我们先把这段内容分成六个部分。记忆不是把信息存进去就结束了，提取的过程同样重要……”</p></section>
+        <button class="secondary-button danger" data-action="cancel-job">取消任务</button>
+      </div></div><div class="home-indicator"></div>`;
+    }
+
+    function failedScreen() {
+      return `${statusBar()}${nav("任务详情", { inline: true, back: "tasks", backLabel: "任务" })}<div class="content grouped"><div class="content-pad"><div class="detail-head"><h3>个人知识库的未来形态</h3><p>李自然说 · Bilibili</p>${status("生成失败", "failed")}</div><div class="error-box"><strong>生成字幕时连接中断</strong><span>已保留视频信息，可以直接重试当前任务。</span><code>JOB 8F2A-41C · TRANSCRIBING</code></div><button class="primary-button" data-action="retry">重试任务</button><button class="secondary-button" data-action="copy-error">复制错误详情</button><button class="text-button danger" data-action="delete-single">删除任务记录</button></div></div><div class="home-indicator"></div>`;
+    }
+
+    function settingsScreen() {
+      return `${statusBar()}${nav("设置", {})}<div class="content grouped"><div class="content-pad">
+        <div class="section-title"><span>连接</span></div><div class="settings-group"><button class="settings-row" data-go="server"><span class="setting-icon">${icon("link")}</span><span class="grow"><strong>服务器</strong><small>查看或更改连接</small></span>${icon("chevron")}</button></div>
+        <div class="section-title"><span>内容管理</span></div><div class="settings-group"><button class="settings-row" data-go="trash"><span class="setting-icon">${icon("trash")}</span><span class="grow"><strong>回收站</strong><small>恢复或彻底删除已移除的笔记</small></span><span class="settings-value">2 篇</span>${icon("chevron")}</button></div>
+        <div class="section-title"><span>外观与阅读</span></div><div class="settings-group"><div style="padding:11px 12px"><div class="segmented">${[["system", "自动"], ["light", "浅色"], ["dark", "深色"]].map(([key, label]) => `<button class="segment ${state.theme === key ? "active" : ""}" data-action="theme" data-value="${key}">${label}</button>`).join("")}</div></div><button class="settings-row" data-action="font-size"><span class="setting-icon">Aa</span><span class="grow"><strong>正文字号</strong><small>同时作用于笔记和字幕</small></span><span class="settings-value">${state.readerScale > 1 ? "大" : state.readerScale < 1 ? "小" : "标准"}</span>${icon("chevron")}</button></div>
+        <div class="section-title"><span>关于</span></div><div class="settings-group"><div class="settings-row"><span class="grow"><strong>应用</strong></span><span class="settings-value">笔哩</span></div><div class="settings-row"><span class="grow"><strong>版本</strong></span><span class="settings-value">0.1.0</span></div></div><p style="margin:0;color:var(--muted);font-size:11px;line-height:1.6">查看和生成笔记、字幕，管理任务进度与已保存内容。</p>
+      </div></div>${tabBar("settings")}`;
+    }
+
+    function serverScreen(initial = false) {
+      const showConnect = initial || !state.connected;
+      return `${statusBar()}${nav(initial ? "连接服务器" : "服务器", { inline: !initial, back: initial ? null : "settings", backLabel: "设置" })}<div class="content ${initial ? "" : "grouped"}"><form class="content-pad" id="server-form" data-initial="${initial}">
+        ${initial ? `<div class="empty-state" style="min-height:0;padding:18px 20px 8px"><img class="app-icon-large" src="Biri/Assets.xcassets/AppIcon.appiconset/icon-1024.png" alt="笔哩"><p>查看和生成笔记、字幕，随时掌握任务进度。</p></div>` : ""}
+        <label class="form-field" for="server-address">服务器地址<input id="server-address" type="url" value="https://api.example.com" autocomplete="off"></label>
+        <label class="form-field" for="server-token">访问令牌（API Token）<input id="server-token" type="password" placeholder="${state.hasToken && !initial ? "输入新 Token 以更换" : "服务器未启用访问验证时可留空"}" autocomplete="off"></label>
+        ${state.hasToken && !initial ? `<div class="settings-group"><div class="settings-row"><span class="grow"><strong>已保存的 Token</strong></span><span class="settings-value">••••••••</span></div><button class="settings-row" type="button" data-action="remove-token"><span class="grow" style="color:var(--danger)"><strong>移除 Token</strong></span></button></div>` : ""}
+        <div class="info-band">Token 仅安全保存在此 iPhone，不会同步到 iCloud。原型不会收集或保存真实 Token。</div>
+        ${state.connected && !initial ? `<div class="settings-group"><div class="settings-row"><span class="grow"><strong>状态</strong></span><span class="settings-value" style="color:var(--success)">已连接</span></div><div class="settings-row"><span class="grow"><strong>访问验证</strong></span><span class="settings-value">需要 Token</span></div><div class="settings-row"><span class="grow"><strong>全文搜索</strong></span><span class="settings-value">已启用</span></div></div>` : ""}
+        <button class="primary-button" id="connect-submit" type="submit" ${showConnect ? "" : "hidden"}>${state.connected ? "保存并重新连接" : "连接"}</button>
+      </form></div>${initial ? `<div class="home-indicator"></div>` : tabBar("settings")}`;
+    }
+
+    function loadingScreen() {
+      return `${statusBar()}${nav("全部笔记（128）", {})}<div class="content"><div class="content-pad"><div class="search-box">${icon("search")}<span>搜索标题、正文和字幕</span></div><div class="skeletons">${Array(5).fill(`<div class="skeleton"><span></span><span></span><span></span></div>`).join("")}</div></div></div>${tabBar("library")}`;
+    }
+    function emptyScreen() {
+      return `${statusBar()}${nav("笔记", { action: `<button class="icon-button" data-go="create">${icon("plus")}</button>` })}<div class="content"><div class="empty-state"><img class="app-icon-large" src="Biri/Assets.xcassets/AppIcon.appiconset/icon-1024.png" alt=""><h3>还没有笔记</h3><p>粘贴 Bilibili 或 YouTube 视频链接，生成第一篇笔记。</p><button class="primary-button" data-go="create" style="width:auto">生成第一篇笔记</button></div></div>${tabBar("library")}`;
+    }
+    function errorScreen() {
+      return `${statusBar()}${nav("笔记", {})}<div class="content"><div class="empty-state"><span class="setting-icon" style="width:52px;height:52px">${icon("alert")}</span><h3>暂时无法加载</h3><p>连接服务器超时。请检查网络后重试，或确认服务器地址仍然可用。</p><button class="primary-button" data-action="retry-connection" style="width:auto">重试</button><button class="text-button" data-go="server">检查服务器设置</button></div></div>${tabBar("library")}`;
+    }
+
+    function upScreen() {
+      const videos = [
+        ["如何用最少的步骤建立长期记忆", "12:48 · 3天前", "阅读", "reader"],
+        ["为什么你记得快，也忘得快？", "10:16 · 7天前", "64%", "progress"],
+        ["把复杂问题讲清楚的四个步骤", "15:02 · 2周前", "生成", "create"],
+        ["我们如何设计一次有效的产品体验", "18:44 · 1个月前", "阅读", "reader"]
+      ];
+      return `${statusBar()}${nav("UP 主", { inline: true, back: "library", backLabel: "笔记", action: `<button class="icon-button" data-go="distill" aria-label="蒸馏语料">${icon("more")}</button>` })}<div class="content"><div class="content-pad"><div class="author-card"><div class="avatar">何</div><div><h3>老师好我叫何同学</h3><p>326 个视频 · 已生成 28 篇笔记</p></div></div><button class="secondary-button" data-go="distill">蒸馏语料 <span style="color:var(--muted);font-weight:400">实验功能</span></button><div class="search-box">${icon("search")}<span>搜索这个 UP 主的视频</span></div><div class="segmented"><button class="segment active">全部</button><button class="segment">未生成</button><button class="segment">已生成</button></div><div class="section-title"><span>按发布时间</span><span>最近更新</span></div><div class="list">${videos.map(video => `<div class="video-row"><div class="video-thumb">${icon("play")}</div><div class="row-copy"><span class="row-title">${video[0]}</span><div class="meta">${video[1]}</div></div><button class="row-action" data-go="${video[3]}">${video[2]}</button></div>`).join("")}</div></div></div><div class="home-indicator"></div>`;
+    }
+
+    function trashScreen() {
+      return `${statusBar()}${nav("回收站", { inline: true, back: "settings", backLabel: "设置" })}<div class="content"><div class="content-pad"><p style="margin:0;color:var(--muted);font-size:12px;line-height:1.6">笔记保留 30 天。恢复后会回到资料库；彻底删除无法撤销。</p><div class="section-title"><span>2 篇笔记</span><span>左滑管理</span></div><div class="swipe-demo"><div class="trash-row"><div class="row-copy"><span class="row-title">怎样整理一个长期可用的订阅列表</span><div class="meta">少数派 · 8:24</div></div></div><button class="swipe-action restore" data-action="restore">恢复</button><button class="swipe-action delete" data-action="purge">彻底删除</button></div><div class="trash-row"><div class="row-copy"><span class="row-title">一次关于知识复利的讨论</span><div class="meta">李自然说 · 18:06</div></div><span class="days">剩 12 天</span></div></div></div><div class="home-indicator"></div>`;
+    }
+
+    function distillScreen() {
+      return `${statusBar()}${nav("蒸馏语料", { inline: true, back: "up", backLabel: "UP 主" })}<div class="content grouped"><div class="content-pad"><div class="detail-head"><h3>老师好我叫何同学</h3><p>从最近 50 个视频提炼主题与观点</p>${status("正在蒸馏")}</div><section class="progress-card"><div class="step current"><span class="step-icon">${icon("up")}</span><div class="step-copy"><strong>已处理 36 / 50 个视频</strong><small>当前：把复杂问题讲清楚的四个步骤</small><div class="progress-track"><span style="width:72%"></span></div></div><span class="step-value">72%</span></div></section><section class="live-preview"><h4>语料预览</h4><p>完成后可在这里查看按主题整理的 Markdown 语料。单篇笔记和任务记录不受蒸馏删除影响。</p></section><button class="secondary-button danger" data-action="cancel-distill">取消蒸馏</button></div></div><div class="home-indicator"></div>`;
+    }
+
+    function sheetMarkup() {
+      if (!state.sheet) return "";
+      const sheets = {
+        "reader-menu": `<div class="sheet-head"><h3>阅读操作</h3></div><div class="action-list"><button data-action="directory">本篇目录</button><button data-action="font-size">切换正文字号（当前${state.readerScale > 1 ? "大" : state.readerScale < 1 ? "小" : "标准"}）</button><button data-action="copy-note">复制当前内容</button><button data-action="source">打开来源页面</button><button data-action="regenerate">重新生成笔记</button><button class="danger" data-action="trash-note">移到回收站</button><button class="cancel" data-action="close-sheet">取消</button></div>`,
+        "directory": `<div class="sheet-head"><h3>本篇目录</h3></div><button class="directory-link" data-action="directory-target" data-value="section-expression">表达是理解的检验</button><button class="directory-link" data-action="directory-target" data-value="section-example" style="padding-left:14px">从复杂语言回到具体例子</button><button class="directory-link" data-action="directory-target" data-value="section-output" style="padding-left:14px">用输出检查理解</button><div class="action-list"><button class="cancel" data-action="close-sheet">完成</button></div>`,
+        "remove-token": `<div class="sheet-head"><h3>移除已保存的 Token？</h3></div><p>只会从这台 iPhone 移除凭据，服务器和其他设备不受影响。</p><div class="action-list"><button class="danger" data-action="confirm-remove-token">移除 Token</button><button class="cancel" data-action="close-sheet">取消</button></div>`,
+        "cancel-job": `<div class="sheet-head"><h3>取消这个任务？</h3></div><p>服务器会停止后续处理，已生成的中间结果按现有规则保留。</p><div class="action-list"><button class="danger" data-action="confirm-cancel">取消任务</button><button class="cancel" data-action="close-sheet">继续处理</button></div>`,
+        "delete-tasks": `<div class="sheet-head"><h3>删除 ${state.selected.size} 条任务记录？</h3></div><p>已生成的笔记会保留。运行中的任务不包含在本次删除中。</p><div class="action-list"><button class="danger" data-action="confirm-delete">删除任务记录</button><button class="cancel" data-action="close-sheet">取消</button></div>`,
+        "regenerate": `<div class="sheet-head"><h3>重新生成笔记？</h3></div><p>使用已有字幕创建一个新任务，当前笔记和任务记录会保留。</p><div class="action-list"><button data-action="confirm-regenerate">重新生成</button><button class="cancel" data-action="close-sheet">取消</button></div>`,
+        "purge": `<div class="sheet-head"><h3>彻底删除这篇笔记？</h3></div><p>将删除笔记、字幕、历史版本和导入原件。请输入笔记标题以确认。</p><div class="url-field" style="border-color:var(--danger)"><span>怎样整理一个长期可用的订阅列表</span></div><div class="action-list"><button class="danger" data-action="confirm-purge">彻底删除</button><button class="cancel" data-action="close-sheet">取消</button></div>`
+      };
+      return `<div class="sheet-backdrop"><section class="sheet"><div class="grabber"></div>${sheets[state.sheet]}</section></div>`;
+    }
+
+    function currentScreen() {
+      switch (state.screen) {
+        case "search": return searchScreen();
+        case "reader": return readerScreen();
+        case "create": return createScreen() + (state.sheet === "duplicate" ? duplicateSheet() : "");
+        case "tasks": return tasksScreen();
+        case "progress": return progressScreen();
+        case "failed": return failedScreen();
+        case "settings": return settingsScreen();
+        case "server": return serverScreen(false);
+        case "onboarding": return serverScreen(true);
+        case "loading": return loadingScreen();
+        case "empty": return emptyScreen();
+        case "error": return errorScreen();
+        case "up": return upScreen();
+        case "trash": return trashScreen();
+        case "distill": return distillScreen();
+        default: return `<div class="screen">${libraryContent()}</div>`;
+      }
+    }
+
+    function render() {
+      const groups = [...new Set(flows.map(flow => flow.group))];
+      document.getElementById("flowIndex").innerHTML = groups.map(group => `<div class="flow-group"><span class="flow-label">${group}</span>${flows.filter(flow => flow.group === group).map(flow => `<button class="flow-button ${state.screen === flow.id ? "active" : ""}" data-go="${flow.id}">${icon(flow.icon)}<span>${flow.label}</span></button>`).join("")}</div>`).join("") + `<p class="prototype-caption">基于当前 iOS 客户端与现有 FastAPI 能力设计。示例内容仅用于演示。</p>`;
+      document.getElementById("phone").innerHTML = `<div class="screen">${currentScreen()}${state.sheet && state.sheet !== "duplicate" ? sheetMarkup() : ""}${state.toast ? `<div class="toast"><span>${state.toast}</span>${state.toast.includes("删除") || state.toast.includes("回收站") ? `<button data-action="undo">撤销</button>` : ""}</div>` : ""}</div>`;
+      const note = notes[state.screen];
+      document.getElementById("notesPanel").innerHTML = `<div class="notes-head"><span class="kicker">${flows.find(flow => flow.id === state.screen).group} / 设计说明</span><h2>${note.title}</h2><p>${note.description}</p></div><section class="note-section"><h3>设计决策</h3><ul>${note.decisions.map(item => `<li>${item}</li>`).join("")}</ul></section><section class="note-section"><h3>关键交互</h3><ul>${note.interactions.map(item => `<li>${item}</li>`).join("")}</ul></section><div class="native-note">${note.native}</div>`;
+      document.querySelectorAll(".flow-button").forEach(button => button.setAttribute("aria-current", button.classList.contains("active") ? "page" : "false"));
+    }
+
+    function go(screen) {
+      const previous = state.screen;
+      if (screen === "reader") {
+        state.readerSearch = previous === "search";
+        state.readerBack = ["search", "library", "tasks", "up"].includes(previous) ? previous : "library";
+      }
+      state.screen = screen;
+      state.sheet = null;
+      state.toast = "";
+      render();
+    }
+    function setTheme(theme) {
+      state.theme = theme;
+      if (theme === "system") document.documentElement.removeAttribute("data-theme");
+      else document.documentElement.setAttribute("data-theme", theme);
+      render();
+    }
+    function showToast(message) {
+      clearTimeout(toastTimer);
+      state.toast = message;
+      render();
+      toastTimer = setTimeout(() => { state.toast = ""; render(); }, 3600);
+    }
+
+    document.addEventListener("click", event => {
+      const goButton = event.target.closest("[data-go]");
+      if (goButton) { go(goButton.dataset.go); return; }
+      const button = event.target.closest("[data-action]");
+      if (!button) return;
+      const action = button.dataset.action;
+      if (action === "filter") { state.filter = button.dataset.value; go("library"); }
+      if (action === "clear-filter") { state.filter = ""; go("library"); }
+      if (action === "task-filter") { state.taskFilter = button.dataset.value; state.selecting = false; render(); }
+      if (action === "search-scope") { state.searchScope = button.dataset.value; render(); }
+      if (action === "reader-tab") { state.readerTab = button.dataset.value; state.sheet = null; render(); }
+      if (action === "theme") setTheme(button.dataset.value);
+      if (action === "font-size") { state.readerScale = state.readerScale === 1 ? 1.18 : state.readerScale > 1 ? 0.92 : 1; state.sheet = null; showToast(`正文字号已设为${state.readerScale > 1 ? "大" : state.readerScale < 1 ? "小" : "标准"}`); }
+      if (action === "directory-target") { const id = button.dataset.value; state.sheet = null; render(); document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" }); }
+      if (action === "timestamp") showToast(`将在来源页面 ${button.dataset.value} 打开`);
+      if (action === "match") showToast("已定位到相邻匹配位置");
+      if (action === "source") { state.sheet = null; showToast("将使用 Safari 打开来源页面"); }
+      if (action === "load-more") showToast("已加载更多内容");
+      if (action === "retry-connection") { go("library"); showToast("已重新连接"); }
+      if (action === "confirm-remove-token") { state.hasToken = false; state.connected = false; state.sheet = null; showToast("Token 已从这台 iPhone 移除"); }
+      if (action === "delete-tasks" && state.selected.size === 0) { showToast("请先选择要删除的任务"); return; }
+      if (action === "toggle-select") { state.selecting = !state.selecting; render(); }
+      if (action === "select-task") { const id = Number(button.dataset.id); state.selected.has(id) ? state.selected.delete(id) : state.selected.add(id); render(); }
+      if (["reader-menu", "directory", "remove-token", "cancel-job", "delete-tasks", "regenerate", "purge"].includes(action)) { state.sheet = action; render(); }
+      if (action === "duplicate") { state.sheet = "duplicate"; render(); }
+      if (action === "close-sheet") { state.sheet = null; render(); }
+      if (action === "generate" || action === "confirm-regenerate" || action === "retry") { state.canceled = false; go("progress"); showToast(action === "retry" ? "已重新开始任务" : "已加入任务，正在连接实时进度"); }
+      if (action === "confirm-cancel") { state.canceled = true; state.sheet = null; showToast("任务已取消"); }
+      if (action === "confirm-delete") { state.sheet = null; state.selected.clear(); showToast("已删除任务记录"); }
+      if (action === "delete-single") { go("tasks"); showToast("任务记录已删除"); }
+      if (action === "restore") { state.sheet = null; showToast("已恢复到全部笔记"); }
+      if (action === "trash-note") { state.sheet = null; showToast("已移到回收站"); }
+      if (action === "confirm-purge") { state.sheet = null; showToast("笔记已彻底删除"); }
+      if (action === "copy-error") showToast("错误详情已复制");
+      if (action === "copy-note") { state.sheet = null; showToast("当前内容已复制"); }
+      if (action === "cancel-distill") { go("up"); showToast("蒸馏已取消"); }
+      if (action === "undo") showToast("已撤销上一步操作");
+    });
+    document.addEventListener("submit", event => {
+      event.preventDefault();
+      if (event.target.id === "search-form") {
+        state.searchDraft = new FormData(event.target).get("q")?.toString() || "";
+        state.submittedQuery = state.searchDraft.trim();
+        render();
+      }
+      if (event.target.id === "server-form") {
+        const initial = event.target.dataset.initial === "true";
+        state.connected = true;
+        state.hasToken = Boolean(document.getElementById("server-token")?.value) || state.hasToken;
+        go("settings");
+        showToast(initial ? "服务器已连接" : "连接信息已保存");
+      }
+    });
+    document.addEventListener("input", event => {
+      if (event.target.id === "search-input") state.searchDraft = event.target.value;
+      if (event.target.id === "cue-search") {
+        const query = event.target.value.trim();
+        document.getElementById("cue-list").innerHTML = cueRows(transcriptCues.filter(([, text]) => text.includes(query)));
+      }
+      if (["server-address", "server-token"].includes(event.target.id)) {
+        const submit = document.getElementById("connect-submit");
+        if (submit) submit.hidden = false;
+      }
+    });
+    document.addEventListener("keydown", event => { if (event.key === "Escape" && state.sheet) { state.sheet = null; render(); } });
+    render();
+  </script>
+</body>
+</html>
