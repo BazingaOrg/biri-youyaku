@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SettingsView: View {
     @AppStorage("appearance") private var appearance: AppearancePreference = .system
-    @AppStorage("reader-text-size") private var textSize: ReaderTextSize = .standard
 
     var body: some View {
         Form {
@@ -23,31 +22,38 @@ struct SettingsView: View {
                 }
             }
 
-            Section("外观与阅读") {
+            Section("内容管理") {
+                NavigationLink {
+                    TrashView()
+                } label: {
+                    Label {
+                        VStack(alignment: .leading) {
+                            Text("回收站")
+                            Text("恢复或彻底删除已移除的笔记")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "trash")
+                    }
+                }
+            }
+
+            Section("外观") {
                 Picker("外观", selection: $appearance) {
                     ForEach(AppearancePreference.allCases) { preference in
                         Text(preference.label).tag(preference)
                     }
                 }
                 .pickerStyle(.segmented)
-                Picker("正文字号", selection: $textSize) {
-                    ForEach(ReaderTextSize.allCases) { size in
-                        Text(size.label).tag(size)
-                    }
-                }
-                .pickerStyle(.segmented)
             }
 
-            Section {
+            Section("关于") {
                 LabeledContent("应用", value: "笔哩")
                 LabeledContent("版本", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0")
-            } header: {
-                Text("关于")
-            } footer: {
-                Text("查看已生成的笔记、字幕和任务进度。")
             }
         }
-        .navigationTitle("设置")
+        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
@@ -68,7 +74,7 @@ struct ServerSettingsView: View {
                 Section {
                     VStack(spacing: 16) {
                         BrandIconView()
-                        Text("查看已生成的笔记、字幕和任务进度。")
+                        Text("把视频链接整理成可阅读、可搜索的笔记。")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -98,7 +104,7 @@ struct ServerSettingsView: View {
                     }
                 }
             } footer: {
-                Text("如果服务器启用了访问验证，请填写部署时设置的 API Token。Token 仅安全保存在此 iPhone，不会同步到 iCloud。局域网可直接连接；外出建议使用 Tailscale 或带访问验证的 HTTPS 服务。")
+                Text("服务器开启访问验证时填写 API Token；Token 仅保存在本机钥匙串。")
             }
 
             if let info = appModel.connectionInfo {
@@ -129,7 +135,7 @@ struct ServerSettingsView: View {
                     } label: {
                         HStack {
                             Spacer()
-                            if isSaving { ProgressView().padding(.trailing, 8) }
+                            if isSaving { ProgressView().controlSize(.small).padding(.trailing, 8) }
                             Text(isSaving ? "正在连接…" : connectButtonTitle)
                             Spacer()
                         }

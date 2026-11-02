@@ -3,6 +3,7 @@ import SwiftUI
 struct MarkdownView: View {
     let blocks: [MarkdownBlock]
     let fontScale: Double
+    var highlightQuery: String? = nil
 
     @ScaledMetric(relativeTo: .body) private var bodySize = 17
 
@@ -10,6 +11,7 @@ struct MarkdownView: View {
         VStack(alignment: .leading, spacing: 16) {
             ForEach(blocks) { block in
                 blockView(block)
+                    .id(block.id)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -19,13 +21,16 @@ struct MarkdownView: View {
     @ViewBuilder
     private func blockView(_ block: MarkdownBlock) -> some View {
         switch block {
-        case let .heading(id, level, text):
-            Text(InlineMarkdown.attributed(text))
-                .font(.system(size: bodySize * fontScale * headingFactor(level), weight: .semibold, design: .serif))
-                .padding(.top, level <= 2 ? 12 : 4)
-                .id(id)
+        case let .heading(_, level, text):
+            Text(SearchHighlight.attributed(text, query: highlightQuery, markdown: true))
+                .font(.system(
+                    size: bodySize * fontScale * headingFactor(level),
+                    weight: level == 1 ? .bold : .semibold,
+                    design: .serif
+                ))
+                .padding(.top, level == 1 ? 16 : (level == 2 ? 10 : 4))
         case let .paragraph(_, text):
-            Text(InlineMarkdown.attributed(text))
+            Text(SearchHighlight.attributed(text, query: highlightQuery, markdown: true))
                 .font(bodyFont)
                 .lineSpacing(7)
         case let .quote(_, text):
@@ -33,7 +38,7 @@ struct MarkdownView: View {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(Color.accentColor)
                     .frame(width: 3)
-                Text(InlineMarkdown.attributed(text))
+                Text(SearchHighlight.attributed(text, query: highlightQuery, markdown: true))
                     .font(bodyFont)
                     .foregroundStyle(.secondary)
                     .lineSpacing(6)
@@ -44,7 +49,7 @@ struct MarkdownView: View {
                     .font(bodyFont)
                     .foregroundStyle(Color.accentColor)
                     .frame(minWidth: 18, alignment: .trailing)
-                Text(InlineMarkdown.attributed(text))
+                Text(SearchHighlight.attributed(text, query: highlightQuery, markdown: true))
                     .font(bodyFont)
                     .lineSpacing(6)
             }
@@ -56,7 +61,7 @@ struct MarkdownView: View {
                         .foregroundStyle(.secondary)
                 }
                 ScrollView(.horizontal) {
-                    Text(text)
+                    Text(SearchHighlight.attributed(text, query: highlightQuery))
                         .font(.system(size: bodySize * fontScale * 0.86, design: .monospaced))
                         .textSelection(.enabled)
                         .padding(12)
@@ -74,10 +79,10 @@ struct MarkdownView: View {
 
     private func headingFactor(_ level: Int) -> Double {
         switch level {
-        case 1: 1.25
-        case 2: 1.18
+        case 1: 1.32
+        case 2: 1.2
         case 3: 1.1
-        default: 1.05
+        default: 1.03
         }
     }
 }
