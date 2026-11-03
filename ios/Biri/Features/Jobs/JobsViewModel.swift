@@ -19,6 +19,8 @@ final class JobsViewModel {
     var errorMessage: String?
 
     private var generation = 0
+    private var isLoadInFlight = false
+    private var pendingNonQuietLoad = false
     private var firstPageIDs: Set<String> = []
     var visibleJobs: [Job] { jobs.filter(filter.matches) }
     var hasActiveJobs: Bool { visibleJobs.contains { $0.status.isActive } }
@@ -90,6 +92,27 @@ final class JobsViewModel {
     }
 
     func load(using service: any BiriServicing, quietly: Bool = false) async {
+        guard !isLoadInFlight else {
+            // Timer/foreground refreshes can share the current snapshot. A
+            // filter-driven full load must run afterward with the latest state.
+            if !quietly { pendingNonQuietLoad = true }
+            return
+        }
+        isLoadInFlight = true
+        var nextQuietly = quietly
+        defer {
+            isLoadInFlight = false
+            pendingNonQuietLoad = false
+        }
+        while true {
+            pendingNonQuietLoad = false
+            await performLoad(using: service, quietly: nextQuietly)
+            guard pendingNonQuietLoad else { break }
+            nextQuietly = false
+        }
+    }
+
+    private func performLoad(using service: any BiriServicing, quietly: Bool) async {
         generation += 1
         let currentGeneration = generation
         if !quietly { isLoading = true }

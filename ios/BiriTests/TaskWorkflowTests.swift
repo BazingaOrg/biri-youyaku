@@ -3,6 +3,48 @@ import XCTest
 
 @MainActor
 final class TaskWorkflowTests: XCTestCase {
+    func testOverlappingQuietLoadsCoalesceAndAllowLaterRefresh() async {
+        let service = TaskWorkflowMockService()
+        service.shouldPauseJobRequests = true
+        let viewModel = JobsViewModel()
+        let firstLoad = Task { await viewModel.load(using: service, quietly: true) }
+        guard await waitUntil({ service.jobPageRequestCount == 1 }) else {
+            service.resumeJobRequests()
+            XCTFail("Initial jobs request did not start")
+            return
+        }
+
+        await viewModel.load(using: service, quietly: true)
+        XCTAssertEqual(service.jobPageRequestCount, 1)
+        service.resumeJobRequests()
+        await firstLoad.value
+        XCTAssertEqual(service.jobPageRequestCount, 1)
+
+        await viewModel.load(using: service)
+        XCTAssertEqual(service.jobPageRequestCount, 2)
+        XCTAssertFalse(viewModel.isLoading)
+    }
+
+    func testNonQuietLoadRunsAfterInFlightRefresh() async {
+        let service = TaskWorkflowMockService()
+        service.shouldPauseJobRequests = true
+        let viewModel = JobsViewModel()
+        let refresh = Task { await viewModel.load(using: service, quietly: true) }
+        guard await waitUntil({ service.jobPageRequestCount == 1 }) else {
+            service.resumeJobRequests()
+            XCTFail("Initial jobs request did not start")
+            return
+        }
+
+        await viewModel.load(using: service)
+        XCTAssertEqual(service.jobPageRequestCount, 1)
+        service.resumeJobRequests()
+        await refresh.value
+
+        XCTAssertEqual(service.jobPageRequestCount, 2)
+        XCTAssertFalse(viewModel.isLoading)
+    }
+
     func testSelectionDeletesOnlySelectedTerminalJobs() async {
         let service = TaskWorkflowMockService()
         service.jobPage = JobPage(jobs: [
@@ -272,6 +314,9 @@ private func makeTranscribeProgress(percent: Double, preview: String) -> Transcr
 
 private final class TaskWorkflowMockService: JobDetailServicing {
     var jobPage = JobPage(jobs: [], nextCursor: nil)
+    private(set) var jobPageRequestCount = 0
+    var shouldPauseJobRequests = false
+    private var jobRequestContinuations: [CheckedContinuation<Void, Never>] = []
     var jobResult: Job!
     var creation: JobCreation!
     var streamedEvents: [JobEvent] = []
@@ -283,7 +328,22 @@ private final class TaskWorkflowMockService: JobDetailServicing {
     private(set) var resentEmailJobIDs: [String] = []
     private(set) var jobRequestIDs: [String] = []
 
-    func jobs(filter: JobFilter, cursor: CursorValue?, limit: Int) async throws -> JobPage { jobPage }
+    func jobs(filter: JobFilter, cursor: CursorValue?, limit: Int) async throws -> JobPage {
+        jobPageRequestCount += 1
+        if shouldPauseJobRequests {
+            await withCheckedContinuation { continuation in
+                jobRequestContinuations.append(continuation)
+            }
+        }
+        return jobPage
+    }
+
+    func resumeJobRequests() {
+        shouldPauseJobRequests = false
+        let continuations = jobRequestContinuations
+        jobRequestContinuations.removeAll()
+        for continuation in continuations { continuation.resume() }
+    }
 
     func job(id: String) async throws -> Job {
         jobRequestIDs.append(id)
