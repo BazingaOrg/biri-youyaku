@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @AppStorage("appearance") private var appearance: AppearancePreference = .system
+    @AppStorage("reader-text-size") private var readerTextSize: ReaderTextSize = .standard
 
     var body: some View {
         Form {
@@ -43,6 +44,13 @@ struct SettingsView: View {
                 Picker("外观", selection: $appearance) {
                     ForEach(AppearancePreference.allCases) { preference in
                         Text(preference.label).tag(preference)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Picker("阅读字号", selection: $readerTextSize) {
+                    ForEach(ReaderTextSize.allCases) { size in
+                        Text(size.label).tag(size)
                     }
                 }
                 .pickerStyle(.segmented)

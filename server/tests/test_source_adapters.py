@@ -20,6 +20,13 @@ from biri_youyaku.sources import youtube
             "https://www.bilibili.com/video/BV1xx411c7mD?p=2",
         ),
         (
+            "https://www.bilibili.com/zh-Hans/video/BV1xx411c7mD?p=1",
+            "bilibili",
+            "BV1xx411c7mD",
+            "1",
+            "https://www.bilibili.com/video/BV1xx411c7mD?p=1",
+        ),
+        (
             "https://youtu.be/dQw4w9WgXcQ",
             "youtube",
             "dQw4w9WgXcQ",

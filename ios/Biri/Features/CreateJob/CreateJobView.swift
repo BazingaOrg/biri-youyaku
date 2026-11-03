@@ -14,11 +14,11 @@ struct CreateJobView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("粘贴 Bilibili 或 YouTube 视频链接，服务器会检查是否已生成过。")
+                Text("支持 Bilibili 和 YouTube，也可以直接粘贴完整分享文案。")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 12) {
                     Text("视频链接")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -26,7 +26,7 @@ struct CreateJobView: View {
                         Image(systemName: "link")
                             .foregroundStyle(Color.accentColor)
                         TextField(
-                            "https://www.bilibili.com/video/…",
+                            "粘贴视频链接或分享文案",
                             text: Binding(
                                 get: { viewModel.url },
                                 set: { viewModel.updateURL($0) }
@@ -42,24 +42,34 @@ struct CreateJobView: View {
                         if viewModel.isResolving && viewModel.resolution != nil {
                             ProgressView().controlSize(.small)
                         }
-                    }
-                    .padding(.horizontal, 13)
-                    .frame(minHeight: 48)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
-
-                    HStack(spacing: 14) {
                         PasteButton(payloadType: String.self) { values in
                             guard let value = values.first else { return }
                             viewModel.updateURL(value)
                             resolve()
                         }
-                        .labelStyle(.titleAndIcon)
-                        .buttonBorderShape(.capsule)
-
-                        Button("识别链接") { resolve() }
-                            .disabled(!viewModel.canResolve)
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .frame(width: 36, height: 36)
+                        .accessibilityLabel("粘贴链接")
                     }
-                    .font(.subheadline)
+                    .padding(.horizontal, 13)
+                    .frame(minHeight: 52)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+
+                    Button(action: resolve) {
+                        HStack(spacing: 8) {
+                            if viewModel.isResolving {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "magnifyingglass")
+                            }
+                            Text(viewModel.isResolving ? "正在识别…" : "识别链接")
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 24)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(!viewModel.canResolve)
                 }
 
                 if let message = viewModel.errorMessage {
@@ -74,16 +84,6 @@ struct CreateJobView: View {
                 if let resolution = viewModel.resolution {
                     sourceCard(resolution)
                     resolutionActions(resolution)
-                } else if viewModel.isResolving {
-                    HStack(spacing: 10) {
-                        ProgressView()
-                        Text("正在识别链接并检查已有内容…")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
                 }
             }
             .padding(20)
@@ -92,7 +92,7 @@ struct CreateJobView: View {
         .navigationTitle("生成笔记")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button("关闭") { dismiss() }
                     .disabled(viewModel.isSubmitting)
             }

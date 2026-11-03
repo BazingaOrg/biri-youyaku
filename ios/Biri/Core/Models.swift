@@ -291,10 +291,16 @@ enum JobStatus: String, Decodable, Hashable {
 
     var systemImage: String {
         switch self {
+        case .pending: "clock"
+        case .fetchingMeta: "doc.text.magnifyingglass"
+        case .downloadingAudio: "arrow.down.circle"
+        case .transcribing: "waveform"
+        case .transcriptReady: "captions.bubble"
+        case .summarizing: "sparkles"
+        case .emailing: "envelope"
         case .completed: "checkmark.circle.fill"
         case .failed: "exclamationmark.circle.fill"
         case .canceled: "stop.circle.fill"
-        default: "clock.fill"
         }
     }
 }

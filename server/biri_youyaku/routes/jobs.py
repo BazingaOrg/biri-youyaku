@@ -56,6 +56,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_token)])
 creation_lock = asyncio.Lock()
 
+_HTTP_URL_IN_TEXT = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
+_URL_TRAILING_PUNCTUATION = ".,;:!?，。；：！？、）】》」』"
+
 
 class JobOptionsPayload(BaseModel):
     task_type: Literal["summary", "audio", "distill"] | None = None
@@ -78,6 +81,9 @@ class CreateJobPayload(BaseModel):
     @field_validator("url")
     @classmethod
     def validate_url(cls, value: str) -> str:
+        match = _HTTP_URL_IN_TEXT.search(value)
+        if match is not None:
+            value = match.group(0).rstrip(_URL_TRAILING_PUNCTUATION)
         parsed = urlparse(value)
         if parsed.scheme not in ("http", "https"):
             raise ValueError("仅支持 http/https 链接")

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct JobsView: View {
     @Environment(AppModel.self) private var appModel
@@ -8,27 +9,6 @@ struct JobsView: View {
 
     var body: some View {
         List {
-            Section {
-                Picker("任务状态", selection: $viewModel.filter) {
-                    ForEach(JobFilter.allCases) { filter in
-                        Text(filter.label).tag(filter)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
-            } header: {
-                HStack {
-                    Text("任务记录")
-                    Spacer()
-                    Button(viewModel.isSelecting ? "完成" : "选择") {
-                        viewModel.toggleSelection()
-                    }
-                    .font(.footnote)
-                    .disabled(viewModel.isDeleting)
-                }
-            }
-
             ForEach(viewModel.visibleJobs) { job in
                 row(for: job)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -52,12 +32,32 @@ struct JobsView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Picker("任务状态", selection: $viewModel.filter) {
+                ForEach(JobFilter.allCases) { filter in
+                    Text(filter.label).tag(filter)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.regularMaterial)
+        }
+        .background {
+            ThreeFingerTapGesture {
+                guard !viewModel.isDeleting else { return }
+                viewModel.toggleSelection()
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             if viewModel.isSelecting {
                 HStack(spacing: 16) {
                     Text("已选择 \(viewModel.selectedCount) 项")
                         .font(.subheadline)
                     Spacer()
+                    Button("完成") { viewModel.exitSelection() }
+                        .disabled(viewModel.isDeleting)
                     Button("删除任务记录", role: .destructive) {
                         deletionConfirmation = .selected
                     }
@@ -131,6 +131,10 @@ struct JobsView: View {
         } else {
             NavigationLink(value: job.id) {
                 JobRow(job: job, isSelected: false, showsSelection: false)
+            }
+            .accessibilityAction(named: "选择任务") {
+                viewModel.toggleSelection()
+                viewModel.toggleSelection(for: job)
             }
         }
     }
@@ -221,7 +225,7 @@ private struct JobRow: View {
                         Text(author).lineLimit(1)
                         Text("·")
                     }
-                    RelativeDateText(milliseconds: job.updatedAt).fixedSize()
+                    Text(Formatting.date(job.createdAt)).fixedSize()
                     Spacer(minLength: 8)
                     JobStatusBadge(status: job.status)
                 }
@@ -243,15 +247,11 @@ struct JobStatusBadge: View {
     let status: JobStatus
 
     var body: some View {
-        Label(status.label, systemImage: status.systemImage)
-            .font(.footnote.weight(.medium))
+        Image(systemName: status.systemImage)
+            .font(.title3)
             .foregroundStyle(status.color)
-            .labelStyle(.titleAndIcon)
-            .lineLimit(1)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(status.color.opacity(0.12), in: Capsule())
-            .fixedSize()
+            .frame(width: 28, height: 28)
+            .accessibilityLabel(status.label)
     }
 }
 
@@ -262,6 +262,72 @@ extension JobStatus {
         case .failed: .red
         case .canceled: .secondary
         default: .accentColor
+        }
+    }
+}
+
+private struct ThreeFingerTapGesture: UIViewRepresentable {
+    let action: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action)
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.action = action
+        guard let hostView = uiView.superview, context.coordinator.hostView !== hostView else { return }
+        context.coordinator.detach()
+
+        let recognizer = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleTap)
+        )
+        recognizer.numberOfTouchesRequired = 3
+        recognizer.numberOfTapsRequired = 1
+        recognizer.cancelsTouchesInView = false
+        recognizer.delegate = context.coordinator
+        hostView.addGestureRecognizer(recognizer)
+        context.coordinator.hostView = hostView
+        context.coordinator.recognizer = recognizer
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var action: () -> Void
+        weak var hostView: UIView?
+        var recognizer: UITapGestureRecognizer?
+
+        init(action: @escaping () -> Void) {
+            self.action = action
+        }
+
+        @objc func handleTap() {
+            action()
+        }
+
+        func detach() {
+            if let hostView, let recognizer {
+                hostView.removeGestureRecognizer(recognizer)
+            }
+            hostView = nil
+            recognizer = nil
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
         }
     }
 }

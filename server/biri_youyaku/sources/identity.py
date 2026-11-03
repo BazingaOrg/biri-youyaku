@@ -54,7 +54,10 @@ def identify_url(value: str) -> SourceIdentity | None:
     if host in _B23_HOSTS:
         return None
     if host in _BILIBILI_HOSTS:
-        match = re.fullmatch(r"/video/(BV[a-zA-Z0-9]+)(?:/)?", parsed.path)
+        match = re.fullmatch(
+            r"(?:/[A-Za-z]{2,8}(?:-[A-Za-z0-9]{2,8})*)?/video/(BV[a-zA-Z0-9]+)(?:/)?",
+            parsed.path,
+        )
         if match is None or not _BVID.fullmatch(match.group(1)):
             return None
         source_id = match.group(1)

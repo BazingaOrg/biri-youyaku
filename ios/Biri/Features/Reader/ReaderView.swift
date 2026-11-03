@@ -281,12 +281,6 @@ struct ReaderView: View {
                 }
                 .disabled(viewModel.headings.isEmpty || viewModel.selectedTab != .notes)
 
-                Picker("阅读字号", selection: $textSize) {
-                    ForEach(ReaderTextSize.allCases) { size in
-                        Text(size.label).tag(size)
-                    }
-                }
-
                 Button {
                     UIPasteboard.general.string = viewModel.copyText
                     withAnimation { showCopied = true }
@@ -341,7 +335,7 @@ struct ReaderView: View {
             .navigationTitle("本篇目录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("完成") { showingDirectory = false }
                 }
             }

@@ -38,7 +38,7 @@ struct LibraryView: View {
         .navigationDestination(item: $upDestination) { destination in
             UPCatalogView(destination: destination)
         }
-        .safeAreaInset(edge: .top, spacing: 12) {
+        .safeAreaInset(edge: .top, spacing: 0) {
             searchBar
         }
         .onChange(of: isSearchFieldFocused) { _, focused in
@@ -133,11 +133,20 @@ struct LibraryView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+            } else if library.total > 0 {
+                HStack {
+                    Text("全部笔记")
+                    Spacer()
+                    Text("\(library.total) 篇")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 4)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color(uiColor: .systemBackground))
+        .background(.regularMaterial)
     }
 
     @ViewBuilder
@@ -192,6 +201,7 @@ struct LibraryView: View {
                     })
                     .equatable()
                 }
+                .listRowSeparator(item.id == library.items.first?.id ? .hidden : .automatic, edges: .top)
                 .contextMenu {
                     if let mid = item.mid {
                         Button {
@@ -221,18 +231,6 @@ struct LibraryView: View {
                 Label(message, systemImage: "exclamationmark.triangle")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            }
-        } header: {
-            if library.total > 0 {
-                HStack {
-                    Text("全部笔记")
-                    Spacer()
-                    Text("\(library.total) 篇")
-                        .foregroundStyle(.secondary)
-                }
-                .font(.subheadline.weight(.medium))
-                .textCase(nil)
-                .padding(.bottom, 4)
             }
         }
     }
@@ -459,7 +457,7 @@ private struct LibraryRow: View, Equatable {
                     Text(item.provider.replacingOccurrences(of: "_", with: " ").capitalized)
                     Text(Formatting.duration(item.duration))
                     Spacer(minLength: 8)
-                    RelativeDateText(milliseconds: item.savedAt)
+                    Text(Formatting.date(item.savedAt))
                 }
             }
             .font(.caption)

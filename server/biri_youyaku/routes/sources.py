@@ -35,8 +35,8 @@ async def resolve_source(request: Request, url: str = Query(max_length=2048)) ->
     from biri_youyaku.routes.jobs import CreateJobPayload
 
     try:
-        CreateJobPayload(url=url)
-        media = await asyncio.wait_for(fetch_meta(url), timeout=35)
+        payload = CreateJobPayload(url=url)
+        media = await asyncio.wait_for(fetch_meta(payload.url), timeout=35)
     except (ValueError, RuntimeError, TimeoutError, httpx.HTTPError):
         raise HTTPException(400, "无法识别内容，请检查链接或稍后重试") from None
     source_id = media.source_id or media.bvid

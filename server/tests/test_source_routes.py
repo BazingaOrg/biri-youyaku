@@ -168,6 +168,35 @@ async def test_import_requires_auth_before_consuming_upload(source_app, monkeypa
 
 
 @pytest.mark.asyncio
+async def test_resolve_source_extracts_url_from_bilibili_share_text(source_app, monkeypatch):
+    received = []
+
+    async def metadata(url):
+        received.append(url)
+        return MediaMeta(
+            url="https://www.bilibili.com/video/BV14n4w6DENJ?p=1",
+            bvid="BV14n4w6DENJ",
+            cid=1,
+            title="Lecture",
+            author="",
+            duration=2,
+            source_id="BV14n4w6DENJ",
+            source_part="1",
+        )
+
+    monkeypatch.setattr(sources, "fetch_meta", metadata)
+    share_text = "【人类到底在干什么？】 https://b23.tv/P96yrzb"
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=source_app), base_url="http://test"
+    ) as client:
+        response = await client.get("/v1/sources/resolve", params={"url": share_text})
+
+    assert response.status_code == 200, response.text
+    assert received == ["https://b23.tv/P96yrzb"]
+    assert response.json()["source_id"] == "BV14n4w6DENJ"
+
+
+@pytest.mark.asyncio
 async def test_source_jobs_dedupe_by_part_and_task_type(source_app, monkeypatch):
     async def metadata(url):
         cid = 2 if "p=2" in url else 1

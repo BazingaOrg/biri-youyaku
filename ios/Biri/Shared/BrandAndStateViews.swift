@@ -11,18 +11,6 @@ struct BrandIconView: View {
     }
 }
 
-struct RelativeDateText: View {
-    let milliseconds: Int?
-
-    var body: some View {
-        if let milliseconds {
-            Text(Date(timeIntervalSince1970: TimeInterval(milliseconds) / 1000), style: .relative)
-        } else {
-            Text("时间未知")
-        }
-    }
-}
-
 struct LoadMoreRow: View {
     var isLoading: Bool
     var title = "加载更多"

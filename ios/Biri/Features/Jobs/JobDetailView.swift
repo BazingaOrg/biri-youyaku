@@ -84,16 +84,18 @@ struct JobDetailView: View {
     private func detail(_ job: Job) -> some View {
         ScrollView {
             VStack(spacing: 20) {
-                VStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 10) {
                     if let url = sourceURL(for: job) {
                         Button {
                             openURL(url)
                         } label: {
                             Text(job.displayTitle)
-                                .font(.title2.weight(.semibold))
+                                .font(.title3.weight(.semibold))
                                 .foregroundStyle(Color.accentColor)
                                 .underline()
-                                .multilineTextAlignment(.center)
+                                .multilineTextAlignment(.leading)
+                                .lineLimit(4)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .textSelection(.enabled)
                         }
                         .buttonStyle(.plain)
@@ -101,16 +103,22 @@ struct JobDetailView: View {
                         .disabled(viewModel.isMutating)
                     } else {
                         Text(job.displayTitle)
-                            .font(.title2.weight(.semibold))
-                            .multilineTextAlignment(.center)
+                            .font(.title3.weight(.semibold))
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
                     }
-                    if let author = job.author, !author.isEmpty {
-                        Text(author)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        if let author = job.author, !author.isEmpty {
+                            Text(author)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        JobStatusBadge(status: job.status)
                     }
-                    JobStatusBadge(status: job.status)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, 12)

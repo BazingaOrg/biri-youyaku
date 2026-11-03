@@ -152,7 +152,7 @@ struct TrashView: View {
                 .navigationTitle("彻底删除这篇笔记？")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
+                    ToolbarItem(placement: .topBarTrailing) {
                         Button("取消") { viewModel.cancelPurge() }
                             .disabled(viewModel.isPurging)
                     }
