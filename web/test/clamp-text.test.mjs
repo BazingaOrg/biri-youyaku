@@ -32,3 +32,11 @@ test('clamped titles use one line and a panel tooltip', async () => {
     assert.doesNotMatch(source, /line-clamp-2/)
   }
 })
+
+test('tooltip pointer tracking is frame-bounded and cleaned up', async () => {
+  const clamp = await readFile(new URL('../src/components/ClampText.tsx', import.meta.url), 'utf8')
+  assert.match(clamp, /if \(frameRef\.current !== null\) return/)
+  assert.match(clamp, /window\.requestAnimationFrame\(\(\) =>/)
+  assert.match(clamp, /placeBubble\(tip, caret, point\.x, point\.y\)/)
+  assert.match(clamp, /window\.cancelAnimationFrame\(frameRef\.current\)/)
+})

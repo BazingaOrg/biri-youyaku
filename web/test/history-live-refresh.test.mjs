@@ -11,4 +11,8 @@ test('task list refreshes active jobs while the page remains open', async () => 
   assert.match(pageSource, /activeJobs\.length > 0 \? window\.setInterval\(refresh, ACTIVE_REFRESH_INTERVAL_MS\)/)
   assert.match(pageSource, /document\.addEventListener\('visibilitychange', onVisibilityChange\)/)
   assert.match(pageSource, /window\.addEventListener\('focus', refresh\)/)
+  assert.match(pageSource, /if \(loading \|\| activeRefreshRef\.current\) return/)
+  assert.match(pageSource, /now - lastActiveRefreshAtRef\.current < ACTIVE_REFRESH_THROTTLE_MS/)
+  assert.match(pageSource, /ACTIVE_REFRESH_THROTTLE_MS = 1000/)
+  assert.doesNotMatch(pageSource, /activeRefreshRef\.current\?\.abort\(\)\s*\n\s*const controller/)
 })

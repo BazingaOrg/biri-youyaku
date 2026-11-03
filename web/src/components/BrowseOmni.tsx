@@ -3,6 +3,7 @@ import {useOmniComposer} from '../hooks/useOmniComposer'
 import {OmniBar} from './OmniBar'
 import {ImportPanel} from './ImportPanel'
 import {useToast} from './ToastProvider'
+import {useTaskAlerts} from '../hooks/useTaskAlerts'
 import {writeActive} from '../lib/activeJob'
 import {FileUp, X} from 'lucide-react'
 import {useEffect, useRef, useState} from 'react'
@@ -12,6 +13,7 @@ import {docHref} from '../lib/docNav'
 export function BrowseOmni() {
   const [pathname, navigate] = useLocation()
   const toast = useToast()
+  const {refresh: refreshTaskAlerts} = useTaskAlerts()
   const params = new URLSearchParams(useSearch())
   const searching = pathname === '/search'
   const omni = useOmniComposer(searching ? params.get('q') ?? '' : params.get('paste') ?? '')
@@ -77,6 +79,7 @@ export function BrowseOmni() {
             setImportBusy(false)
             setImportOpen(false)
             writeActive({jobId, url: 'upload://local'})
+            if (!deduped) void refreshTaskAlerts()
             toast.success(deduped ? '这份内容已有笔记' : '已交给后台生成笔记', undefined, {dedupeKey: jobId})
             navigate(deduped ? docHref(jobId, {from: 'task'}) : `/jobs/${jobId}`)
           }} />

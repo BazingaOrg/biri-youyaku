@@ -17,6 +17,7 @@ import {useJobStream} from '../hooks/useJobStream'
 import {useRuntimeConfig} from '../hooks/useRuntimeConfig'
 import {useStickToBottom} from '../hooks/useStickToBottom'
 import {useTerminalToast} from '../hooks/useTerminalToast'
+import {useTaskAlerts} from '../hooks/useTaskAlerts'
 import {useToast} from '../components/ToastProvider'
 import {ConfirmDialog} from '../components/ConfirmDialog'
 import {IconButton} from '../components/IconButton'
@@ -40,6 +41,7 @@ interface WorkspaceProps {
 export function Workspace({jobId}: WorkspaceProps) {
   const [, navigate] = useLocation()
   const toast = useToast()
+  const {refresh: refreshTaskAlerts} = useTaskAlerts()
   const {job, setJob, error, refresh} = useJob(jobId)
   const [actionBusy, setActionBusy] = useState(false)
   const [cancelPending, setCancelPending] = useState(false)
@@ -195,6 +197,7 @@ export function Workspace({jobId}: WorkspaceProps) {
       return
     }
     writeActive({jobId: response.job_id, url})
+    void refreshTaskAlerts()
     toast.success('已开始生成笔记', undefined, {dedupeKey: response.job_id})
     navigate(`/jobs/${response.job_id}`)
   }
@@ -213,6 +216,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     try {
       const response = await resummarizeJob(sourceJobId, newSummaryOptions())
       writeActive({jobId: response.job_id, url})
+      void refreshTaskAlerts()
       setDuplicateJob(null)
       toast.success('已开始重新生成笔记', undefined, {dedupeKey: response.job_id})
       navigate(`/jobs/${response.job_id}`)
@@ -230,6 +234,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     try {
       const response = await resummarizeJob(job.id, newSummaryOptions())
       writeActive({jobId: response.job_id, url: job.url})
+      void refreshTaskAlerts()
       setResummaryConfirmOpen(false)
       toast.success('已开始重新生成笔记', undefined, {taskName, dedupeKey: response.job_id})
       navigate(`/jobs/${response.job_id}`)
@@ -253,6 +258,7 @@ export function Workspace({jobId}: WorkspaceProps) {
     try {
       await cancelJob(jobId)
       await refresh()
+      void refreshTaskAlerts()
       toast.info('已请求取消', undefined, {taskName})
     } catch (err) {
       window.clearTimeout(safetyTimeout)
@@ -273,6 +279,7 @@ export function Workspace({jobId}: WorkspaceProps) {
       // 后续 progress / status 事件，页面会卡在某个中间状态。
       setStreamReconnectKey((k) => k + 1)
       await refresh()
+      void refreshTaskAlerts()
       toast.info('已重试', undefined, {taskName})
     } catch (err) {
       toast.error('重试失败', err instanceof Error ? err.message : '请重试', {taskName})

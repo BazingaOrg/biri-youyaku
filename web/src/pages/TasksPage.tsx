@@ -15,6 +15,7 @@ import {readViewState, saveViewState} from '../lib/sessionRestore'
 
 const PAGE_SIZE = 60
 const ACTIVE_REFRESH_INTERVAL_MS = 2000
+const ACTIVE_REFRESH_THROTTLE_MS = 1000
 const UNDO_WINDOW_MS = 5000
 
 function opaqueCursor(cursor: string | number | null | undefined) {
@@ -35,6 +36,7 @@ export function TasksPage() {
   const loadGenerationRef = useRef(0)
   const activeLoadRef = useRef<{controller: AbortController; generation: number} | null>(null)
   const activeRefreshRef = useRef<AbortController | null>(null)
+  const lastActiveRefreshAtRef = useRef(0)
   const jobsRef = useRef<Job[]>([])
   const nextCursorRef = useRef<string | null>(null)
   const loadedPagesRef = useRef(1)
@@ -91,9 +93,11 @@ export function TasksPage() {
   }, [jobs])
 
   const refreshActiveJobs = useCallback(async () => {
-    if (loading) return
+    if (loading || activeRefreshRef.current) return
+    const now = Date.now()
+    if (now - lastActiveRefreshAtRef.current < ACTIVE_REFRESH_THROTTLE_MS) return
+    lastActiveRefreshAtRef.current = now
     const generation = loadGenerationRef.current
-    activeRefreshRef.current?.abort()
     const controller = new AbortController()
     activeRefreshRef.current = controller
     const previousActiveIds = jobsRef.current.filter((job) => isRunning(job.status)).map((job) => job.id)
@@ -147,6 +151,8 @@ export function TasksPage() {
   useEffect(() => {
     const refresh = () => {
       if (document.visibilityState === 'hidden') return
+      // focus + visibilitychange often arrive together; coalesce them and
+      // reuse an in-flight request instead of aborting and resending it.
       void refreshActiveJobs()
     }
     const timer = activeJobs.length > 0 ? window.setInterval(refresh, ACTIVE_REFRESH_INTERVAL_MS) : undefined

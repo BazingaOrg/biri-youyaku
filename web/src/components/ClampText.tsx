@@ -84,6 +84,7 @@ export function ClampText({
   const tipRef = useRef<HTMLSpanElement>(null)
   const caretRef = useRef<HTMLSpanElement>(null)
   const pointRef = useRef<{x: number; y: number} | null>(null)
+  const frameRef = useRef<number | null>(null)
   const [overflow, setOverflow] = useState(false)
   const [open, setOpen] = useState(false)
 
@@ -113,19 +114,26 @@ export function ClampText({
     return () => {
       window.removeEventListener('scroll', hide, true)
       window.removeEventListener('resize', hide)
+      if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current)
+      frameRef.current = null
     }
   }, [open])
 
   const track = (x: number, y: number) => {
     if (!overflow) return
     pointRef.current = {x, y}
-    const tip = tipRef.current
-    const caret = caretRef.current
-    if (!open || !tip || !caret) {
+    if (!open) {
       setOpen(true)
       return
     }
-    placeBubble(tip, caret, x, y)
+    if (frameRef.current !== null) return
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = null
+      const point = pointRef.current
+      const tip = tipRef.current
+      const caret = caretRef.current
+      if (point && tip && caret) placeBubble(tip, caret, point.x, point.y)
+    })
   }
   const followMouse = (event: ReactMouseEvent) => track(event.clientX, event.clientY)
   const followFocus = () => {

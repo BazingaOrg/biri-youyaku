@@ -3,6 +3,7 @@ import {RotateCw, Search} from 'lucide-react'
 import {getLatestDistillRun, getUpVideos, createJob, type DistillRun, type JobStatus, type UpOrder, type UpVideo} from '../../lib/api'
 import {isRunning} from '../../lib/jobStatus'
 import {useRuntimeConfig} from '../../hooks/useRuntimeConfig'
+import {useTaskAlerts} from '../../hooks/useTaskAlerts'
 import {Spinner} from '../../components/Spinner'
 import {Skeleton} from '../../components/Skeleton'
 import {DistillPanel} from '../../components/DistillPanel'
@@ -20,6 +21,7 @@ type Filter = 'all' | 'todo' | 'done'
 export function UpList({mid}: {mid: number}) {
   const toast = useToast()
   const runtime = useRuntimeConfig()
+  const {refresh: refreshTaskAlerts} = useTaskAlerts()
   const [videos, setVideos] = useState<UpVideo[]>([])
   const [author, setAuthor] = useState('')
   const [total, setTotal] = useState(0)
@@ -159,6 +161,7 @@ export function UpList({mid}: {mid: number}) {
       const options: {task_type: 'summary'; email_enabled?: boolean} = {task_type: 'summary'}
       if (runtime?.email_configured) options.email_enabled = true
       const res = await createJob(video.url, options)
+      void refreshTaskAlerts()
       setOverrides((o) => ({
         ...o,
         [video.bvid]: {status: res.deduped ? 'COMPLETED' : 'PENDING', job_id: res.job_id},

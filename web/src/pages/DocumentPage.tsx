@@ -18,6 +18,7 @@ import {formatClock, formatDuration} from '../lib/format'
 import {transcriptToPlainText} from '../lib/subtitle'
 import {backTarget, docHref} from '../lib/docNav'
 import {useUrlState} from '../hooks/useUrlState'
+import {useTaskAlerts} from '../hooks/useTaskAlerts'
 import {useToast} from '../components/ToastProvider'
 import {BackButton} from '../components/BackButton'
 import {Button} from '../components/Button'
@@ -38,6 +39,7 @@ type Tab = 'notes' | 'subs'
 export function DocumentPage({id}: {id: string}) {
   const {get, setParams, navigate} = useUrlState()
   const toast = useToast()
+  const {refresh: refreshTaskAlerts} = useTaskAlerts()
   const tab = (get('tab') === 'subs' ? 'subs' : 'notes') as Tab
   const at = get('at')
   const from = get('from')
@@ -193,6 +195,7 @@ export function DocumentPage({id}: {id: string}) {
       if (jobId) {
         const response = await resummarizeJob(jobId, {task_type: 'summary'})
         writeActive({jobId: response.job_id, url: sourceUrl || ''})
+        void refreshTaskAlerts()
         toast.success('已开始重新生成笔记')
         navigate(`/jobs/${response.job_id}`)
         return
@@ -200,6 +203,7 @@ export function DocumentPage({id}: {id: string}) {
       if (!sourceUrl) throw new Error('没有可用的视频链接')
       const response = await createJob(sourceUrl, {task_type: 'summary'})
       writeActive({jobId: response.job_id, url: sourceUrl})
+      void refreshTaskAlerts()
       toast.success('已开始重新生成笔记')
       navigate(`/jobs/${response.job_id}`)
     } catch (err) {

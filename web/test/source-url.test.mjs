@@ -19,6 +19,13 @@ test('recognizes Bilibili sharing text and canonical YouTube variants', () => {
   assert.equal(recognizeSourceUrl('https://example.com/watch?v=dQw4w9WgXcQ'), null)
 })
 
+test('source resolution reruns only when the canonical URL changes', () => {
+  const composer = fs.readFileSync(new URL('../src/hooks/useOmniComposer.ts', import.meta.url), 'utf8')
+  assert.match(composer, /resolveSource\(canonicalUrl, \{signal: controller\.signal\}\)/)
+  assert.match(composer, /\}, \[canonicalUrl\]\)/)
+  assert.doesNotMatch(composer, /\[isLink, source\?\.canonicalUrl, value\]/)
+})
+
 test('creates timestamp playback URLs only for supported remote sources', () => {
   const {playbackUrl} = loadModule()
   assert.equal(playbackUrl('https://www.youtube.com/shorts/dQw4w9WgXcQ', 'youtube', 61), 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=61')

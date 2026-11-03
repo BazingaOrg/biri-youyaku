@@ -5,6 +5,7 @@ import {BrowseOmni} from './components/BrowseOmni'
 import {ErrorBoundary} from './components/ErrorBoundary'
 import {Workspace} from './pages/Workspace'
 import {ToastProvider} from './components/ToastProvider'
+import {TaskAlertsProvider} from './components/TaskAlertsProvider'
 import {Skeleton} from './components/Skeleton'
 import {PageLoading} from './components/Spinner'
 
@@ -25,54 +26,56 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ToastProvider>
-        <AppShell>
-          <BrowseOmni />
-          <Switch>
-            <Route path="/history">
-              <Redirect to="/" />
-            </Route>
-            <Route path="/knowledge">
-              <KnowledgeRedirect />
-            </Route>
-            <Route path="/search">
-              <Suspense fallback={<Skeleton count={5} />}>
-                <SearchPage />
-              </Suspense>
-            </Route>
-            <Route path="/doc/:id">
-              {(params) => (
-                <Suspense fallback={<PageLoading label="加载笔记…" />}>
-                  <DocumentPage id={params.id} />
+        <TaskAlertsProvider>
+          <AppShell>
+            <BrowseOmni />
+            <Switch>
+              <Route path="/history">
+                <Redirect to="/" />
+              </Route>
+              <Route path="/knowledge">
+                <KnowledgeRedirect />
+              </Route>
+              <Route path="/search">
+                <Suspense fallback={<Skeleton count={5} />}>
+                  <SearchPage />
                 </Suspense>
-              )}
-            </Route>
-            <Route path="/jobs/:jobId">
-              {(params) => <Workspace jobId={params.jobId} />}
-            </Route>
-            <Route path="/tasks">
-              <Suspense fallback={<Skeleton count={6} />}>
-                <TasksPage />
-              </Suspense>
-            </Route>
-            <Route path="/trash">
-              <Suspense fallback={<Skeleton count={4} />}>
-                <TrashPage />
-              </Suspense>
-            </Route>
-            <Route path="/up/:mid">
-              {(params) => (
+              </Route>
+              <Route path="/doc/:id">
+                {(params) => (
+                  <Suspense fallback={<PageLoading label="加载笔记…" />}>
+                    <DocumentPage id={params.id} />
+                  </Suspense>
+                )}
+              </Route>
+              <Route path="/jobs/:jobId">
+                {(params) => <Workspace jobId={params.jobId} />}
+              </Route>
+              <Route path="/tasks">
                 <Suspense fallback={<Skeleton count={6} />}>
-                  <UpPage mid={params.mid} />
+                  <TasksPage />
                 </Suspense>
-              )}
-            </Route>
-            <Route path="/">
-              <Suspense fallback={<Skeleton count={6} />}>
-                <LibraryPage />
-              </Suspense>
-            </Route>
-          </Switch>
-        </AppShell>
+              </Route>
+              <Route path="/trash">
+                <Suspense fallback={<Skeleton count={4} />}>
+                  <TrashPage />
+                </Suspense>
+              </Route>
+              <Route path="/up/:mid">
+                {(params) => (
+                  <Suspense fallback={<Skeleton count={6} />}>
+                    <UpPage mid={params.mid} />
+                  </Suspense>
+                )}
+              </Route>
+              <Route path="/">
+                <Suspense fallback={<Skeleton count={6} />}>
+                  <LibraryPage />
+                </Suspense>
+              </Route>
+            </Switch>
+          </AppShell>
+        </TaskAlertsProvider>
       </ToastProvider>
     </ErrorBoundary>
   )

@@ -9,6 +9,7 @@ import {
 import {resolvePasteAction, type PasteMatch} from '../lib/pasteAction'
 import {recognizeSourceUrl} from '../lib/sourceUrl'
 import {useRuntimeConfig} from './useRuntimeConfig'
+import {useTaskAlerts} from './useTaskAlerts'
 import {writeActive} from '../lib/activeJob'
 import {useToast} from '../components/ToastProvider'
 import {hrefWithQuery} from '../lib/urlState'
@@ -18,6 +19,7 @@ export function useOmniComposer(initialValue = '') {
   const [, navigate] = useLocation()
   const toast = useToast()
   const runtime = useRuntimeConfig()
+  const {refresh: refreshTaskAlerts} = useTaskAlerts()
   const [value, setValue] = useState(initialValue)
   const [busy, setBusy] = useState(false)
   const [existing, setExisting] = useState<PasteMatch | null>(null)
@@ -29,11 +31,11 @@ export function useOmniComposer(initialValue = '') {
     setValue(initialValue)
   }, [initialValue])
 
-  const source = recognizeSourceUrl(value)
-  const isLink = source != null
+  const canonicalUrl = recognizeSourceUrl(value)?.canonicalUrl ?? null
+  const isLink = canonicalUrl != null
 
   useEffect(() => {
-    if (!isLink) {
+    if (!canonicalUrl) {
       setExisting(null)
       setTrashed(null)
       setActiveJobId(null)
@@ -48,7 +50,7 @@ export function useOmniComposer(initialValue = '') {
     setSourceState('resolving')
     const timer = window.setTimeout(() => void (async () => {
       try {
-        const resolved = await resolveSource(source?.canonicalUrl ?? value, {signal: controller.signal})
+        const resolved = await resolveSource(canonicalUrl, {signal: controller.signal})
         if (cancelled) return
         const trashHit = resolved.trashed ? {documentId: resolved.trashed.document_id, title: resolved.trashed.title, daysLeft: resolved.trashed.days_left} : null
         const liveHit = resolved.existing ? {documentId: resolved.existing.document_id, title: resolved.existing.title, savedAt: resolved.existing.saved_at} : null
@@ -70,7 +72,7 @@ export function useOmniComposer(initialValue = '') {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [isLink, source?.canonicalUrl, value])
+  }, [canonicalUrl])
 
   const action = useMemo(
     () => resolvePasteAction({isLink, existing, trashed}),
@@ -104,13 +106,14 @@ export function useOmniComposer(initialValue = '') {
         return
       }
       writeActive({jobId: response.job_id, url})
+      void refreshTaskAlerts()
       navigate(`/jobs/${response.job_id}`)
     } catch (err) {
       toast.error('没能开始', err instanceof Error ? err.message : '换个链接试试')
     } finally {
       setBusy(false)
     }
-  }, [activeJobId, navigate, newSummaryOptions, toast, value])
+  }, [activeJobId, navigate, newSummaryOptions, refreshTaskAlerts, toast, value])
 
   const restore = useCallback(
     async (documentId: string) => {

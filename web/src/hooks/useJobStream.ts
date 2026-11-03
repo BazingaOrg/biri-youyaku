@@ -1,49 +1,11 @@
 import {useEffect, useRef} from 'react'
 import type {Job, JobStatus} from '../lib/api'
 import {openJobStream, type JobStreamMessage} from '../lib/sse'
+import {createSummaryThrottler} from '../lib/summaryThrottle'
 
-// summary_chunk 由 LLM 流式推送，可能每秒几十次；用 rAF 合批到 60fps，避免
-// ReactMarkdown 频繁重排。其它事件（status / progress）保持立即派发。
-//
-// 返回 {push, cancel}：cancel 用于 useEffect cleanup，确保 unmount 后挂着的 rAF /
-// timeout 不会再调 onPatch（否则跨 jobId 切换时，旧 jobId 的 summary 会被写到新 jobId
-// 上，React 也会 warn 「Cannot update unmounted component」）。
-function createSummaryThrottler(onPatch: (patch: Partial<Job>) => void) {
-  let latestText: string | null = null
-  let canceled = false
-  let rafId: number | null = null
-  let timerId: ReturnType<typeof setTimeout> | null = null
-  const flush = () => {
-    rafId = null
-    timerId = null
-    if (canceled || latestText === null) return
-    onPatch({summary: latestText})
-    latestText = null
-  }
-  const push = (text: string) => {
-    if (canceled) return
-    latestText = text
-    if (rafId !== null || timerId !== null) return
-    if (typeof window !== 'undefined' && 'requestAnimationFrame' in window) {
-      rafId = window.requestAnimationFrame(flush)
-    } else {
-      timerId = setTimeout(flush, 16)
-    }
-  }
-  const cancel = () => {
-    canceled = true
-    if (rafId !== null && typeof window !== 'undefined') {
-      window.cancelAnimationFrame(rafId)
-      rafId = null
-    }
-    if (timerId !== null) {
-      clearTimeout(timerId)
-      timerId = null
-    }
-    latestText = null
-  }
-  return {push, cancel}
-}
+// summary_chunk 由 LLM 流式推送，可能每秒几十次；summaryThrottle 以 150ms
+// 合批并保留最后一次快照，避免 ReactMarkdown 按屏幕刷新率反复解析。
+// 其它事件（status / progress）保持立即派发。
 
 interface StatusPayload {
   status: JobStatus
@@ -96,7 +58,7 @@ export function useJobStream(
     let attempts = 0
     let isReconnect = false
     terminalRef.current = false
-    const throttler = createSummaryThrottler(onPatch)
+    const throttler = createSummaryThrottler((summary) => onPatch({summary}))
     const pushSummary = throttler.push
 
     const handleMessage = (message: JobStreamMessage) => {
@@ -144,7 +106,7 @@ export function useJobStream(
       }
       if (message.event === 'summary_chunk') {
         const payload = JSON.parse(message.data) as {text: string}
-        // rAF 合批，避免高频 setState 拖慢 ReactMarkdown
+        // 时间合批，避免高频 setState 拖慢 ReactMarkdown
         pushSummary(payload.text)
         return
       }
@@ -208,7 +170,7 @@ export function useJobStream(
     return () => {
       closed = true
       subscription?.close()
-      // 取消未 flush 的 rAF / setTimeout，避免对 unmounted / 切换后的 jobId 派发
+      // 取消未 flush 的 timer，避免对 unmounted / 切换后的 jobId 派发
       throttler.cancel()
     }
     // reconnectKey 变化 → effect 重跑 → SSE 完全重建
