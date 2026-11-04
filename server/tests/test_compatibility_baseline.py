@@ -19,6 +19,7 @@ from biri_youyaku.jobs.model import JobOptions, JobStatus
 from biri_youyaku.modules.bilibili.meta import VideoMeta
 from biri_youyaku.modules.email import webhook
 from biri_youyaku.modules.storage import summary as summary_storage
+from biri_youyaku.modules.transcript import TranscriptItem
 from biri_youyaku.routes.jobs import serialize_job
 
 FIXTURES = Path(__file__).parent / "fixtures" / "compatibility"
@@ -129,6 +130,12 @@ def test_serialize_job_detail_vs_lite(monkeypatch, tmp_path):
     assert REQUIRED_SERIALIZE_JOB_KEYS <= lite.keys()
     assert lite["summary"] is None
     assert lite["summary_available"] is True
+    assert "transcript_available" not in lite
+
+    repo.set_transcript(job.id, [TranscriptItem(start=0, end=1, text="字幕")])
+    with_transcript = repo.get_job(job.id)
+    assert with_transcript is not None
+    assert serialize_job(with_transcript, lite=True)["transcript_available"] is True
 
     saved.unlink()
     missing = repo.get_job(job.id)

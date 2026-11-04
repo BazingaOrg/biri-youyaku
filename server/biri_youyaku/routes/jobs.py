@@ -280,6 +280,8 @@ def serialize_job(job: Job, *, lite: bool = False) -> dict:
         payload["document_id"] = active_document_id_for_job(job.id)
     if lite:
         payload["summary_available"] = job.summary_path is not None
+        if job.transcript is not None:
+            payload["transcript_available"] = bool(job.transcript)
     return payload
 
 
@@ -387,9 +389,11 @@ async def list_jobs(
     tag: str | None = Query(default=None, max_length=100),
     active_only: bool = Query(default=False),
     terminal_only: bool = Query(default=False),
+    status: JobStatus | None = None,
 ) -> dict:
-    if active_only and terminal_only:
-        raise HTTPException(status_code=422, detail="active_only 与 terminal_only 不能同时使用")
+    if (active_only and terminal_only) or (status is not None and (active_only or terminal_only)):
+        raise HTTPException(status_code=422, detail="任务状态筛选条件不能同时使用")
+    history_order = terminal_only or status in TERMINAL_JOB_STATUSES
     filters = {
         "query": query.strip() or None if query is not None else None,
         "author": author.strip() or None if author is not None else None,
@@ -402,13 +406,14 @@ async def list_jobs(
             cursor=cursor,
             active_only=active_only,
             terminal_only=terminal_only,
+            status=status,
             **filters,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="历史游标无效") from exc
     if active_only or len(jobs) != limit:
         next_cursor = None
-    elif terminal_only:
+    elif history_order:
         next_cursor = repo.encode_history_cursor(jobs[-1], terminal_only=True)
     else:
         # Keep the original list endpoint contract for existing clients.

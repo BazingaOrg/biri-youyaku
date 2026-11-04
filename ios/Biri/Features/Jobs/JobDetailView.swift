@@ -124,6 +124,7 @@ struct JobDetailView: View {
                 .padding(.top, 12)
 
                 if job.status.isActive {
+                    actions(for: job)
                     connectionStatus
                     JobProgressCard(viewModel: viewModel, job: job)
                     livePreview(for: job)
@@ -179,7 +180,9 @@ struct JobDetailView: View {
                     .background(Color.orange.opacity(0.09), in: RoundedRectangle(cornerRadius: 12))
                 }
 
-                actions(for: job)
+                if !job.status.isActive {
+                    actions(for: job)
+                }
 
                 VStack(spacing: 0) {
                     DetailRow(title: "创建时间", value: Formatting.date(job.createdAt))
@@ -198,6 +201,7 @@ struct JobDetailView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Color(uiColor: .systemGroupedBackground))
+        .toolbar { taskToolbar(for: job) }
         .refreshable { await reconnect() }
     }
 
@@ -254,6 +258,36 @@ struct JobDetailView: View {
         }
     }
 
+    @ToolbarContentBuilder
+    private func taskToolbar(for job: Job) -> some ToolbarContent {
+        if viewModel.canResummarize || (!job.status.isActive && job.status != .canceled) {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    if viewModel.canResummarize {
+                        Button {
+                            confirmation = .resummarize
+                        } label: {
+                            Label("重新生成", systemImage: "sparkles")
+                        }
+                        .disabled(viewModel.isMutating)
+                    }
+
+                    if !job.status.isActive && job.status != .canceled {
+                        Button(role: .destructive) {
+                            confirmation = .delete(job)
+                        } label: {
+                            Label("删除任务", systemImage: "trash")
+                        }
+                        .disabled(viewModel.isMutating)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("任务操作")
+            }
+        }
+    }
+
     @ViewBuilder
     private func actions(for job: Job) -> some View {
         VStack(spacing: 12) {
@@ -279,51 +313,42 @@ struct JobDetailView: View {
             }
 
             if job.status == .transcriptReady {
-                Button {
-                    Task { await mutate(.resume) }
-                } label: {
-                    mutationLabel("继续生成", systemImage: "play.fill")
+                HStack(spacing: 12) {
+                    Button {
+                        Task { await mutate(.resume) }
+                    } label: {
+                        mutationLabel("继续生成", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(viewModel.isMutating)
+
+                    cancelTaskButton
                 }
-                .buttonStyle(.borderedProminent)
+            } else if job.status.isActive {
+                cancelTaskButton
+            } else if job.status == .canceled {
+                Button(role: .destructive) {
+                    confirmation = .delete(job)
+                } label: {
+                    Label("删除任务", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
                 .controlSize(.large)
                 .disabled(viewModel.isMutating)
             }
-
-            HStack(spacing: 12) {
-                if viewModel.canResummarize {
-                    Button {
-                        confirmation = .resummarize
-                    } label: {
-                        Label("重新生成", systemImage: "sparkles")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .disabled(viewModel.isMutating)
-                }
-
-                if job.status.isActive {
-                    Button("取消任务", role: .destructive) {
-                        confirmation = .cancel
-                    }
-                    .frame(maxWidth: .infinity)
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .disabled(viewModel.isMutating)
-                } else {
-                    Button(role: .destructive) {
-                        confirmation = .delete(job)
-                    } label: {
-                        Label("删除任务", systemImage: "trash")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .disabled(viewModel.isMutating)
-                }
-            }
         }
+    }
+
+    private var cancelTaskButton: some View {
+        Button("取消任务", role: .destructive) {
+            confirmation = .cancel
+        }
+        .frame(maxWidth: .infinity)
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .disabled(viewModel.isMutating)
     }
 
     private func mutationLabel(_ title: String, systemImage: String) -> some View {

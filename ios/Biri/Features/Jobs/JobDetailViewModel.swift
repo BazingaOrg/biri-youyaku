@@ -52,7 +52,8 @@ final class JobDetailViewModel {
     var pollKey: String { "\(jobID)-\(shouldPoll)" }
 
     var canResummarize: Bool {
-        job?.transcript?.isEmpty == false
+        if let transcriptAvailable = job?.transcriptAvailable { return transcriptAvailable }
+        return job?.transcript?.isEmpty == false
     }
 
     func load(using service: any BiriServicing, quietly: Bool = false) async {
@@ -63,7 +64,7 @@ final class JobDetailViewModel {
         errorMessage = nil
         defer { if currentGeneration == generation { isLoading = false } }
         do {
-            let loaded = try await service.job(id: jobID)
+            let loaded = try await service.job(id: jobID, lite: true)
             guard currentGeneration == generation, startingEventRevision == eventRevision else { return }
             job = loaded
             emailError = loaded.emailError
@@ -79,6 +80,10 @@ final class JobDetailViewModel {
 
     func start(using service: any JobDetailServicing) {
         stop()
+        guard job?.status.isActive == true else {
+            connectionState = .finished
+            return
+        }
         streamGeneration += 1
         let currentGeneration = streamGeneration
         connectionState = .connecting
@@ -317,6 +322,7 @@ final class JobDetailViewModel {
             documentId: current.documentId,
             summary: summary ?? current.summary,
             transcript: transcript ?? current.transcript,
+            transcriptAvailable: current.transcriptAvailable,
             emailError: emailError ?? current.emailError
         )
     }

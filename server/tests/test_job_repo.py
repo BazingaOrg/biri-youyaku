@@ -302,6 +302,32 @@ def test_history_active_scope_is_complete_and_excluded_from_terminal_pages(monke
 
 
 @pytest.mark.asyncio
+async def test_list_jobs_exact_status_scope(monkeypatch, tmp_path):
+    monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
+    db.init_db()
+    completed = repo.create_job("https://www.bilibili.com/video/BVdone", JobOptions())
+    failed = repo.create_job("https://www.bilibili.com/video/BVfailed", JobOptions())
+    canceled = repo.create_job("https://www.bilibili.com/video/BVcanceled", JobOptions())
+    repo.update_status(completed.id, JobStatus.COMPLETED)
+    repo.update_status(failed.id, JobStatus.FAILED)
+    repo.update_status(canceled.id, JobStatus.CANCELED)
+
+    response = await jobs_route.list_jobs(
+        limit=50,
+        offset=0,
+        cursor=None,
+        query=None,
+        author=None,
+        tag=None,
+        active_only=False,
+        terminal_only=False,
+        status=JobStatus.FAILED,
+    )
+
+    assert [job["id"] for job in response["jobs"]] == [failed.id]
+
+
+@pytest.mark.asyncio
 async def test_list_jobs_scope_cursor_response_contract(monkeypatch, tmp_path):
     monkeypatch.setattr(db.settings, "db_path", tmp_path / "jobs.db")
     db.init_db()

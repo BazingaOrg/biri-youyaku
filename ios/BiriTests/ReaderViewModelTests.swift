@@ -28,6 +28,33 @@ final class ReaderViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.content?.markdown, "# 正式笔记")
     }
 
+    func testEmptyDocumentSummaryFallsBackToLinkedJobSummary() async {
+        let service = MockService()
+        service.documentResult = DocumentContent(job: makeJob(documentId: "doc-1", summary: ""))
+        service.jobResult = makeJob(documentId: "doc-1", summary: "# 搜索结果中的正文")
+        let viewModel = ReaderViewModel(destination: ReaderDestination(id: "doc-1", title: "笔记", kind: .document))
+
+        await viewModel.load(using: service)
+
+        XCTAssertEqual(service.documentIDs, ["doc-1"])
+        XCTAssertEqual(service.requestedJobIDs, ["job-1"])
+        XCTAssertEqual(viewModel.content?.markdown, "# 搜索结果中的正文")
+        XCTAssertEqual(viewModel.headings.first?.text, "搜索结果中的正文")
+    }
+
+    func testJobWithEmptyDocumentSummaryReusesJobSummary() async {
+        let service = MockService()
+        service.jobResult = makeJob(documentId: "doc-1", summary: "# 任务中的正文")
+        service.documentResult = DocumentContent(job: makeJob(documentId: "doc-1", summary: ""))
+        let viewModel = ReaderViewModel(destination: ReaderDestination(id: "job-1", title: "笔记", kind: .job))
+
+        await viewModel.load(using: service)
+
+        XCTAssertEqual(service.requestedJobIDs, ["job-1"])
+        XCTAssertEqual(service.documentIDs, ["doc-1"])
+        XCTAssertEqual(viewModel.content?.markdown, "# 任务中的正文")
+    }
+
     private func makeJob(documentId: String?, summary: String?, transcript: [TranscriptCue]? = nil) -> Job {
         Job(
             id: "job-1", url: "https://example.com", title: "标题", author: "作者", duration: 10,
@@ -41,8 +68,12 @@ private final class MockService: BiriServicing {
     var jobResult: Job!
     var documentResult: DocumentContent!
     var documentIDs: [String] = []
+    var requestedJobIDs: [String] = []
 
-    func job(id: String) async throws -> Job { jobResult }
+    func job(id: String) async throws -> Job {
+        requestedJobIDs.append(id)
+        return jobResult
+    }
     func document(id: String) async throws -> DocumentContent {
         documentIDs.append(id)
         return documentResult

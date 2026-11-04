@@ -1,7 +1,7 @@
 import {forwardRef} from 'react'
 import type {ButtonHTMLAttributes, ReactNode} from 'react'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost'
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 export type ButtonSize = 'md' | 'sm'
 
 const VARIANT: Record<ButtonVariant, string> = {
@@ -10,6 +10,8 @@ const VARIANT: Record<ButtonVariant, string> = {
   secondary:
     'border border-line bg-panel text-ink hover:bg-lift disabled:opacity-50',
   ghost: 'bg-transparent text-muted hover:bg-lift hover:text-ink disabled:opacity-40',
+  danger:
+    'bg-dangerSolid text-onDanger shadow-card hover:brightness-105 disabled:opacity-50',
 }
 
 const SIZE: Record<ButtonSize, string> = {

@@ -92,18 +92,29 @@ final class ReaderViewModel {
             if currentGeneration == generation { isLoading = false }
         }
         do {
-            let loaded: DocumentContent
+            var loaded: DocumentContent
+            var fallbackSummary: String?
             switch destination.kind {
             case .document:
                 loaded = try await service.document(id: destination.id)
+                if loaded.markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   let jobID = loaded.document.jobId {
+                    fallbackSummary = (try? await service.job(id: jobID))?.summary
+                }
             case .job:
                 let job = try await service.job(id: destination.id)
+                fallbackSummary = job.summary
                 if let documentId = job.documentId {
                     loaded = try await service.document(id: documentId)
                 } else {
                     guard job.summary?.isEmpty == false else { throw APIError.http(status: 404, message: nil) }
                     loaded = DocumentContent(job: job)
                 }
+            }
+            if loaded.markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let summary = fallbackSummary,
+               !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                loaded.markdown = summary
             }
             guard currentGeneration == generation else { return }
             content = loaded

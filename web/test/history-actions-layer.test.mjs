@@ -16,3 +16,15 @@ test('task page deletes job records without bulk history cleanup', async () => {
   assert.doesNotMatch(pageSource, /previewBulkDelete/)
   assert.doesNotMatch(pageSource, /更多操作/)
 })
+
+test('selected delete uses one non-conflicting danger color variant', async () => {
+  const [buttonSource, pageSource, dialogSource] = await Promise.all([
+    readFile(new URL('../src/components/Button.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/pages/TasksPage.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/components/ConfirmDialog.tsx', import.meta.url), 'utf8'),
+  ])
+
+  assert.match(buttonSource, /danger:\s*\n\s*'bg-dangerSolid text-onDanger/)
+  assert.match(pageSource, /<Button\s+size="sm"\s+variant="danger"/)
+  assert.match(dialogSource, /variant=\{danger \? 'danger' : 'primary'\}/)
+})

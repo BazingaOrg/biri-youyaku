@@ -261,7 +261,7 @@ final class ReviewRegressionTests: XCTestCase {
             JobPage(jobs: [makeJob(id: "running", status: .summarizing)], nextCursor: CursorValue("old-cursor")),
             JobPage(jobs: [makeJob(id: "done", status: .completed)], nextCursor: nil)
         ]
-        service.nextJobPage = JobPage(jobs: [makeJob(id: "stale", status: .failed)], nextCursor: CursorValue("stale-cursor"))
+        service.nextJobPages = [JobPage(jobs: [makeJob(id: "stale", status: .failed)], nextCursor: CursorValue("stale-cursor"))]
         let viewModel = JobsViewModel()
         await viewModel.load(using: service)
 
@@ -269,14 +269,14 @@ final class ReviewRegressionTests: XCTestCase {
         let oldPage = Task { await viewModel.loadMore(using: service) }
         guard await waitUntil({ service.jobsContinuation != nil }) else {
             service.suspendNextJobs = false
-            service.jobsContinuation?.resume(returning: service.nextJobPage!)
+            service.jobsContinuation?.resume(returning: service.nextJobPages.removeFirst())
             await oldPage.value
             XCTFail("The old job page was not suspended")
             return
         }
         viewModel.filter = .completed
         await viewModel.load(using: service)
-        service.jobsContinuation?.resume(returning: service.nextJobPage!)
+        service.jobsContinuation?.resume(returning: service.nextJobPages.removeFirst())
         await oldPage.value
 
         XCTAssertEqual(viewModel.jobs.map(\.id), ["done"])
@@ -288,7 +288,7 @@ final class ReviewRegressionTests: XCTestCase {
         service.firstJobPages = [
             JobPage(jobs: [makeJob(id: "done", status: .completed)], nextCursor: CursorValue("next"))
         ]
-        service.nextJobPage = JobPage(jobs: [makeJob(id: "failed", status: .failed)], nextCursor: CursorValue("more"))
+        service.nextJobPages = [JobPage(jobs: [makeJob(id: "failed", status: .failed)], nextCursor: CursorValue("more"))]
         let viewModel = JobsViewModel()
         viewModel.filter = .failed
 
@@ -298,12 +298,31 @@ final class ReviewRegressionTests: XCTestCase {
         XCTAssertEqual(viewModel.nextCursor, CursorValue("more"))
     }
 
+    func testFailedFilterLoadMoreSkipsPagesWithoutMatchingJobs() async {
+        let service = ControlledService()
+        service.firstJobPages = [
+            JobPage(jobs: [makeJob(id: "failed-first", status: .failed)], nextCursor: CursorValue("page-two"))
+        ]
+        service.nextJobPages = [
+            JobPage(jobs: [makeJob(id: "done", status: .completed)], nextCursor: CursorValue("page-three")),
+            JobPage(jobs: [makeJob(id: "failed-second", status: .failed)], nextCursor: nil)
+        ]
+        let viewModel = JobsViewModel()
+        viewModel.filter = .failed
+        await viewModel.load(using: service)
+
+        await viewModel.loadMore(using: service)
+
+        XCTAssertEqual(viewModel.visibleJobs.map(\.id), ["failed-first", "failed-second"])
+        XCTAssertNil(viewModel.nextCursor)
+    }
+
     func testFailedFilterExhaustsPagesBeforeShowingEmptyState() async {
         let service = ControlledService()
         service.firstJobPages = [
             JobPage(jobs: [makeJob(id: "done", status: .completed)], nextCursor: CursorValue("next"))
         ]
-        service.nextJobPage = JobPage(jobs: [makeJob(id: "canceled", status: .canceled)], nextCursor: nil)
+        service.nextJobPages = [JobPage(jobs: [makeJob(id: "canceled", status: .canceled)], nextCursor: nil)]
         let viewModel = JobsViewModel()
         viewModel.filter = .failed
 
@@ -322,7 +341,7 @@ final class ReviewRegressionTests: XCTestCase {
             ),
             JobPage(jobs: [makeJob(id: "active", status: .completed)], nextCursor: CursorValue("new-first-cursor"))
         ]
-        service.nextJobPage = JobPage(jobs: [makeJob(id: "history", status: .completed)], nextCursor: CursorValue("page-three"))
+        service.nextJobPages = [JobPage(jobs: [makeJob(id: "history", status: .completed)], nextCursor: CursorValue("page-three"))]
         let viewModel = JobsViewModel()
         await viewModel.load(using: service)
         await viewModel.loadMore(using: service)
@@ -343,7 +362,7 @@ final class ReviewRegressionTests: XCTestCase {
             ),
             JobPage(jobs: [makeJob(id: "history", status: .completed)], nextCursor: CursorValue("new-first-cursor"))
         ]
-        service.nextJobPage = JobPage(jobs: [makeJob(id: "history", status: .summarizing)], nextCursor: CursorValue("page-three"))
+        service.nextJobPages = [JobPage(jobs: [makeJob(id: "history", status: .summarizing)], nextCursor: CursorValue("page-three"))]
         let viewModel = JobsViewModel()
         await viewModel.load(using: service)
         await viewModel.loadMore(using: service)
@@ -450,7 +469,7 @@ private final class ControlledService: BiriServicing {
     var searchContinuation: CheckedContinuation<SearchPage, Never>?
 
     var firstJobPages: [JobPage] = []
-    var nextJobPage: JobPage?
+    var nextJobPages: [JobPage] = []
     var suspendFirstJobs = false
     var firstJobsContinuation: CheckedContinuation<JobPage, Never>?
     var suspendNextJobs = false
@@ -489,7 +508,7 @@ private final class ControlledService: BiriServicing {
             if suspendNextJobs {
                 return await withCheckedContinuation { jobsContinuation = $0 }
             }
-            return nextJobPage!
+            return nextJobPages.removeFirst()
         }
         return firstJobPages.removeFirst()
     }

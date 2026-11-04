@@ -335,8 +335,8 @@ export function TasksPage() {
           {selectedJobs.length > 0 ? (
             <Button
               size="sm"
+              variant="danger"
               onClick={() => setConfirmOpen(true)}
-              className="bg-dangerSolid text-onDanger hover:brightness-105"
             >
               删除所选
             </Button>

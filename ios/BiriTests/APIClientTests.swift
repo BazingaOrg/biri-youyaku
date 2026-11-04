@@ -35,6 +35,41 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(page.groups.first?.hits.first?.snippet, "匹配内容")
     }
 
+    func testFailedJobsRequestFiltersOnServer() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path(), "/v1/jobs")
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+            XCTAssertEqual(components?.queryItems?.first { $0.name == "status" }?.value, "FAILED")
+            XCTAssertNil(components?.queryItems?.first { $0.name == "terminal_only" })
+            return self.response(
+                url: request.url!, status: 200,
+                json: #"{"jobs":[],"next_cursor":null}"#
+            )
+        }
+
+        let page = try await client.jobs(filter: .failed, cursor: nil, limit: 50)
+
+        XCTAssertTrue(page.jobs.isEmpty)
+    }
+
+    func testJobOverviewRequestUsesLiteResponse() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path(), "/v1/jobs/job-1")
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+            XCTAssertEqual(components?.queryItems?.first { $0.name == "lite" }?.value, "true")
+            return self.response(
+                url: request.url!, status: 200,
+                json: #"{"job":{"id":"job-1","url":"https://example.com","title":"标题","author":null,"duration":10,"status":"COMPLETED","error_stage":null,"error_message":null,"created_at":1,"updated_at":2,"completed_at":2,"summary_available":true,"transcript_available":true,"document_id":null,"summary":null,"transcript":[]}}"#
+            )
+        }
+
+        let job = try await client.job(id: "job-1", lite: true)
+
+        XCTAssertEqual(job.summaryAvailable, true)
+        XCTAssertEqual(job.transcriptAvailable, true)
+        XCTAssertNil(job.summary)
+    }
+
     func testUnauthorizedResponseUsesReadableMessage() async {
         let client = makeClient { request in
             self.response(url: request.url!, status: 401, json: #"{"detail":"Invalid API token"}"#)

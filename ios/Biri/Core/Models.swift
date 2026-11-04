@@ -232,7 +232,7 @@ struct TranscriptChunk: Decodable, Identifiable, Hashable {
 
 struct DocumentContent: Decodable {
     let document: DocumentMetadata
-    let markdown: String
+    var markdown: String
     let cues: [TranscriptCue]
     var noteChunks: [NoteChunk]? = nil
     var transcriptChunks: [TranscriptChunk]? = nil
@@ -321,6 +321,7 @@ struct Job: Decodable, Identifiable, Hashable {
     let documentId: String?
     let summary: String?
     let transcript: [TranscriptCue]?
+    var transcriptAvailable: Bool? = nil
     var emailError: String? = nil
 
     var displayTitle: String { title?.isEmpty == false ? title! : id }

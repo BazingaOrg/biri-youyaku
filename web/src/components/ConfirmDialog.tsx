@@ -171,10 +171,9 @@ export function ConfirmDialog({
             </Button>
           )}
           <Button
-            variant="primary"
+            variant={danger ? 'danger' : 'primary'}
             onClick={onConfirm}
             disabled={loading || confirmDisabled}
-            className={danger ? 'bg-dangerSolid text-onDanger hover:brightness-105' : ''}
           >
             {loading ? '处理中…' : confirmLabel}
           </Button>

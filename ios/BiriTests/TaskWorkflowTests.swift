@@ -122,6 +122,18 @@ final class TaskWorkflowTests: XCTestCase {
         XCTAssertNotEqual(viewModel.navigation?.id, viewModel.jobID)
     }
 
+    func testLiteTranscriptAvailabilityKeepsResummarizeAction() async {
+        let service = TaskWorkflowMockService()
+        service.jobResult = makeTaskJob(
+            id: "job-lite", status: .completed, summaryAvailable: true, transcriptAvailable: true
+        )
+        let viewModel = JobDetailViewModel(jobID: "job-lite")
+
+        await viewModel.load(using: service)
+
+        XCTAssertTrue(viewModel.canResummarize)
+    }
+
     func testRetryKeepsCurrentJobAndRestartsLiveUpdates() async {
         let service = TaskWorkflowMockService()
         service.jobResult = makeTaskJob(id: "job-failed", status: .failed)
@@ -185,6 +197,18 @@ final class TaskWorkflowTests: XCTestCase {
         XCTAssertEqual(viewModel.job?.documentId, "doc-done")
         XCTAssertNotNil(viewModel.job?.destination)
         viewModel.stop()
+    }
+
+    func testTerminalJobDoesNotOpenEventStream() async {
+        let service = TaskWorkflowMockService()
+        service.jobResult = makeTaskJob(id: "job-done", status: .completed, summaryAvailable: true)
+        let viewModel = JobDetailViewModel(jobID: "job-done")
+        await viewModel.load(using: service)
+
+        viewModel.start(using: service)
+
+        XCTAssertEqual(viewModel.connectionState, .finished)
+        XCTAssertTrue(service.jobStreamRequestIDs.isEmpty)
     }
 
     func testReconnectRefreshesSnapshotBeforeOpeningAnotherStream() async {
@@ -274,13 +298,15 @@ private func makeTaskJob(
     documentId: String? = nil,
     summary: String? = nil,
     transcript: [TranscriptCue]? = nil,
+    transcriptAvailable: Bool? = nil,
     emailError: String? = nil
 ) -> Job {
     Job(
         id: id, url: "https://example.com/video", title: "任务 \(id)", author: "作者", duration: 10,
         status: status, errorStage: nil, errorMessage: nil, createdAt: 1000, updatedAt: 2000,
         completedAt: status == .completed ? 2000 : nil, summaryAvailable: summaryAvailable,
-        documentId: documentId, summary: summary, transcript: transcript, emailError: emailError
+        documentId: documentId, summary: summary, transcript: transcript,
+        transcriptAvailable: transcriptAvailable, emailError: emailError
     )
 }
 
@@ -327,6 +353,7 @@ private final class TaskWorkflowMockService: JobDetailServicing {
     private(set) var retriedIDs: [String] = []
     private(set) var resentEmailJobIDs: [String] = []
     private(set) var jobRequestIDs: [String] = []
+    private(set) var jobStreamRequestIDs: [String] = []
 
     func jobs(filter: JobFilter, cursor: CursorValue?, limit: Int) async throws -> JobPage {
         jobPageRequestCount += 1
@@ -351,7 +378,8 @@ private final class TaskWorkflowMockService: JobDetailServicing {
     }
 
     func jobEvents(id: String) -> AsyncThrowingStream<JobEvent, Error> {
-        AsyncThrowingStream { continuation in
+        jobStreamRequestIDs.append(id)
+        return AsyncThrowingStream { continuation in
             for event in streamedEvents { continuation.yield(event) }
             if finishStreamImmediately {
                 continuation.finish()

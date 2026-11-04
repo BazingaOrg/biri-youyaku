@@ -9,7 +9,14 @@ protocol BiriServicing {
     func document(id: String) async throws -> DocumentContent
     func jobs(filter: JobFilter, cursor: CursorValue?, limit: Int) async throws -> JobPage
     func job(id: String) async throws -> Job
+    func job(id: String, lite: Bool) async throws -> Job
     func runtimeConfiguration() async throws -> RuntimeConfiguration
+}
+
+extension BiriServicing {
+    func job(id: String, lite: Bool) async throws -> Job {
+        try await job(id: id)
+    }
 }
 
 protocol SourceServicing {
@@ -161,8 +168,10 @@ struct APIClient: BiriServicing, SourceServicing, JobMutationServicing, LibraryL
         switch filter {
         case .running:
             query.append(URLQueryItem(name: "active_only", value: "true"))
-        case .completed, .failed:
-            query.append(URLQueryItem(name: "terminal_only", value: "true"))
+        case .completed:
+            query.append(URLQueryItem(name: "status", value: JobStatus.completed.rawValue))
+        case .failed:
+            query.append(URLQueryItem(name: "status", value: JobStatus.failed.rawValue))
         case .all:
             break
         }
@@ -171,7 +180,14 @@ struct APIClient: BiriServicing, SourceServicing, JobMutationServicing, LibraryL
     }
 
     func job(id: String) async throws -> Job {
-        let response: JobResponse = try await get(path: "/v1/jobs/\(id.escapingPathComponent)")
+        try await job(id: id, lite: false)
+    }
+
+    func job(id: String, lite: Bool) async throws -> Job {
+        let response: JobResponse = try await get(
+            path: "/v1/jobs/\(id.escapingPathComponent)",
+            query: lite ? [URLQueryItem(name: "lite", value: "true")] : []
+        )
         return response.job
     }
 

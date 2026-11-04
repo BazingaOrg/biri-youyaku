@@ -286,6 +286,7 @@ def list_jobs(
     tag: str | None = None,
     active_only: bool = False,
     terminal_only: bool = False,
+    status: JobStatus | None = None,
 ) -> list[Job]:
     """Jobs with compatible default scope plus history-specific scopes.
 
@@ -293,8 +294,9 @@ def list_jobs(
     include ``id`` so jobs completed in the same millisecond cannot be skipped.
     """
     clauses, parameters = _history_filter_clauses(query=query, author=author, tag=tag)
-    if active_only and terminal_only:
-        raise ValueError("active and terminal scopes are mutually exclusive")
+    if (active_only and terminal_only) or (status is not None and (active_only or terminal_only)):
+        raise ValueError("job status scopes are mutually exclusive")
+    history_order = terminal_only or status in TERMINAL_JOB_STATUSES
     terminal_placeholders, terminal_values = _status_filter(TERMINAL_JOB_STATUSES)
     legacy_cursor = False
     if active_only:
@@ -303,8 +305,11 @@ def list_jobs(
     elif terminal_only:
         clauses.append(f"status IN ({terminal_placeholders})")
         parameters.extend(terminal_values)
+    elif status is not None:
+        clauses.append("status = ?")
+        parameters.append(status.value)
     with connect() as connection:
-        cursor_field = _HISTORY_EFFECTIVE_AT if terminal_only else "created_at"
+        cursor_field = _HISTORY_EFFECTIVE_AT if history_order else "created_at"
         if cursor is not None and not active_only:
             effective_at, job_id = _parse_history_cursor(cursor)
             if job_id is None:
@@ -323,7 +328,7 @@ def list_jobs(
             pass
         order_by = (
             "created_at DESC, id DESC"
-            if active_only or not terminal_only or legacy_cursor
+            if active_only or not history_order or legacy_cursor
             else f"{_HISTORY_EFFECTIVE_AT} DESC, id DESC"
         )
         pagination = "" if active_only else "LIMIT ? OFFSET ?"

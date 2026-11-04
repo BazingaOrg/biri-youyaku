@@ -159,16 +159,23 @@ final class JobsViewModel {
     }
 
     func loadMore(using service: any BiriServicing) async {
-        guard let nextCursor, !isLoading, !isLoadingMore else { return }
+        guard self.nextCursor != nil, !isLoading, !isLoadingMore else { return }
         let currentGeneration = generation
         isLoadingMore = true
         defer { isLoadingMore = false }
         do {
-            let page = try await service.jobs(filter: filter, cursor: nextCursor, limit: 50)
-            guard currentGeneration == generation, self.nextCursor == nextCursor else { return }
-            let existingIDs = Set(jobs.map(\.id))
-            jobs.append(contentsOf: page.jobs.filter { !existingIDs.contains($0.id) })
-            self.nextCursor = page.nextCursor
+            var seenCursors: Set<CursorValue> = []
+            var existingIDs = Set(jobs.map(\.id))
+            while let currentCursor = self.nextCursor, !seenCursors.contains(currentCursor) {
+                seenCursors.insert(currentCursor)
+                let page = try await service.jobs(filter: filter, cursor: currentCursor, limit: 50)
+                guard currentGeneration == generation, self.nextCursor == currentCursor else { return }
+                let newJobs = page.jobs.filter { !existingIDs.contains($0.id) }
+                jobs.append(contentsOf: newJobs)
+                existingIDs.formUnion(newJobs.map(\.id))
+                self.nextCursor = page.nextCursor
+                if newJobs.contains(where: filter.matches) { break }
+            }
         } catch {
             if currentGeneration == generation, !error.isRequestCancellation { errorMessage = error.localizedDescription }
         }
