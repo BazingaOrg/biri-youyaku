@@ -1,4 +1,4 @@
-"""Document-aggregated library search (metadata LIKE + FTS, layered ranking)."""
+"""Document-aggregated library search (metadata LIKE + FTS, newest summaries first)."""
 
 from __future__ import annotations
 
@@ -22,6 +22,15 @@ SCOPES = frozenset({"all", "notes", "subs"})
 _DEFAULT_LIMIT = 20
 _MAX_LIMIT = 50
 _HITS_PER_GROUP = 2
+_DOCUMENT_GENERATED_AT = """
+    COALESCE((
+        SELECT COALESCE(j.completed_at, sr.created_at)
+        FROM knowledge_summary_revisions sr
+        LEFT JOIN jobs j ON j.id = sr.source_job_id
+        WHERE sr.document_id = d.id AND sr.is_active = 1
+        ORDER BY sr.created_at DESC, sr.id LIMIT 1
+    ), d.created_at)
+"""
 
 
 class SearchError(Exception):
@@ -38,7 +47,7 @@ class _Hit:
     heading_path: str | None
     start_sec: float | None
     end_sec: float | None
-    snippet: str
+    chunk_text: str
 
 
 @dataclass
@@ -72,15 +81,8 @@ class _Group:
     notes_count: int = 0
     subs_count: int = 0
 
-    def sort_tuple(self) -> tuple:
-        return (
-            0 if self.match_bvid or self.match_source else 1,
-            0 if self.match_title else 1,
-            -self.notes_count,
-            -self.subs_count,
-            -(self.saved_at or 0),
-            self.key,
-        )
+    def sort_tuple(self) -> tuple[int, str]:
+        return (-self.saved_at, self.key)
 
 
 def search_library(
@@ -107,47 +109,39 @@ def search_library(
     register_on = bool(settings.knowledge_register_enabled)
     want_notes = scope_key in {"all", "notes"}
     want_subs = scope_key in {"all", "subs"}
-    include_legacy = scope_key in {"all", "notes"}
-    include_meta = scope_key in {"all", "notes"} or not register_on
-
-    if include_meta or scope_key == "subs":
-        for row in _query_document_metadata(query, include_deleted=False):
-            group = _group_from_document_row(row, query)
-            groups[group.key] = group
-        if include_legacy:
-            for row in _query_legacy_job_metadata(query, register_on=register_on):
-                group = _group_from_job_row(row, query)
-                groups[group.key] = group
-
     notes_map: dict[str, dict[str, Any]] = {}
     subs_map: dict[str, dict[str, Any]] = {}
     match_expr = escape_fts_query(query)
     if register_on and match_expr:
         if want_notes:
             try:
-                notes_map = query_notes_fts(match_expr, query)
+                notes_map = query_notes_fts(match_expr)
             except Exception:
                 partial.append("notes")
                 notes_map = {}
         if want_subs:
             try:
-                subs_map = query_subs_fts(match_expr, query)
+                subs_map = query_subs_fts(match_expr)
             except Exception:
                 partial.append("subs")
                 subs_map = {}
     elif not register_on and want_subs:
         partial.append("subs")
 
-    if scope_key == "subs" and "subs" in partial:
+    if scope_key != "subs" or "subs" in partial:
         for row in _query_document_metadata(query, include_deleted=False):
-            key = f"d:{row['id']}"
-            if key not in groups:
-                groups[key] = _group_from_document_row(row, query)
+            group = _group_from_document_row(row, query)
+            groups[group.key] = group
+    if scope_key != "subs":
+        for row in _query_legacy_job_metadata(query, register_on=register_on):
+            group = _group_from_job_row(row, query)
+            groups[group.key] = group
 
     fts_ids = set(notes_map) | set(subs_map)
     missing_ids = [document_id for document_id in fts_ids if f"d:{document_id}" not in groups]
-    if missing_ids:
-        for row in _load_documents(missing_ids):
+    # Bound SQL parameters even when a broad subtitle search hits the entire library.
+    for offset in range(0, len(missing_ids), 500):
+        for row in _load_documents(missing_ids[offset : offset + 500]):
             group = _group_from_document_row(row, query)
             groups[group.key] = group
 
@@ -165,44 +159,16 @@ def search_library(
         group.subs_hits = payload["hits"]
         group.subs_count = payload["count"]
 
-    ranked = list(groups.values())
-    if scope_key == "subs":
-        if "subs" in partial:
-            ranked = [g for g in ranked if not g.legacy]
-        else:
-            ranked = [g for g in ranked if g.subs_count > 0]
-    ranked.sort(key=lambda g: g.sort_tuple())
+    ranked = sorted(groups.values(), key=_Group.sort_tuple)
 
     start = 0
     if cursor_payload is not None:
         try:
-            last_key = str(cursor_payload["id"])
-            last_kind = str(cursor_payload.get("k", "d"))
+            prefix = "j" if cursor_payload.get("k") == "j" else "d"
+            boundary = (-int(cursor_payload["at"]), f"{prefix}:{cursor_payload['id']}")
         except (KeyError, TypeError, ValueError) as exc:
             raise SearchError("cursor 无效", status_code=400) from exc
-        cursor_group_key = f"{'d' if last_kind == 'd' else 'j'}:{last_key}"
-        found = False
-        for index, group in enumerate(ranked):
-            if group.key == cursor_group_key:
-                start = index + 1
-                found = True
-                break
-        if not found:
-            last_tuple = (
-                int(cursor_payload.get("b", 1)),
-                int(cursor_payload.get("ti", 1)),
-                -int(cursor_payload.get("n", 0)),
-                -int(cursor_payload.get("s", 0)),
-                -int(cursor_payload.get("at", 0)),
-                cursor_group_key,
-            )
-            start = 0
-            for index, group in enumerate(ranked):
-                if group.sort_tuple() > last_tuple:
-                    start = index
-                    break
-            else:
-                start = len(ranked)
+        start = next((i for i, group in enumerate(ranked) if group.sort_tuple() > boundary), len(ranked))
 
     page = ranked[start : start + page_size]
     next_cursor = None
@@ -212,10 +178,6 @@ def search_library(
             {
                 "id": last.document_id or last.job_id,
                 "k": "j" if last.legacy else "d",
-                "b": 0 if last.match_bvid or last.match_source else 1,
-                "ti": 0 if last.match_title else 1,
-                "n": last.notes_count,
-                "s": last.subs_count,
                 "at": last.saved_at or 0,
             }
         )
@@ -226,7 +188,7 @@ def search_library(
         "scope": scope_key,
         "partial": partial,
         "next_cursor": next_cursor,
-        "groups": [_group_to_dict(group) for group in page],
+        "groups": [_group_to_dict(group, query) for group in page],
     }
 
 
@@ -321,7 +283,7 @@ def _load_documents(document_ids: list[str]) -> list[Any]:
           d.duration AS duration,
           d.tags_json AS tags_json,
           d.tldr AS tldr,
-          d.updated_at AS saved_at,
+          {_DOCUMENT_GENERATED_AT} AS saved_at,
           d.source_url AS source_url,
           (
             SELECT l.job_id FROM knowledge_job_links l
@@ -368,7 +330,7 @@ def _query_document_metadata(query: str, *, include_deleted: bool) -> list[Any]:
           d.duration AS duration,
           d.tags_json AS tags_json,
           d.tldr AS tldr,
-          d.updated_at AS saved_at,
+          {_DOCUMENT_GENERATED_AT} AS saved_at,
           d.source_url AS source_url,
           (
             SELECT l.job_id FROM knowledge_job_links l
@@ -429,7 +391,7 @@ def _query_legacy_job_metadata(query: str, *, register_on: bool) -> list[Any]:
         return list(connection.execute(sql, params).fetchall())
 
 
-def query_notes_fts(match_expr: str, query: str) -> dict[str, dict[str, Any]]:
+def query_notes_fts(match_expr: str) -> dict[str, dict[str, Any]]:
     sql = """
         WITH matched AS (
           SELECT
@@ -467,13 +429,13 @@ def query_notes_fts(match_expr: str, query: str) -> dict[str, dict[str, Any]]:
                 heading_path=row["heading_path"],
                 start_sec=row["start_sec"],
                 end_sec=None,
-                snippet=make_snippet(row["chunk_text"] or "", query=query),
+                chunk_text=row["chunk_text"] or "",
             )
         )
     return out
 
 
-def query_subs_fts(match_expr: str, query: str) -> dict[str, dict[str, Any]]:
+def query_subs_fts(match_expr: str) -> dict[str, dict[str, Any]]:
     sql = """
         WITH matched AS (
           SELECT
@@ -509,13 +471,13 @@ def query_subs_fts(match_expr: str, query: str) -> dict[str, dict[str, Any]]:
                 heading_path=None,
                 start_sec=row["start_sec"],
                 end_sec=row["end_sec"],
-                snippet=make_snippet(row["chunk_text"] or "", query=query),
+                chunk_text=row["chunk_text"] or "",
             )
         )
     return out
 
 
-def _group_to_dict(group: _Group) -> dict[str, Any]:
+def _group_to_dict(group: _Group, query: str) -> dict[str, Any]:
     notes_take = group.notes_hits[:_HITS_PER_GROUP]
     remaining = _HITS_PER_GROUP - len(notes_take)
     subs_take = group.subs_hits[: max(0, remaining)]
@@ -553,7 +515,7 @@ def _group_to_dict(group: _Group) -> dict[str, Any]:
                 "heading_path": hit.heading_path,
                 "start_sec": hit.start_sec,
                 "end_sec": hit.end_sec,
-                "snippet": hit.snippet,
+                "snippet": make_snippet(hit.chunk_text, query=query),
             }
             for hit in hits
         ],

@@ -198,6 +198,7 @@ struct DocumentMetadata: Decodable, Hashable {
     var cid: Int? = nil
     var tags: [String]? = nil
     var createdAt: Int? = nil
+    var deletedAt: Int? = nil
     var expiresAt: Int? = nil
 
     var displayTitle: String { title?.isEmpty == false ? title! : "未命名笔记" }
@@ -323,6 +324,12 @@ struct Job: Decodable, Identifiable, Hashable {
     let transcript: [TranscriptCue]?
     var transcriptAvailable: Bool? = nil
     var emailError: String? = nil
+    var readId: String? = nil
+
+    var historyReaderDestination: ReaderDestination? {
+        guard status == .completed, let readId, !readId.isEmpty else { return nil }
+        return ReaderDestination(id: readId, title: displayTitle, kind: readId == id ? .job : .document)
+    }
 
     var displayTitle: String { title?.isEmpty == false ? title! : id }
 

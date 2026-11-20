@@ -97,6 +97,44 @@ final class ReviewRegressionTests: XCTestCase {
         XCTAssertNotNil(makeJob(id: "document", status: .completed, documentId: "doc-1").destination)
     }
 
+    func testHistoryReadLinkUsesExplicitServerTarget() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        func destination(status: String = "COMPLETED", readID: String? = nil) throws -> ReaderDestination? {
+            var fields: [String: Any] = [
+                "id": "job", "url": "test", "status": status,
+                "created_at": 1, "updated_at": 1, "summary_available": true
+            ]
+            fields["read_id"] = readID
+            return try decoder.decode(Job.self, from: JSONSerialization.data(withJSONObject: fields)).historyReaderDestination
+        }
+        XCTAssertNil(try destination())
+        XCTAssertNil(try destination(status: "PENDING", readID: "doc"))
+        XCTAssertEqual(try destination(readID: "doc")?.id, "doc")
+        XCTAssertEqual(try destination(readID: "doc")?.kind, .document)
+        XCTAssertEqual(try destination(readID: "job")?.kind, .job)
+    }
+
+    func testFailedNewSearchClearsOldResultsWhileFailedRefreshKeepsThem() async {
+        let service = ControlledService()
+        let old = makeGroup(id: "old", title: "旧结果")
+        service.firstSearchPages = [SearchPage(groups: [old], nextCursor: CursorValue("next"), partial: ["subs"])]
+        let viewModel = SearchViewModel()
+        viewModel.query = "A"
+        await viewModel.search(using: service)
+        service.failSearch = true
+        await viewModel.search(using: service)
+        XCTAssertEqual(viewModel.groups.map(\.id), [old.id])
+        XCTAssertEqual(viewModel.nextCursor, CursorValue("next"))
+        viewModel.query = "B"
+        await viewModel.search(using: service)
+        XCTAssertEqual(viewModel.submittedQuery, "B")
+        XCTAssertTrue(viewModel.groups.isEmpty)
+        XCTAssertTrue(viewModel.partial.isEmpty)
+        XCTAssertNil(viewModel.nextCursor)
+        XCTAssertNotNil(viewModel.errorMessage)
+    }
+
     func testSearchPaginationUsesSubmittedQueryAndScope() async {
         let service = ControlledService()
         service.firstSearchPages = [
@@ -463,6 +501,7 @@ private final class ControlledService: BiriServicing {
     private(set) var searchRequests: [(query: String, scope: SearchScope, cursor: CursorValue?)] = []
     var firstSearchPages: [SearchPage] = []
     var nextSearchPage: SearchPage?
+    var failSearch = false
     var suspendFirstSearch = false
     var firstSearchContinuation: CheckedContinuation<SearchPage, Never>?
     var suspendNextSearch = false
@@ -487,6 +526,7 @@ private final class ControlledService: BiriServicing {
 
     func search(query: String, scope: SearchScope, cursor: CursorValue?) async throws -> SearchPage {
         searchRequests.append((query, scope, cursor))
+        if failSearch { throw APIError.http(status: 500, message: nil) }
         if cursor == nil && suspendFirstSearch {
             suspendFirstSearch = false
             return await withCheckedContinuation { firstSearchContinuation = $0 }

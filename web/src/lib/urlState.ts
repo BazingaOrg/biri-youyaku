@@ -42,3 +42,11 @@ export function viewStorageKey(path: string, search: string) {
   const qs = search.startsWith('?') ? search.slice(1) : search
   return qs ? `${path}?${qs}` : path
 }
+
+export function catalogQuery(query: string, filter: string, order: string) {
+  return writeUrlState('', {
+    q: query,
+    filter: filter === 'todo' || filter === 'done' ? filter : null,
+    order: order === 'click' ? order : null,
+  })
+}

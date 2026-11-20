@@ -1,10 +1,11 @@
 import {ArrowLeft} from 'lucide-react'
 import {Link} from 'wouter'
 
-export function BackButton({href = '/', label = '返回'}: {href?: string; label?: string}) {
+export function BackButton({href = '/', label = '返回', state}: {href?: string; label?: string; state?: unknown}) {
   return (
     <Link
       href={href}
+      state={state}
       className="inline-flex min-h-10 w-fit max-w-full items-center gap-2 rounded-2xl px-1 text-sm text-muted transition-colors hover:text-brand"
     >
       <ArrowLeft size={16} className="shrink-0" />

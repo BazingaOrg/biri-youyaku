@@ -13,9 +13,25 @@ import {parseSearchScope, type SearchScope} from '../lib/urlState'
 import {readViewState, saveViewState} from '../lib/sessionRestore'
 
 export function SearchPage() {
-  const {get, setParams, pathname, search, navigate} = useUrlState()
+  const {get} = useUrlState()
   const q = get('q')
   const scope = parseSearchScope(get('scope'))
+  const key = new URLSearchParams({q, scope}).toString()
+  return <SearchResults key={key} viewKey={key} q={q} scope={scope} />
+}
+
+function mergePage(current: LibrarySearchResponse, page: LibrarySearchResponse): LibrarySearchResponse {
+  const known = new Set(current.groups.map((group) => group.document_id || group.job_id || group.title))
+  return {
+    ...current,
+    next_cursor: page.next_cursor,
+    partial: [...new Set([...current.partial, ...page.partial])],
+    groups: [...current.groups, ...page.groups.filter((group) => !known.has(group.document_id || group.job_id || group.title))],
+  }
+}
+
+function SearchResults({viewKey, q, scope}: {viewKey: string; q: string; scope: SearchScope}) {
+  const {setParams, navigate} = useUrlState()
   const [result, setResult] = useState<LibrarySearchResponse | null>(null)
   const [loading, setLoading] = useState(Boolean(q.trim()))
   const [loadingMore, setLoadingMore] = useState(false)
@@ -25,7 +41,7 @@ export function SearchPage() {
   const loadedPagesRef = useRef(1)
   const nextCursorRef = useRef<string | null>(null)
   const generationRef = useRef(0)
-  const restore = useRef(readViewState(pathname, search))
+  const [restore] = useState(() => readViewState('/search', viewKey))
   const restoredScroll = useRef(false)
 
   useEffect(() => {
@@ -42,12 +58,19 @@ export function SearchPage() {
     setLoading(true)
     setError(null)
     void searchLibrary({q: trimmed, scope, limit: 30}, {signal: controller.signal})
-      .then((page) => {
+      .then(async (first) => {
+        let page: LibrarySearchResponse = first
+        let pages = 1
+        while (!controller.signal.aborted && page.next_cursor && pages < (restore?.loadedPages ?? 1)) {
+          const next = await searchLibrary({q: trimmed, scope, limit: 30, cursor: page.next_cursor}, {signal: controller.signal})
+          page = mergePage(page, next)
+          pages += 1
+        }
         if (generation !== generationRef.current) return
         setResult(page)
-        loadedPagesRef.current = 1
-        nextCursorRef.current = page.next_cursor
-        setNextCursor(page.next_cursor)
+        loadedPagesRef.current = pages
+        nextCursorRef.current = page.next_cursor ?? null
+        setNextCursor(page.next_cursor ?? null)
       })
       .catch((err) => {
         if (controller.signal.aborted || generation !== generationRef.current) return
@@ -60,7 +83,7 @@ export function SearchPage() {
         if (generation === generationRef.current) setLoading(false)
       })
     return () => controller.abort()
-  }, [q, scope, retryNonce])
+  }, [q, scope, retryNonce, restore])
 
   const loadMore = useCallback(async () => {
     const cursor = nextCursorRef.current
@@ -71,18 +94,10 @@ export function SearchPage() {
     try {
       const page = await searchLibrary({q: trimmed, scope, cursor, limit: 30})
       if (generation !== generationRef.current) return
-      setResult((current) => {
-        if (!current) return page
-        const known = new Set(current.groups.map((group) => group.document_id || group.job_id || group.title))
-        return {
-          ...current,
-          partial: page.partial.length ? page.partial : current.partial,
-          groups: [...current.groups, ...page.groups.filter((group) => !known.has(group.document_id || group.job_id || group.title))],
-        }
-      })
+      setResult((current) => current ? mergePage(current, page) : page)
       loadedPagesRef.current += 1
-      nextCursorRef.current = page.next_cursor
-      setNextCursor(page.next_cursor)
+      nextCursorRef.current = page.next_cursor ?? null
+      setNextCursor(page.next_cursor ?? null)
     } catch (err) {
       if (generation !== generationRef.current) return
       setError(err instanceof Error ? err.message : '检索失败')
@@ -92,15 +107,15 @@ export function SearchPage() {
   }, [loading, loadingMore, q, scope])
 
   useEffect(() => {
-    if (loading || restoredScroll.current) return
+    if (loading || !result || restoredScroll.current) return
     restoredScroll.current = true
-    const snap = restore.current
+    const snap = restore
     if (snap) window.requestAnimationFrame(() => window.scrollTo({top: snap.scrollY}))
-  }, [loading, result])
+  }, [loading, result, restore])
 
-  useEffect(() => {
-    return () => saveViewState(pathname, search, {scrollY: window.scrollY, loadedPages: loadedPagesRef.current})
-  }, [pathname, search])
+  const rememberPosition = () => {
+    saveViewState('/search', viewKey, {scrollY: window.scrollY, loadedPages: loadedPagesRef.current})
+  }
 
   const pageCounts = useMemo(() => {
     const groups = result?.groups ?? []
@@ -120,7 +135,9 @@ export function SearchPage() {
   })()
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
+    <div className="mx-auto w-full max-w-5xl" onClickCapture={(event) => {
+      if (event.target instanceof Element && event.target.closest('a[href]')) rememberPosition()
+    }}>
       <div className="mt-5 flex flex-wrap items-center gap-2">
         <Segmented
           ariaLabel="搜索范围"
@@ -231,9 +248,11 @@ function ResultGroup({
         )}
       </div>
       <p className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-1 text-[13px] text-muted">
-        <span>
-          <SearchHighlight text={group.author || '未注明作者'} query={query} />
-        </span>
+        {group.mid != null && group.mid > 0 && group.author ? (
+          <Link href={`/?up=${group.mid}`} className="text-ink/80 hover:text-brand">
+            <SearchHighlight text={group.author} query={query} />
+          </Link>
+        ) : <span><SearchHighlight text={group.author || '未注明作者'} query={query} /></span>}
         <span>{formatDuration(group.duration ?? undefined)}</span>
         <span>{formatSavedDay(group.saved_at)}</span>
         {meta.length ? <span className="text-brand">{meta.join('、')}匹配</span> : null}

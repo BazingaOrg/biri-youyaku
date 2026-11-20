@@ -858,11 +858,12 @@ def find_reusable_source(
                 JobStatus.COMPLETED.value,
             ),
         ).fetchall()
-    for row in rows:
-        job = _row_to_job(row)
+    candidates = [_row_to_job(row) for row in rows]
+    readable = readable_job_ids(candidates) if task_type == "summary" else {}
+    for job in candidates:
         if job.status != JobStatus.COMPLETED:
             return job
-        if task_type == "summary" and summary_file_exists(job):
+        if job.id in readable:
             return job
         if task_type == "distill" and job.transcript:
             return job
@@ -890,6 +891,43 @@ def find_active_distill_by_bvid(bvid: str) -> Job | None:
             (*statuses, bvid, source_url),
         ).fetchone()
     return _row_to_job(row) if row else None
+
+
+def readable_job_ids(jobs: Collection[Job]) -> dict[str, str]:
+    """Resolve a page of completed summaries without loading the note bodies."""
+    from biri_youyaku.knowledge.artifacts import resolve_stored_path
+
+    completed = {
+        job.id: job for job in jobs
+        if job.status == JobStatus.COMPLETED and job.options.task_type == "summary"
+    }
+    if not completed:
+        return {}
+    placeholders = ",".join("?" for _ in completed)
+    with connect() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT j.id, l.document_id, a.storage_path
+            FROM jobs j
+            LEFT JOIN knowledge_job_links l ON l.job_id = j.id
+            LEFT JOIN knowledge_documents d ON d.id = l.document_id
+            LEFT JOIN knowledge_summary_revisions sr ON sr.document_id = d.id AND sr.is_active = 1
+            LEFT JOIN knowledge_artifacts a ON a.id = sr.artifact_id
+            LEFT JOIN knowledge_reconcile r ON r.job_id = j.id
+            WHERE j.id IN ({placeholders}) AND l.unlinked_at IS NULL
+              AND d.deleted_at IS NULL AND IFNULL(r.status, '') != 'purged'
+            """,
+            tuple(completed),
+        ).fetchall()
+    targets = {}
+    for row in rows:
+        job_id = row["id"]
+        if row["document_id"] is None:
+            if summary_file_exists(completed[job_id]):
+                targets[job_id] = job_id
+        elif row["storage_path"] and resolve_stored_path(row["storage_path"]).is_file():
+            targets[job_id] = row["document_id"]
+    return targets
 
 
 def summary_file_exists(job: Job) -> bool:

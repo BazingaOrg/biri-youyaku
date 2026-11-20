@@ -16,7 +16,7 @@ import {
 } from '../lib/api'
 import {formatClock, formatDuration} from '../lib/format'
 import {transcriptToPlainText} from '../lib/subtitle'
-import {backTarget, docHref} from '../lib/docNav'
+import {backTarget, docHref, processingRecordHref} from '../lib/docNav'
 import {useUrlState} from '../hooks/useUrlState'
 import {useTaskAlerts} from '../hooks/useTaskAlerts'
 import {useToast} from '../components/ToastProvider'
@@ -54,6 +54,7 @@ export function DocumentPage({id}: {id: string}) {
   const [purgeOpen, setPurgeOpen] = useState(false)
   const [purgeInput, setPurgeInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const resume = useRef<{scrollY: number; findIndex: number} | undefined>(window.history.state?.readerPosition)
   const findIndexRef = useRef(0)
   const [findIndex, setFindIndex] = useState(0)
   const [findTotal, setFindTotal] = useState(0)
@@ -122,6 +123,8 @@ export function DocumentPage({id}: {id: string}) {
     from,
     q: get('q'),
     scope: get('scope'),
+    filter: get('filter'),
+    order: get('order'),
     up: get('up') || (doc?.mid != null ? String(doc.mid) : ''),
     tag: get('tag'),
     author: doc?.author || legacyJob?.author,
@@ -156,7 +159,8 @@ export function DocumentPage({id}: {id: string}) {
     const targetBlock = blocks.find((block) => block.id === (tab === 'subs' ? `cue-${at}` : `chunk-${at}`))
       ?? (tab === 'subs' ? blocks.find((block) => block.dataset.sec === at) : undefined)
     const currentAt = nodes.findIndex((node) => node.closest('[data-search-block]') === targetBlock)
-    const index = currentAt >= 0 ? currentAt : 0
+    const restoredIndex = resume.current?.findIndex
+    const index = restoredIndex != null && nodes[restoredIndex] ? restoredIndex : Math.max(0, currentAt)
     findIndexRef.current = index
     setFindIndex(index)
     nodes.forEach((node, i) => {
@@ -164,6 +168,12 @@ export function DocumentPage({id}: {id: string}) {
     })
     nodes[index]?.scrollIntoView({block: 'center'})
   }, [at, q, tab, markdown, cues.length, chunks.length, loading])
+
+  useEffect(() => {
+    if (loading || !resume.current) return
+    window.scrollTo({top: resume.current.scrollY})
+    resume.current = undefined
+  }, [loading])
 
   const jumpFind = (delta: number) => {
     const nodes = [...(searchContentRef.current?.querySelectorAll<HTMLElement>('[data-find-hit]') ?? [])]
@@ -201,7 +211,7 @@ export function DocumentPage({id}: {id: string}) {
         return
       }
       if (!sourceUrl) throw new Error('没有可用的视频链接')
-      const response = await createJob(sourceUrl, {task_type: 'summary'})
+      const response = await createJob(sourceUrl, {task_type: 'summary'}, {dedupe: false})
       writeActive({jobId: response.job_id, url: sourceUrl})
       void refreshTaskAlerts()
       toast.success('已开始重新生成笔记')
@@ -411,7 +421,8 @@ export function DocumentPage({id}: {id: string}) {
                     </button>
                     {doc?.job_id || legacyJob?.id ? (
                       <Link
-                        href={`/jobs/${doc?.job_id || legacyJob?.id}?from=doc`}
+                        href={processingRecordHref((doc?.job_id || legacyJob?.id)!, window.location.pathname + window.location.search + window.location.hash)}
+                        state={{readerPosition: {scrollY: window.scrollY, findIndex}}}
                         className="block rounded-[9px] px-3 py-2 text-sm hover:bg-lift"
                       >
                         处理记录

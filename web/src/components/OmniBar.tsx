@@ -73,7 +73,7 @@ export function OmniBar({
           autoComplete="off"
           value={value}
           disabled={busy}
-          placeholder="粘贴 B 站或 YouTube 链接，或搜索已保存的内容"
+          placeholder="粘贴视频链接，或搜索笔记"
           onChange={(event) => onChange(event.target.value)}
           className="min-h-11 min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted/55 disabled:opacity-60"
         />

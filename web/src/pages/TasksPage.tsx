@@ -2,6 +2,8 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import {Link} from 'wouter'
 import {Trash2} from 'lucide-react'
 import {ApiError, deleteJob, getJob, listJobs, type Job} from '../lib/api'
+import {useTaskDeletion} from '../hooks/useTaskDeletion'
+import {docHref} from '../lib/docNav'
 import {formatDate, formatStatus} from '../lib/format'
 import {isRunning} from '../lib/jobStatus'
 import {BackButton} from '../components/BackButton'
@@ -16,23 +18,27 @@ import {readViewState, saveViewState} from '../lib/sessionRestore'
 const PAGE_SIZE = 60
 const ACTIVE_REFRESH_INTERVAL_MS = 2000
 const ACTIVE_REFRESH_THROTTLE_MS = 1000
-const UNDO_WINDOW_MS = 5000
 
-function opaqueCursor(cursor: string | number | null | undefined) {
+function historyCursor(page: {jobs: Job[]; next_cursor?: string | number | null}) {
+  const cursor = page.next_cursor
+  const last = page.jobs[page.jobs.length - 1]
+  if (typeof cursor === 'number' && last) return `${cursor}:${last.id}`
   return typeof cursor === 'string' ? cursor : null
 }
 
 export function TasksPage() {
   const toast = useToast()
-  const [jobs, setJobs] = useState<Job[]>([])
+  const [records, setJobs] = useState<Job[]>([])
+  const {hidden, schedule} = useTaskDeletion()
+  const jobs = useMemo(() => records.filter(job => !hidden.has(job.id)), [records, hidden])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<'initial' | 'partial' | null>(null)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  const [legacyDelete, setLegacyDelete] = useState<Job | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const pendingDeletes = useRef<Map<string, {timer: number; job: Job}>>(new Map())
   const loadGenerationRef = useRef(0)
   const activeLoadRef = useRef<{controller: AbortController; generation: number} | null>(null)
   const activeRefreshRef = useRef<AbortController | null>(null)
@@ -56,14 +62,14 @@ export function TasksPage() {
       const restoringPages = restore.current?.loadedPages ?? 1
       let page = await listJobs({limit: PAGE_SIZE}, {signal: load.controller.signal})
       let collected = page.jobs
-      let cursor = opaqueCursor(page.next_cursor)
+      let cursor = historyCursor(page)
       let pages = 1
       while (cursor && pages < restoringPages) {
         const next = await listJobs({limit: PAGE_SIZE, cursor}, {signal: load.controller.signal})
         if (!isCurrent()) return
         const known = new Set(collected.map((job) => job.id))
         collected = [...collected, ...next.jobs.filter((job) => !known.has(job.id))]
-        cursor = opaqueCursor(next.next_cursor)
+        cursor = historyCursor(next)
         pages += 1
       }
       if (!isCurrent()) return
@@ -169,17 +175,6 @@ export function TasksPage() {
     }
   }, [activeJobs.length, refreshActiveJobs])
 
-  useEffect(() => {
-    const pending = pendingDeletes.current
-    return () => {
-      for (const [jobId, entry] of pending) {
-        window.clearTimeout(entry.timer)
-        void deleteJob(jobId).catch(() => {})
-      }
-      pending.clear()
-    }
-  }, [])
-
   const loadMore = useCallback(async () => {
     const cursor = nextCursorRef.current
     if (!cursor || loadingMore || loading) return
@@ -191,7 +186,7 @@ export function TasksPage() {
         return [...current, ...response.jobs.filter((job) => !known.has(job.id))]
       })
       loadedPagesRef.current += 1
-      nextCursorRef.current = opaqueCursor(response.next_cursor)
+      nextCursorRef.current = historyCursor(response)
       setNextCursor(nextCursorRef.current)
     } catch {
       setLoadError('partial')
@@ -221,26 +216,6 @@ export function TasksPage() {
     return () => saveViewState('/tasks', '', {scrollY: window.scrollY, loadedPages: loadedPagesRef.current})
   }, [])
 
-  const restoreJob = useCallback((job: Job) => {
-    setJobs((current) => (current.some((item) => item.id === job.id) ? current : [job, ...current]))
-  }, [])
-
-  const commitDelete = useCallback(
-    async (jobId: string) => {
-      const entry = pendingDeletes.current.get(jobId)
-      if (!entry) return
-      pendingDeletes.current.delete(jobId)
-      try {
-        await deleteJob(jobId)
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 404) return
-        restoreJob(entry.job)
-        toast.error('删除失败', err instanceof Error ? err.message : '请重试')
-      }
-    },
-    [restoreJob, toast],
-  )
-
   const toggleSelected = (jobId: string) => {
     setSelected((current) => {
       const next = new Set(current)
@@ -260,11 +235,6 @@ export function TasksPage() {
     setDeleting(true)
     const outcomes = await Promise.all(
       targets.map(async (job) => {
-        const pending = pendingDeletes.current.get(job.id)
-        if (pending) {
-          window.clearTimeout(pending.timer)
-          pendingDeletes.current.delete(job.id)
-        }
         try {
           await deleteJob(job.id)
           return {id: job.id, ok: true as const}
@@ -280,7 +250,7 @@ export function TasksPage() {
     setDeleting(false)
     setConfirmOpen(false)
     if (failed.size === 0) {
-      toast.success(`已删除 ${targets.length} 条任务记录`, '笔记还在，不受影响')
+      toast.success(`已删除 ${targets.length} 条任务记录`)
       return
     }
     toast.error('部分任务删除失败', `${failed.size} 条仍保留在列表中`)
@@ -293,30 +263,15 @@ export function TasksPage() {
       toast.error('无法删除', '请先取消进行中的任务再删除')
       return
     }
-    setJobs((current) => current.filter((item) => item.id !== jobId))
-    const timer = window.setTimeout(() => void commitDelete(jobId), UNDO_WINDOW_MS)
-    pendingDeletes.current.set(jobId, {timer, job})
-    toast.success('已删除任务记录', '笔记还在，不受影响', {
-      taskName: job.title || undefined,
-      durationMs: UNDO_WINDOW_MS,
-      action: {
-        label: '撤销',
-        onClick: () => {
-          const entry = pendingDeletes.current.get(jobId)
-          if (!entry) return
-          window.clearTimeout(entry.timer)
-          pendingDeletes.current.delete(jobId)
-          restoreJob(entry.job)
-        },
-      },
-    })
+    if (job.read_id === job.id) setLegacyDelete(job)
+    else schedule(job)
   }
 
   return (
     <div className="mx-auto w-full max-w-5xl">
       <BackButton href="/" label="全部笔记" />
       <h1 className="mt-3 text-2xl font-semibold tracking-[-0.012em]">管理任务记录</h1>
-      <p className="mt-1 text-sm text-muted">删除任务只去掉这条处理记录，已经生成的笔记还在。</p>
+      <p className="mt-1 text-sm text-muted">删除任务后，已登记到资料库的笔记还在。</p>
       {!loading && deletableJobs.length > 0 ? (
         <div className="mt-4 flex min-h-11 items-center justify-between gap-3">
           <label className="inline-flex items-center gap-2 text-sm text-muted">
@@ -375,6 +330,11 @@ export function TasksPage() {
                     <Link href={`/jobs/${job.id}`} className="block truncate text-sm font-medium hover:text-brand">
                       {job.title || job.url}
                     </Link>
+                    {job.status === 'COMPLETED' && job.read_id ? (
+                      <Link href={docHref(job.read_id, {from: 'task'})} className="inline-flex min-h-8 items-center text-sm text-brand">
+                        阅读笔记
+                      </Link>
+                    ) : null}
                     <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[13px] text-muted">
                       <span>{job.author || '未注明作者'}</span>
                       <span className="tabular-nums">{formatDate(job.updated_at ?? job.created_at)}</span>
@@ -414,11 +374,23 @@ export function TasksPage() {
         ) : null}
       </div>
       <ConfirmDialog
+        open={legacyDelete != null}
+        danger
+        title="删除任务和旧版笔记？"
+        description="这篇笔记仅保存在任务中。撤销时间结束后，任务和笔记都会删除。"
+        confirmLabel="删除"
+        onCancel={() => setLegacyDelete(null)}
+        onConfirm={() => {
+          if (legacyDelete) schedule(legacyDelete)
+          setLegacyDelete(null)
+        }}
+      />
+      <ConfirmDialog
         open={confirmOpen}
         danger
         loading={deleting}
         title={`删除 ${selectedJobs.length} 条任务记录`}
-        description="只会删除当前勾选的处理记录，已经生成的笔记还在。"
+        description={selectedJobs.some(job => job.read_id === job.id) ? "所选任务包含旧版笔记，删除任务会一并删除这些笔记。" : "删除所选任务记录，已登记到资料库的笔记还在。"}
         confirmLabel="删除所选"
         onCancel={() => {
           if (!deleting) setConfirmOpen(false)

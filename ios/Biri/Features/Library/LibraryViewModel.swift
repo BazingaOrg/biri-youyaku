@@ -168,8 +168,11 @@ final class SearchViewModel {
         }
         isLoading = true
         isLoadingMore = false
-        nextCursor = nil
-        partial = []
+        if trimmed != submittedQuery || requestedScope != submittedScope {
+            groups = []
+            nextCursor = nil
+            partial = []
+        }
         submittedQuery = trimmed
         submittedScope = requestedScope
         errorMessage = nil

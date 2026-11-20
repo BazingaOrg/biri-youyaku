@@ -11,21 +11,26 @@ export function VideoRow({
   video,
   status,
   jobId,
+  readId,
   busy,
   onSummarize,
+  catalogContext,
+  onRead,
   index = 0,
 }: {
   video: UpVideo
   status: JobStatus | null
+  readId: string | null
   jobId: string | null
   busy: boolean
   onSummarize: () => void
+  catalogContext: Record<string, string>
+  onRead: () => void
   index?: number
 }) {
   const done = status === 'COMPLETED'
   const running = status != null && isRunning(status)
   const failed = status === 'FAILED' || status === 'CANCELED'
-  const readId = video.document_id || jobId
 
   return (
     <li
@@ -63,7 +68,8 @@ export function VideoRow({
       <div className="flex items-center justify-end">
         {done && readId ? (
           <Link
-            href={docHref(readId, {from: 'up'})}
+            href={docHref(readId, catalogContext)}
+            onClick={onRead}
             className={buttonClassName({variant: 'secondary', size: 'sm', className: 'text-brand'})}
           >
             <Check size={14} />

@@ -14,7 +14,7 @@ from biri_youyaku.jobs import repo
 from biri_youyaku.jobs.model import JobOptions, JobStatus
 from biri_youyaku.jobs.runner import resume_job, start_job
 from biri_youyaku.rate_limit import limiter
-from biri_youyaku.routes.jobs import _ensure_email_ready, _ensure_inflight_capacity, creation_lock
+from biri_youyaku.routes.jobs import _ensure_email_ready, _ensure_inflight_capacity, creation_lock, reused_job_response
 from biri_youyaku.sources.capabilities import capabilities
 from biri_youyaku.sources.service import fetch_meta
 from biri_youyaku.sources import uploads
@@ -155,7 +155,7 @@ async def import_file(
                     "upload", uploaded.sha256, "", task_type="summary"
                 )
                 if existing is not None:
-                    return {"ok": True, "job_id": existing.id, "deduped": True}
+                    return reused_job_response(existing)
                 _ensure_inflight_capacity()
                 job = repo.create_job(
                     source_url or f"upload://{uploaded.sha256}",

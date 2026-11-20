@@ -9,6 +9,7 @@ import {FileUp, X} from 'lucide-react'
 import {useEffect, useRef, useState} from 'react'
 import {Button} from './Button'
 import {docHref} from '../lib/docNav'
+import {createdNoteId, creationMessage} from '../lib/jobCreation'
 
 export function BrowseOmni() {
   const [pathname, navigate] = useLocation()
@@ -75,13 +76,19 @@ export function BrowseOmni() {
       />
       {pathname === '/' && importOpen ? (
         <div id="file-import-panel" className="relative mt-3 animate-fade-in-up">
-          <ImportPanel onBusyChange={setImportBusy} onAccepted={(jobId, deduped) => {
+          <ImportPanel onBusyChange={setImportBusy} onAccepted={(response) => {
+            const jobId = response.job_id
+            const readId = createdNoteId(response)
             setImportBusy(false)
             setImportOpen(false)
+            toast.success(creationMessage(response), undefined, {dedupeKey: jobId})
+            if (readId) {
+              navigate(docHref(readId, {from: 'task'}))
+              return
+            }
             writeActive({jobId, url: 'upload://local'})
-            if (!deduped) void refreshTaskAlerts()
-            toast.success(deduped ? '这份内容已有笔记' : '已交给后台生成笔记', undefined, {dedupeKey: jobId})
-            navigate(deduped ? docHref(jobId, {from: 'task'}) : `/jobs/${jobId}`)
+            void refreshTaskAlerts()
+            navigate(`/jobs/${jobId}`)
           }} />
           <button type="button" aria-label="收起导入文件" disabled={importBusy} onClick={closeImport} className="absolute right-2 top-2 grid h-10 w-10 place-items-center rounded-[10px] text-muted hover:bg-lift hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"><X size={16} /></button>
         </div>

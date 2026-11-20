@@ -234,7 +234,7 @@ def _has_audio(job: Job) -> bool:
     return Path(job.audio_path).is_file()
 
 
-def serialize_job(job: Job, *, lite: bool = False) -> dict:
+def serialize_job(job: Job, *, lite: bool = False, read_id: str | None = None) -> dict:
     """把 Job 序列化成 API 响应。
 
     lite=True 给列表页用：不读 summary 磁盘文件、不带 transcript/chapters/stage_timings
@@ -254,6 +254,7 @@ def serialize_job(job: Job, *, lite: bool = False) -> dict:
         "author": job.author,
         "duration": job.duration,
         "status": job.status.value,
+        "read_id": read_id,
         "error_stage": job.error_stage,
         "error_message": job.error_message,
         "error_code": job.error_code,
@@ -325,6 +326,16 @@ def _ensure_inflight_capacity() -> None:
         )
 
 
+def reused_job_response(job: Job) -> dict:
+    return {
+        "ok": True,
+        "job_id": job.id,
+        "deduped": True,
+        "status": job.status.value,
+        "read_id": repo.readable_job_ids([job]).get(job.id),
+    }
+
+
 @router.post("/jobs")
 @limiter.limit("10/minute")
 async def create_job(request: Request, payload: CreateJobPayload) -> dict:
@@ -349,7 +360,7 @@ async def create_job(request: Request, payload: CreateJobPayload) -> dict:
         if payload.dedupe:
             existing = repo.find_reusable_source(media.provider, source_id, part, task_type=options.task_type)
             if existing is not None:
-                return {"ok": True, "job_id": existing.id, "deduped": True}
+                return reused_job_response(existing)
         _ensure_inflight_capacity()
         job = repo.create_job(media.url, options, option_overrides=option_overrides)
         repo.set_source(job.id, media.provider, source_id, part)
@@ -418,9 +429,10 @@ async def list_jobs(
     else:
         # Keep the original list endpoint contract for existing clients.
         next_cursor = jobs[-1].created_at
+    read_ids = repo.readable_job_ids(jobs)
     return {
         "ok": True,
-        "jobs": [serialize_job(job, lite=True) for job in jobs],
+        "jobs": [serialize_job(job, lite=True, read_id=read_ids.get(job.id)) for job in jobs],
         "next_cursor": next_cursor,
     }
 
@@ -487,7 +499,7 @@ async def get_job(job_id: str, lite: bool = Query(default=False)) -> dict:
     job = repo.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    return {"ok": True, "job": serialize_job(job, lite=lite)}
+    return {"ok": True, "job": serialize_job(job, lite=lite, read_id=repo.readable_job_ids([job]).get(job.id))}
 
 
 @router.get("/jobs/{job_id}/stream")

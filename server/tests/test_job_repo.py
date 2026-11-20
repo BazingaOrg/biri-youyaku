@@ -544,3 +544,6 @@ def test_find_reusable_source_requires_completed_summary_artifact(monkeypatch, t
     repo.set_summary_path(job.id, summary)
 
     assert repo.find_reusable_source("youtube", "abc").id == job.id
+    assert repo.readable_job_ids([repo.get_job(job.id)]) == {job.id: job.id}
+    summary.unlink()
+    assert repo.readable_job_ids([repo.get_job(job.id)]) == {}

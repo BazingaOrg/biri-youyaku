@@ -24,7 +24,8 @@ import {IconButton} from '../components/IconButton'
 import {PageLoading} from '../components/Spinner'
 import {RunningView} from './workspace/RunningView'
 import {BackButton} from '../components/BackButton'
-import {docHref} from '../lib/docNav'
+import {docHref, readerReturnHref} from '../lib/docNav'
+import {createdNoteId, creationMessage} from '../lib/jobCreation'
 
 const DoneView = lazy(() =>
   import('./workspace/DoneView').then((module) => ({default: module.DoneView})),
@@ -45,7 +46,7 @@ export function Workspace({jobId}: WorkspaceProps) {
   const {job, setJob, error, refresh} = useJob(jobId)
   const [actionBusy, setActionBusy] = useState(false)
   const [cancelPending, setCancelPending] = useState(false)
-  const [duplicateJob, setDuplicateJob] = useState<{url: string; jobId: string} | null>(null)
+  const [duplicateJob, setDuplicateJob] = useState<{url: string; jobId: string; readId: string} | null>(null)
   const [duplicateBusy, setDuplicateBusy] = useState(false)
   const [resummaryConfirmOpen, setResummaryConfirmOpen] = useState(false)
 
@@ -192,21 +193,22 @@ export function Workspace({jobId}: WorkspaceProps) {
 
   const submitNew = async (url: string) => {
     const response = await createJob(url, newSummaryOptions())
-    if (response.deduped) {
-      setDuplicateJob({url, jobId: response.job_id})
+    const readId = createdNoteId(response)
+    if (readId) {
+      setDuplicateJob({url, jobId: response.job_id, readId})
       return
     }
     writeActive({jobId: response.job_id, url})
     void refreshTaskAlerts()
-    toast.success('已开始生成笔记', undefined, {dedupeKey: response.job_id})
+    toast.success(creationMessage(response), undefined, {dedupeKey: response.job_id})
     navigate(`/jobs/${response.job_id}`)
   }
 
   const viewDuplicateSummary = () => {
     if (!duplicateJob) return
-    const {jobId} = duplicateJob
+    const {readId} = duplicateJob
     setDuplicateJob(null)
-    navigate(docHref(jobId, {from: 'task'}))
+    navigate(docHref(readId, {from: 'task'}))
   }
 
   const resummarizeDuplicate = async () => {
@@ -318,9 +320,15 @@ export function Workspace({jobId}: WorkspaceProps) {
     )
   }
 
+  const readerHref = readerReturnHref(window.location.search)
+  const back = readerHref
+    ? <BackButton href={readerHref} label="返回笔记" state={window.history.state} />
+    : <BackButton href="/tasks" label="任务" />
+
   if (error) {
     return (
       <div className="grid gap-3 py-8 text-center">
+        {back}
         <p className="text-sm text-danger">{error}</p>
         <div className="flex flex-wrap items-center justify-center gap-2">
           <IconButton icon={<RotateCw size={18} />} label="重试" onClick={() => { void refresh() }} />
@@ -334,7 +342,7 @@ export function Workspace({jobId}: WorkspaceProps) {
   if (!job) {
     return (
       <>
-        <BackButton href="/tasks" label="任务" />
+        {back}
         <PageLoading label="加载任务…" />
       </>
     )
@@ -352,7 +360,6 @@ export function Workspace({jobId}: WorkspaceProps) {
     </button>
   ) : null
 
-  const back = <BackButton href="/tasks" label="任务" />
 
   if (job.status === 'COMPLETED') {
     return (

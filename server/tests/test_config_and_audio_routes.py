@@ -137,6 +137,7 @@ async def test_create_job_dedupes_completed_bvid(monkeypatch):
 
     monkeypatch.setattr(jobs_route, "fetch_source_meta", fetch_source_meta)
     monkeypatch.setattr(jobs_route.repo, "count_jobs_excluding_status", lambda statuses: 0)
+    monkeypatch.setattr(jobs_route.repo, "readable_job_ids", lambda jobs: {existing.id: "doc"})
     monkeypatch.setattr(jobs_route.repo, "find_reusable_source", find_reusable_source)
     monkeypatch.setattr(jobs_route, "start_job", lambda job_id, llm_api_key=None: started.update(id=job_id))
 
@@ -145,7 +146,7 @@ async def test_create_job_dedupes_completed_bvid(monkeypatch):
     )
 
     # 命中已完成 → 复用旧任务、不新建、不启动 runner。
-    assert response == {"ok": True, "job_id": "job-existing", "deduped": True}
+    assert response == {"ok": True, "job_id": "job-existing", "deduped": True, "status": "COMPLETED", "read_id": "doc"}
     assert "id" not in started
     assert calls["reusable"] == ("bilibili", "BV123", "1", "summary")
 

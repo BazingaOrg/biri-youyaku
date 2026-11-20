@@ -102,6 +102,7 @@ export interface Job {
   queued?: boolean
   /** 长视频分段总结进度（transient，仅 SSE 推送）：done=已完成段数，total=总段数。 */
   summary_segment?: {done: number; total: number}
+  read_id?: string | null
   document_id?: string | null
 }
 
@@ -354,17 +355,18 @@ export function getCostSummary(refreshBalance = false) {
 }
 
 export function createJob(url: string, options: JobOptionOverrides, params: {dedupe?: boolean} = {}) {
-  // deduped: 后端发现这条视频之前已总结完成，直接复用了旧任务（没有新建、没有再烧 token）。
-  return request<{ok: true; job_id: string; deduped?: boolean}>('/v1/jobs', {
+  return request<JobCreationResult>('/v1/jobs', {
     method: 'POST',
     body: JSON.stringify({url, options, dedupe: params.dedupe}),
   })
 }
 
-export interface ImportUploadResult {
+export interface JobCreationResult {
   ok: true
   job_id: string
   deduped?: boolean
+  status?: JobStatus
+  read_id?: string | null
 }
 
 export function uploadImport(
@@ -372,12 +374,12 @@ export function uploadImport(
   title: string,
   onProgress: (loaded: number, total: number) => void,
   sourceUrl?: string,
-): {promise: Promise<ImportUploadResult>; abort: () => void} {
+): {promise: Promise<JobCreationResult>; abort: () => void} {
   const controller = new AbortController()
   const params = new URLSearchParams({filename: file.name})
   if (title.trim()) params.set('title', title.trim())
   if (sourceUrl?.trim()) params.set('source_url', sourceUrl.trim())
-  const promise = new Promise<ImportUploadResult>((resolve, reject) => {
+  const promise = new Promise<JobCreationResult>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${API_BASE_URL}/v1/imports?${params.toString()}`)
     xhr.withCredentials = true
@@ -403,7 +405,7 @@ export function uploadImport(
         reject(new ApiError(xhr.status, message))
         return
       }
-      resolve(body as ImportUploadResult)
+      resolve(body as JobCreationResult)
     }
     controller.signal.addEventListener('abort', () => xhr.abort(), {once: true})
     xhr.send(file)

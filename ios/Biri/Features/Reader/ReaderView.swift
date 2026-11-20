@@ -63,7 +63,7 @@ struct ReaderView: View {
                 Text("会使用已有字幕创建一个新任务，当前笔记和任务记录都会保留。")
             }
             .confirmationDialog("移到回收站？", isPresented: $confirmTrash, titleVisibility: .visible) {
-                Button("移到回收站", role: .destructive) { Task { await softDelete() } }
+                Button("移到回收站", role: .destructive) { Task { await setTrashed(true) } }
                 Button("取消", role: .cancel) {}
             } message: {
                 Text("笔记会从资料库移除，之后可在回收站恢复。")
@@ -88,7 +88,13 @@ struct ReaderView: View {
             ContentUnavailableView {
                 Label("已移到回收站", systemImage: "trash")
             } description: {
-                Text("可在“设置 › 内容管理 › 回收站”恢复这篇笔记。")
+                if let message = viewModel.actionErrorMessage {
+                    Text(message)
+                }
+            } actions: {
+                Button("恢复笔记") { Task { await setTrashed(false) } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(viewModel.isUpdatingTrash)
             }
         } else if viewModel.isLoading && viewModel.content == nil {
             ProgressView("正在加载笔记…")
@@ -396,11 +402,11 @@ struct ReaderView: View {
         await viewModel.regenerate(using: service)
     }
 
-    private func softDelete() async {
+    private func setTrashed(_ trashed: Bool) async {
         guard let service = try? appModel.makeService() else {
             viewModel.actionErrorMessage = APIError.notConfigured.localizedDescription
             return
         }
-        await viewModel.softDelete(using: service)
+        await viewModel.setTrashed(trashed, using: service)
     }
 }

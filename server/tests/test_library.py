@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import Mock
+
+import pytest
 
 from fastapi.testclient import TestClient
 
@@ -146,7 +149,7 @@ def test_chunker_new_format_parses_start_sec():
     assert any(c.heading_path == "TL;DR" for c in chunks)
 
 
-def test_library_rank_bvid_title_notes_subs(monkeypatch, tmp_path):
+def test_library_search_orders_all_match_types_by_generation_time(monkeypatch, tmp_path):
     _setup(monkeypatch, tmp_path)
     term = "RankNeedle"
     job_bvid = _make_completed_job(
@@ -181,18 +184,32 @@ def test_library_rank_bvid_title_notes_subs(monkeypatch, tmp_path):
     for job in (job_bvid, job_title, job_notes, job_subs):
         assert try_register_job(job.id) == RECONCILE_REGISTERED
 
+    with db.connect() as connection:
+        for timestamp, job in enumerate((job_bvid, job_title, job_notes, job_subs), start=1):
+            connection.execute("UPDATE jobs SET completed_at = ? WHERE id = ?", (timestamp, job.id))
+        connection.execute("UPDATE knowledge_documents SET updated_at = 100 WHERE external_bvid = ?", (f"BV{term}",))
+
     client = _client()
-    response = client.get("/v1/library/search", params={"q": term, "scope": "all"})
-    assert response.status_code == 200
-    body = response.json()
-    assert body["ok"] is True
-    assert body["partial"] == []
-    bvids = [g["bvid"] for g in body["groups"]]
-    assert bvids[:4] == [f"BV{term}", "BV1titlezz", "BV1noteszz", "BV1subszz"]
-    assert body["groups"][0]["match"]["bvid"] is True
-    assert body["groups"][1]["match"]["title"] is True
-    assert body["groups"][2]["hit_counts"]["notes"] >= 2
-    assert body["groups"][3]["hit_counts"]["subs"] >= 2
+    params = {"q": term, "scope": "all", "limit": 2}
+    first = client.get("/v1/library/search", params=params)
+    assert first.status_code == 200
+    page = first.json()
+    assert page["partial"] == []
+    subs, notes = page["groups"]
+    assert [subs["bvid"], notes["bvid"]] == ["BV1subszz", "BV1noteszz"]
+    assert subs["hit_counts"]["subs"] >= 2
+    assert notes["hit_counts"]["notes"] >= 2
+
+    # A removed result at the page boundary must not skip the remaining notes.
+    with db.connect() as connection:
+        connection.execute("UPDATE knowledge_documents SET deleted_at = 100 WHERE id = ?", (notes["document_id"],))
+    second = client.get("/v1/library/search", params={**params, "cursor": page["next_cursor"]})
+    assert second.status_code == 200
+    title, bvid = second.json()["groups"]
+    assert [title["bvid"], bvid["bvid"]] == ["BV1titlezz", f"BV{term}"]
+    assert title["match"]["title"] is True
+    assert bvid["match"]["bvid"] is True
+    assert second.json()["next_cursor"] is None
 
 
 def test_library_search_partial_subs_keeps_notes(monkeypatch, tmp_path):
@@ -403,3 +420,75 @@ def test_library_exposes_and_searches_generic_source_identity(monkeypatch, tmp_p
     assert group["provider"] == "upload"
     assert group["source_id"] == "sha256abc"
     assert group["match"]["source_id"] is True
+
+
+@pytest.mark.parametrize("register", [True, False])
+def test_library_cursor_keeps_visibility_and_filters(monkeypatch, tmp_path, register):
+    _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(settings, "knowledge_register_enabled", register)
+    with db.connect() as connection:
+        connection.executemany(
+            """INSERT INTO knowledge_documents
+               (id, provider, source_id, mid, tags_json, created_at, updated_at, deleted_at)
+               VALUES (?, 'upload', ?, ?, '["topic"]', 100, 100, ?)""",
+            [("z", "z", 1, None), ("y", "y", 1, 101), ("x", "x", 2, None)],
+        )
+        connection.executemany(
+            """INSERT INTO jobs (id, url, status, mid, tags_json, options_json, summary_path, created_at, updated_at)
+               VALUES (?, 'upload://file', ?, 1, ?, '{}', 'saved.md', 100, 100)""",
+            [("jz", "COMPLETED", '["topic"]'), ("jy", "FAILED", '["topic"]'),
+             ("jx", "COMPLETED", '["other"]'), ("ja", "COMPLETED", '["topic"]')],
+        )
+    params = {"limit": 1, "up": 1, "tag": "topic"}
+    expected = ["z", "jz", "ja"] if register else ["jz", "ja"]
+    client = _client()
+    for expected_id in expected:
+        response = client.get("/v1/library", params=params)
+        assert response.status_code == 200
+        page = response.json()
+        assert [item["id"] for item in page["items"]] == [expected_id]
+        assert page["total"] == len(expected)
+        params["cursor"] = page["next_cursor"]
+    assert params["cursor"] is None
+
+
+def test_subtitle_search_work_and_metadata_fallback(monkeypatch, tmp_path):
+    from biri_youyaku.library import search
+
+    _setup(monkeypatch, tmp_path)
+    for i in range(4):
+        job = _make_completed_job(
+            bvid=f"BV1scope{i}", cid=i + 1, title="SharedTerm in title",
+            summary_body="## 笔记\n内容", transcript=[
+                {"start": 0, "end": 1, "text": "SharedTerm" if i < 3 else "unrelated"}
+            ],
+        )
+        assert try_register_job(job.id) == RECONCILE_REGISTERED
+    metadata = Mock(wraps=search._query_document_metadata)
+    snippet = Mock(wraps=search.make_snippet)
+    monkeypatch.setattr(search, "_query_document_metadata", metadata)
+    monkeypatch.setattr(search, "make_snippet", snippet)
+    client = _client()
+    params = {"q": "SharedTerm", "scope": "subs", "limit": 1}
+    seen = set()
+    for _ in range(3):
+        page = client.get("/v1/library/search", params=params).json()
+        (group,) = page["groups"]
+        seen.add(group["document_id"])
+        assert group["hit_counts"] == {"notes": 0, "subs": 1}
+        assert "SharedTerm" in group["hits"][0]["snippet"]
+        params["cursor"] = page["next_cursor"]
+    assert len(seen) == 3
+    assert params["cursor"] is None
+    assert snippet.call_count == 3
+    metadata.assert_not_called()
+
+    monkeypatch.setattr(search, "query_subs_fts", Mock(side_effect=RuntimeError("index unavailable")))
+    for register in (True, False):
+        monkeypatch.setattr(settings, "knowledge_register_enabled", register)
+        fallback = client.get("/v1/library/search", params={"q": "SharedTerm", "scope": "subs"}).json()
+        assert fallback["partial"] == ["subs"]
+        assert len(fallback["groups"]) == 4
+        assert all(group["hits"] == [] for group in fallback["groups"])
+        metadata.assert_called_once()
+        metadata.reset_mock()

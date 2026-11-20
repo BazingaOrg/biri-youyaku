@@ -25,7 +25,7 @@ final class ReaderViewModel {
     var transcriptQuery = ""
     var isLoading = false
     var isRegenerating = false
-    var isDeleting = false
+    var isUpdatingTrash = false
     var errorMessage: String?
     var actionErrorMessage: String?
     var feedbackMessage: String?
@@ -75,11 +75,11 @@ final class ReaderViewModel {
     }
 
     var canRegenerate: Bool {
-        content != nil && regenerationJobID != nil && !isRegenerating && !isDeleting && !didMoveToTrash
+        content != nil && regenerationJobID != nil && !isRegenerating && !isUpdatingTrash && !didMoveToTrash
     }
 
     var canSoftDelete: Bool {
-        content != nil && documentID != nil && !isRegenerating && !isDeleting && !didMoveToTrash
+        content != nil && documentID != nil && !isRegenerating && !isUpdatingTrash && !didMoveToTrash
     }
 
     func load(using service: any BiriServicing) async {
@@ -119,7 +119,7 @@ final class ReaderViewModel {
             guard currentGeneration == generation else { return }
             content = loaded
             blocks = MarkdownParser.parse(loaded.markdown)
-            didMoveToTrash = false
+            didMoveToTrash = loaded.document.deletedAt != nil
             initialNoteBlockID = Self.noteBlockID(
                 for: destination.initialChunkOrd,
                 content: loaded,
@@ -172,22 +172,26 @@ final class ReaderViewModel {
         }
     }
 
-    func softDelete(using service: any LibraryLifecycleServicing) async {
-        guard let documentID, canSoftDelete else { return }
+    func setTrashed(_ trashed: Bool, using service: any LibraryLifecycleServicing) async {
+        guard let documentID, content != nil, !isRegenerating, !isUpdatingTrash,
+              trashed != didMoveToTrash else { return }
         mutationGeneration += 1
         let currentMutation = mutationGeneration
         let currentGeneration = generation
-        isDeleting = true
+        isUpdatingTrash = true
         actionErrorMessage = nil
         feedbackMessage = nil
         defer {
-            if currentMutation == mutationGeneration { isDeleting = false }
+            if currentMutation == mutationGeneration { isUpdatingTrash = false }
         }
         do {
-            _ = try await service.softDeleteDocument(id: documentID, reason: "从 iOS 阅读页移到回收站")
+            if trashed {
+                _ = try await service.softDeleteDocument(id: documentID, reason: "从 iOS 阅读页移到回收站")
+            } else {
+                _ = try await service.restoreDocument(id: documentID)
+            }
             guard currentMutation == mutationGeneration, currentGeneration == generation else { return }
-            didMoveToTrash = true
-            feedbackMessage = "已移到回收站，可在“设置 › 内容管理 › 回收站”恢复。"
+            didMoveToTrash = trashed
         } catch {
             guard currentMutation == mutationGeneration,
                   currentGeneration == generation,

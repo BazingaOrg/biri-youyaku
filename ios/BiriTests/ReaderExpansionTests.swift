@@ -122,12 +122,25 @@ final class ReaderExpansionTests: XCTestCase {
         let viewModel = ReaderViewModel(destination: ReaderDestination(id: "doc-1", title: "标题", kind: .document))
         await viewModel.load(using: service)
 
-        await viewModel.softDelete(using: service)
+        await viewModel.setTrashed(true, using: service)
 
         XCTAssertEqual(service.softDeletedIDs, ["doc-1"])
         XCTAssertTrue(viewModel.didMoveToTrash)
         XCTAssertEqual(viewModel.content?.markdown, "正文")
         XCTAssertFalse(viewModel.canRegenerate)
+
+        service.failRestore = true
+        await viewModel.setTrashed(false, using: service)
+        XCTAssertTrue(viewModel.didMoveToTrash)
+        XCTAssertNotNil(viewModel.actionErrorMessage)
+
+        service.failRestore = false
+        await viewModel.setTrashed(false, using: service)
+        XCTAssertEqual(service.restoredIDs, ["doc-1", "doc-1"])
+        XCTAssertFalse(viewModel.didMoveToTrash)
+        XCTAssertNil(viewModel.actionErrorMessage)
+        XCTAssertEqual(viewModel.content?.markdown, "正文")
+        XCTAssertTrue(viewModel.canSoftDelete)
     }
 
     func testLateSoftDeleteCannotMarkNewlyLoadedContentAsTrashed() async {
@@ -138,7 +151,7 @@ final class ReaderExpansionTests: XCTestCase {
         service.documentResult = makeContent(markdown: "新正文")
         service.suspendSoftDelete = true
 
-        let deletion = Task { await viewModel.softDelete(using: service) }
+        let deletion = Task { await viewModel.setTrashed(true, using: service) }
         guard await waitUntil({ service.softDeleteContinuation != nil }) else {
             await deletion.value
             return XCTFail("The deletion did not suspend")
@@ -151,7 +164,7 @@ final class ReaderExpansionTests: XCTestCase {
 
         XCTAssertEqual(viewModel.content?.markdown, "新正文")
         XCTAssertFalse(viewModel.didMoveToTrash)
-        XCTAssertFalse(viewModel.isDeleting)
+        XCTAssertFalse(viewModel.isUpdatingTrash)
     }
 
     func testHighlightCountIsCaseInsensitiveAndIncludesRepeatedMatches() {
@@ -186,6 +199,8 @@ final class ReaderExpansionTests: XCTestCase {
 @MainActor
 private final class ReaderMutationService: BiriServicing, JobMutationServicing, LibraryLifecycleServicing {
     var documentResult: DocumentContent!
+    var failRestore = false
+    var restoredIDs: [String] = []
     var suspendSoftDelete = false
     var softDeleteContinuation: CheckedContinuation<LifecycleDocument, Never>?
     private(set) var resummarizedIDs: [String] = []
@@ -241,7 +256,9 @@ private final class ReaderMutationService: BiriServicing, JobMutationServicing, 
         return LifecycleDocument(id: id, title: "标题", author: nil, bvid: nil, cid: nil, deletedAt: 1000, deleteReason: reason)
     }
     func restoreDocument(id: String) async throws -> LifecycleDocument {
-        LifecycleDocument(id: id, title: nil, author: nil, bvid: nil, cid: nil, deletedAt: nil, deleteReason: nil)
+        restoredIDs.append(id)
+        if failRestore { throw APIError.http(status: 500, message: "恢复失败") }
+        return LifecycleDocument(id: id, title: nil, author: nil, bvid: nil, cid: nil, deletedAt: nil, deleteReason: nil)
     }
     func purgeDocument(id: String, confirmedTitle: String) async throws -> DocumentPurgeResult {
         DocumentPurgeResult(ok: true, id: id, purged: true, title: confirmedTitle, bvid: nil)

@@ -14,6 +14,7 @@ import {writeActive} from '../lib/activeJob'
 import {useToast} from '../components/ToastProvider'
 import {hrefWithQuery} from '../lib/urlState'
 import {docHref} from '../lib/docNav'
+import {createdNoteId, creationMessage} from '../lib/jobCreation'
 
 export function useOmniComposer(initialValue = '') {
   const [, navigate] = useLocation()
@@ -98,11 +99,12 @@ export function useOmniComposer(initialValue = '') {
     setBusy(true)
     try {
       const response = await createJob(url, newSummaryOptions(), {dedupe: force ? false : undefined})
-      toast.success(response.deduped ? '这条视频已有笔记' : '已开始生成笔记', undefined, {
+      toast.success(creationMessage(response), undefined, {
         dedupeKey: response.job_id,
       })
-      if (response.deduped) {
-        navigate(docHref(response.job_id))
+      const readId = createdNoteId(response)
+      if (readId) {
+        navigate(docHref(readId))
         return
       }
       writeActive({jobId: response.job_id, url})

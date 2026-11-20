@@ -6,7 +6,8 @@ test('task page deletes job records without bulk history cleanup', async () => {
   const pageSource = await readFile(new URL('../src/pages/TasksPage.tsx', import.meta.url), 'utf8')
 
   assert.match(pageSource, /管理任务记录/)
-  assert.match(pageSource, /deleteJob\(jobId\)/)
+  const deletionSource = await readFile(new URL('../src/hooks/useTaskDeletion.ts', import.meta.url), 'utf8')
+  assert.match(deletionSource, /await deleteJob\(job\.id\)/)
   assert.match(pageSource, /deleteJob\(job\.id\)/)
   assert.match(pageSource, /type="checkbox"/)
   assert.match(pageSource, /删除所选/)

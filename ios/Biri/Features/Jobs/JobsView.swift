@@ -5,6 +5,7 @@ struct JobsView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel = JobsViewModel()
+    @State private var selectedNote: ReaderDestination?
     @State private var deletionConfirmation: JobsDeletionConfirmation?
 
     var body: some View {
@@ -107,7 +108,7 @@ struct JobsView: View {
         .navigationDestination(for: String.self) { jobID in
             JobDetailView(jobID: jobID)
         }
-        .navigationDestination(for: ReaderDestination.self) { destination in
+        .navigationDestination(item: $selectedNote) { destination in
             ReaderView(destination: destination)
         }
         .overlay { stateOverlay }
@@ -129,12 +130,19 @@ struct JobsView: View {
             .disabled(viewModel.isDeleting)
             .accessibilityHint(job.status.isActive ? "进行中的任务需先取消，不能删除" : "切换任务选择")
         } else {
-            NavigationLink(value: job.id) {
-                JobRow(job: job, isSelected: false, showsSelection: false)
-            }
-            .accessibilityAction(named: "选择任务") {
-                viewModel.toggleSelection()
-                viewModel.toggleSelection(for: job)
+            HStack {
+                NavigationLink(value: job.id) {
+                    JobRow(job: job, isSelected: false, showsSelection: false)
+                }
+                .accessibilityAction(named: "选择任务") {
+                    viewModel.toggleSelection()
+                    viewModel.toggleSelection(for: job)
+                }
+                if let destination = job.historyReaderDestination {
+                    Button("阅读笔记") { selectedNote = destination }
+                        .buttonStyle(.borderless)
+                        .font(.subheadline)
+                }
             }
         }
     }

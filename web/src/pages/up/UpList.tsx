@@ -12,11 +12,14 @@ import {BackButton} from '../../components/BackButton'
 import {DistillButton} from './DistillButton'
 import {VideoRow} from './VideoRow'
 
+import {createdNoteId, creationMessage} from '../../lib/jobCreation'
+import {catalogQuery} from '../../lib/urlState'
+import {useUrlState} from '../../hooks/useUrlState'
+import {readViewState, saveViewState} from '../../lib/sessionRestore'
+
 // 蒸馏语料是实验性功能：默认隐藏入口（后端 API 照常可用），
 // 想启用时在 web/.env 里设 VITE_DISTILL_ENABLED=true 后重新构建。
 const DISTILL_ENABLED = (import.meta.env.VITE_DISTILL_ENABLED ?? '') === 'true'
-
-type Filter = 'all' | 'todo' | 'done'
 
 export function UpList({mid}: {mid: number}) {
   const toast = useToast()
@@ -30,12 +33,18 @@ export function UpList({mid}: {mid: number}) {
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [query, setQuery] = useState('')
-  const [debouncedQuery, setDebouncedQuery] = useState('')
-  const [filter, setFilter] = useState<Filter>('all')
-  const [order, setOrder] = useState<UpOrder>('pubdate')
+  const {get, pathname, setParams} = useUrlState()
+  const query = get('q')
+  const [debouncedQuery, setDebouncedQuery] = useState(query.trim())
+  const filterValue = get('filter')
+  const filter = filterValue === 'todo' || filterValue === 'done' ? filterValue : 'all'
+  const order: UpOrder = get('order') === 'click' ? 'click' : 'pubdate'
+  const search = catalogQuery(query, filter, order)
+  const [initialView] = useState(() => readViewState(pathname, search))
+  const restore = useRef(initialView)
+  const pendingScroll = useRef<number | null>(null)
   // 一键总结后的乐观覆盖：bvid -> {status, job_id}，不刷新就能立刻显示「进行中」。
-  const [overrides, setOverrides] = useState<Record<string, {status: JobStatus; job_id: string}>>({})
+  const [overrides, setOverrides] = useState<Record<string, {status: JobStatus; job_id: string; readId: string | null}>>({})
   const [summarizing, setSummarizing] = useState<Set<string>>(new Set())
   // 蒸馏语料：null=没有 run（展示按钮），非 null=展示进度面板。distillChecked 之前
   // 先不渲染按钮/面板，避免"先闪一下按钮再切成面板"。
@@ -71,14 +80,25 @@ export function UpList({mid}: {mid: number}) {
       else setLoadingMore(true)
       setError(null)
       try {
-        const res = await getUpVideos(mid, {page: pageNum, keyword, order: sortOrder}, {signal: request.controller.signal})
+        let res = await getUpVideos(mid, {page: pageNum, keyword, order: sortOrder}, {signal: request.controller.signal})
         if (activeRequestRef.current !== request || requestGenerationRef.current !== request.generation) return
+        const collected = [...res.videos]
+        const snapshot = mode === 'reset' ? restore.current : null
+        while (res.has_more && res.page < (snapshot?.loadedPages ?? 1)) {
+          res = await getUpVideos(mid, {page: res.page + 1, keyword, order: sortOrder}, {signal: request.controller.signal})
+          if (activeRequestRef.current !== request) return
+          collected.push(...res.videos)
+        }
+        if (snapshot) {
+          pendingScroll.current = snapshot.scrollY
+          restore.current = null
+        }
         // 空结果页（如搜索无命中）author 为空时保留上一次的昵称。
         setAuthor((prev) => res.author || prev)
         setTotal(res.total)
         setPage(res.page)
         setHasMore(res.has_more)
-        setVideos((current) => (mode === 'reset' ? res.videos : [...current, ...res.videos]))
+        setVideos((current) => (mode === 'reset' ? collected : [...current, ...collected]))
       } catch (err) {
         if (activeRequestRef.current !== request || requestGenerationRef.current !== request.generation || request.controller.signal.aborted) return
         setError(err instanceof Error ? err.message : '加载失败，请检查网络后重试')
@@ -98,6 +118,13 @@ export function UpList({mid}: {mid: number}) {
   useEffect(() => {
     void fetchPage(1, debouncedQuery, order, 'reset')
   }, [fetchPage, debouncedQuery, order])
+
+  useEffect(() => {
+    if (!loading && pendingScroll.current !== null) {
+      window.scrollTo({top: pendingScroll.current})
+      pendingScroll.current = null
+    }
+  }, [loading])
 
   // 进页面先查一次有没有正在跑（或已跑完/失败）的蒸馏 run，有就直接展示面板而不是按钮。
   useEffect(() => {
@@ -164,9 +191,9 @@ export function UpList({mid}: {mid: number}) {
       void refreshTaskAlerts()
       setOverrides((o) => ({
         ...o,
-        [video.bvid]: {status: res.deduped ? 'COMPLETED' : 'PENDING', job_id: res.job_id},
+        [video.bvid]: {status: res.status ?? 'PENDING', job_id: res.job_id, readId: createdNoteId(res)},
       }))
-      toast.success(res.deduped ? '这条之前总结过，已复用' : '已开始总结', undefined, {taskName: video.title, dedupeKey: res.job_id})
+      toast.success(creationMessage(res), undefined, {taskName: video.title, dedupeKey: res.job_id})
     } catch (err) {
       toast.error('总结失败', err instanceof Error ? err.message : '请稍后再试', {taskName: video.title})
     } finally {
@@ -216,7 +243,7 @@ export function UpList({mid}: {mid: number}) {
             <input
               type="text"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => setParams({q: e.target.value || null})}
               placeholder="在该 UP 的投稿里搜标题"
               className="min-h-11 w-full rounded-2xl bg-lift py-2 pl-10 pr-3 text-sm outline-none placeholder:text-muted/55 focus:ring-2 focus:ring-brand/30"
             />
@@ -227,12 +254,12 @@ export function UpList({mid}: {mid: number}) {
                 ['all', '全部'],
                 ['todo', `未总结${counts.todo ? ` ${counts.todo}` : ''}`],
                 ['done', `已总结${counts.done ? ` ${counts.done}` : ''}`],
-              ] as Array<[Filter, string]>
+              ] as Array<[typeof filter, string]>
             ).map(([key, label]) => (
               <button
                 key={key}
                 type="button"
-                onClick={() => setFilter(key)}
+                onClick={() => setParams({filter: key === 'all' ? null : key})}
                 className={`min-h-9 whitespace-nowrap rounded-xl px-3 transition-[background-color,color] ${
                   filter === key ? 'bg-brandSolid text-onBrand shadow-card' : 'text-muted hover:text-ink'
                 }`}
@@ -255,7 +282,7 @@ export function UpList({mid}: {mid: number}) {
               <button
                 key={key}
                 type="button"
-                onClick={() => setOrder(key)}
+                onClick={() => setParams({order: key === 'pubdate' ? null : key})}
                 className={`min-h-8 rounded-xl px-3 transition-[background-color,color] ${
                   order === key ? 'bg-brandSolid text-onBrand shadow-card' : 'text-muted hover:text-ink'
                 }`}
@@ -294,8 +321,11 @@ export function UpList({mid}: {mid: number}) {
                   <VideoRow
                     key={video.bvid}
                     video={video}
+                    catalogContext={{from: 'catalog', up: String(mid), q: query, filter, order}}
+                    onRead={() => saveViewState(pathname, search, {scrollY: window.scrollY, loadedPages: page})}
                     status={effectiveStatus(video)}
                     jobId={jobIdOf(video)}
+                    readId={overrides[video.bvid] ? overrides[video.bvid].readId : video.document_id || video.job_id}
                     busy={summarizing.has(video.bvid)}
                     onSummarize={() => void summarize(video)}
                     index={index}

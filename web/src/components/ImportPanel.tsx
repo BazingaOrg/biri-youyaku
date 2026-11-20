@@ -1,11 +1,11 @@
 import {ChevronDown, FileUp, Loader2, Square, X} from 'lucide-react'
 import {useEffect, useRef, useState} from 'react'
-import {getSourceCapabilities, uploadImport, type SourceCapabilities} from '../lib/api'
+import {getSourceCapabilities, uploadImport, type JobCreationResult, type SourceCapabilities} from '../lib/api'
 import {Button} from './Button'
 import {sourceHref} from '../lib/sourceUrl'
 
 interface ImportPanelProps {
-  onAccepted: (jobId: string, deduped: boolean) => void
+  onAccepted: (response: JobCreationResult) => void
   onBusyChange?: (busy: boolean) => void
 }
 
@@ -92,7 +92,7 @@ export function ImportPanel({onAccepted, onBusyChange}: ImportPanelProps) {
         setFile(null)
         setTitle('')
         setSourceUrl('')
-        onAccepted(response.job_id, Boolean(response.deduped))
+        onAccepted(response)
       })
       .catch((reason: unknown) => {
         setProgress(null)

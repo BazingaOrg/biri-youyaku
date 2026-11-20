@@ -89,9 +89,9 @@ def _row_item(
 
 def _after_cursor_sql(alias_time: str, alias_kind: str, alias_id: str) -> str:
     return (
-        f"({alias_time} < ?) OR "
+        f"(({alias_time} < ?) OR "
         f"({alias_time} = ? AND {alias_kind} > ?) OR "
-        f"({alias_time} = ? AND {alias_kind} = ? AND {alias_id} < ?)"
+        f"({alias_time} = ? AND {alias_kind} = ? AND {alias_id} < ?))"
     )
 
 

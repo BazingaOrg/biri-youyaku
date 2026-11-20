@@ -1,6 +1,6 @@
-import {hrefWithQuery} from './urlState'
+import {catalogQuery, hrefWithQuery} from './urlState'
 
-export type DocFrom = 'search' | 'up' | 'tag' | 'task' | 'trash' | 'library'
+export type DocFrom = 'search' | 'catalog' | 'up' | 'tag' | 'task' | 'trash' | 'library'
 
 export interface BackTarget {
   label: string
@@ -8,7 +8,7 @@ export interface BackTarget {
 }
 
 export function readDocFrom(value: string | null | undefined): DocFrom | null {
-  if (value === 'search' || value === 'up' || value === 'tag' || value === 'task' || value === 'trash' || value === 'library') {
+  if (value === 'search' || value === 'catalog' || value === 'up' || value === 'tag' || value === 'task' || value === 'trash' || value === 'library') {
     return value
   }
   return null
@@ -19,6 +19,8 @@ export function backTarget(params: {
   q?: string | null
   scope?: string | null
   up?: string | null
+  filter?: string | null
+  order?: string | null
   tag?: string | null
   author?: string | null
 }): BackTarget {
@@ -29,6 +31,11 @@ export function backTarget(params: {
       label: q ? `搜索「${q}」` : '搜索',
       href: hrefWithQuery('/search', {q: q || null, scope: params.scope || 'all'}),
     }
+  }
+  if (from === 'catalog' && params.up && /^\d+$/.test(params.up)) {
+    const path = `/up/${params.up}`
+    const search = catalogQuery(params.q ?? '', params.filter ?? '', params.order ?? '')
+    return {label: '返回投稿列表', href: search ? `${path}?${search}` : path}
   }
   if (from === 'up') {
     const author = params.author?.trim()
@@ -60,4 +67,16 @@ export function libraryItemHref(
   const id = item.document_id || item.id || item.job_id
   if (!id) return '/'
   return docHref(id, extra)
+}
+
+export function processingRecordHref(jobId: string, readerHref: string) {
+  return hrefWithQuery(`/jobs/${encodeURIComponent(jobId)}`, {from: 'doc', reader: readerHref})
+}
+
+export function readerReturnHref(search: string): string | null {
+  const params = new URLSearchParams(search)
+  const reader = params.get('reader')
+  if (params.get('from') !== 'doc' || !reader?.startsWith('/doc/')) return null
+  const target = new URL(reader, window.location.origin)
+  return /^\/doc\/[^/]+$/.test(target.pathname) ? target.pathname + target.search + target.hash : null
 }

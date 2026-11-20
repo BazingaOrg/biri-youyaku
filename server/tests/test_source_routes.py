@@ -59,6 +59,10 @@ async def test_subtitle_import_to_readable_searchable_document(source_app, monke
         assert job.status == JobStatus.TRANSCRIPT_READY
         assert job.source_provider == "upload"
         assert Path(job.input_path).is_file()
+        active = await client.post("/v1/imports", params={"filename": "again.srt"}, content=SRT)
+        assert active.json() == {
+            "ok": True, "job_id": job_id, "deduped": True, "status": "TRANSCRIPT_READY", "read_id": None
+        }
 
         async def summarize(job, media, items, **kwargs):
             assert media.provider == "upload"
@@ -81,8 +85,15 @@ async def test_subtitle_import_to_readable_searchable_document(source_app, monke
         again = await client.post("/v1/imports", params={"filename": "same.srt"}, content=SRT)
         assert again.json()["job_id"] == job_id
         assert again.json()["deduped"] is True
+        assert again.json()["status"] == "COMPLETED"
+        assert again.json()["read_id"] == document_id
+        for endpoint in ["/v1/jobs", f"/v1/jobs/{job_id}?lite=true"]:
+            payload = (await client.get(endpoint)).json()
+            row = payload["jobs"][0] if "jobs" in payload else payload["job"]
+            assert row["read_id"] == document_id
         assert len(list(db.settings.upload_storage_dir.iterdir())) == 1
         lifecycle.soft_delete(document_id)
+        assert (await client.get("/v1/jobs")).json()["jobs"][0]["read_id"] is None
         assert repo.find_reusable_source("upload", job.source_id, "") is None
         lifecycle.purge_permanent(document_id, confirm_title="Lecture")
         assert not Path(job.input_path).exists()
@@ -235,6 +246,8 @@ async def test_source_jobs_dedupe_by_part_and_task_type(source_app, monkeypatch)
             )
         ).json()
         assert first["job_id"] == repeat["job_id"]
+        assert repeat["status"] == "PENDING"
+        assert repeat["read_id"] is None
         assert len({first["job_id"], second["job_id"], audio["job_id"]}) == 3
         resolved = (
             await client.get(
